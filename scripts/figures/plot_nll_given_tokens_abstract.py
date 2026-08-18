@@ -50,8 +50,12 @@ from plotting.style import (
 )
 
 
-DEFAULT_CSV_PATH = Path("figures/history_given_gpu.csv")
-DEFAULT_OUTPUT_PATH = Path("figures/history_given_gpu_xl_abstract.png")
+# Reads the per-step history CSV written by plot_validation_nll_history_wandb.py. It only
+# needs display_name / tokens_seen / validation_nll, which every --x-axis variant writes, so
+# it reads the `combined` run's CSV rather than requiring a separate `gpu-hours` render whose
+# figure output nobody wants.
+DEFAULT_CSV_PATH = Path("figures/history_combined_gpu.csv")
+DEFAULT_OUTPUT_PATH = Path("figures/nll_given_tokens_xl_abstract.png")
 DEFAULT_SCALE = "xl"
 # "Standard (More Tokens)" is the long full-attention run; for xl this is the in-progress
 # 100b run, drawn until it matches SPS's pre-decay NLL (mirrors the combined history plot).

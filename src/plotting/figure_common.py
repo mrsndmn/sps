@@ -29,9 +29,17 @@ matplotlib.rcParams.update(
             "Times",
             "Nimbus Roman",
             "Liberation Serif",
+            # STIXGeneral = Times-metric fallback for hosts with no LaTeX and no Times;
+            # before DejaVu Serif so it wins there. Ignored under usetex; real Times wins if present.
+            "STIXGeneral",
             "DejaVu Serif",
             "serif",
         ],
+        # Times-metric-compatible math so $\ell$, $\Delta\ell$, $10^n$ render in a serif face
+        # matching the body text when usetex is off (no LaTeX install). Ignored when
+        # text.usetex=True (mathptmx/Times draws math there), so it is a no-op for the
+        # paper's usetex renders and a strict improvement for the non-usetex fallback.
+        "mathtext.fontset": "stix",
     }
 )
 import matplotlib.patheffects as path_effects

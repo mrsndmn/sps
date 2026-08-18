@@ -30,8 +30,10 @@ from plotting.eval_data import (
     _lookup_run_value,
     _metric_name_and_value_for_run,
 )
+from plotting.flops import SIZE_DIMS, forward_flops_per_token
 from plotting.style import TRAINING_METRIC_KEY
 from plotting.wandb_runs import (
+    DEFAULT_WANDB_PROJECT,
     _parse_created_at,
     _repo_root,
     normalize_history,
@@ -86,6 +88,7 @@ class TableRow:
     nll: dict[str, float | None]
     memory_ratio: float | None = None
     throughput_ratio: float | None = None  # combined prefill+decode at p=1024 / n=3072
+    prefill_flops_ratio: float | None = None  # full T_CTX prefill forward FLOPs vs Standard
 
     @property
     def downstream_avg(self) -> float | None:
@@ -97,6 +100,42 @@ class TableRow:
 
 
 METHODS = MAIN_METHOD_SPECS
+
+
+# The paper defines a macro per method (\Standard, \Twomem, ...) so the names typeset
+# identically everywhere. Emit those rather than the plain-text ``method.label``, so the
+# generated .tex is drop-in.
+METHOD_LATEX_MACRO = {
+    "standard": r"\Standard",
+    "two_x_memory": r"\Twomem",
+    "delayed_state": r"\DelayedState",
+    "sps": r"\SPS",
+}
+
+
+def method_latex_name(method: MainMethodSpec) -> str:
+    return METHOD_LATEX_MACRO.get(method.key, method.label)
+
+
+def prefill_flops_ratio(scale: str, method: MainMethodSpec) -> float | None:
+    """Forward FLOPs for a full ``T_CTX``-token prefill, relative to Standard at the same size.
+
+    A full prefill costs ``forward_flops_per_token * T_CTX``, and that factor cancels in the
+    ratio, so this is the per-token forward-FLOP ratio. It comes from ``plotting.flops`` -- the
+    same accounting behind every FLOPs axis in the figures -- so the table and the
+    loss-vs-compute figure cannot disagree.
+
+    NB: ``delayed_state`` and ``sps`` are identical here. Both run one pass over the interleaved
+    2T sequence with the same sliding window, so the FLOP accounting genuinely does not
+    distinguish them; the identical column entries are correct, not a bug.
+    """
+    dims = SIZE_DIMS.get(scale)
+    if dims is None:
+        return None
+    try:
+        return forward_flops_per_token(method.key, *dims) / forward_flops_per_token("standard", *dims)
+    except ValueError:  # a method key plotting.flops does not model
+        return None
 
 
 def method_for_key(method_key: str) -> MainMethodSpec:
@@ -119,7 +158,11 @@ def run_name_for(scale: str, method: MainMethodSpec) -> str:
 
 
 def run_name_candidates(scale: str, method: MainMethodSpec) -> list[str]:
-    """The run name for this scale/method."""
+    """The run names to try for this scale/method.
+
+    Used as both the training run's ``displayName`` filter and the ``group`` filter for that
+    run's eval runs, so both lookups stay in step.
+    """
     return [run_name_for(scale, method)]
 
 
@@ -767,6 +810,7 @@ def collect_table_rows(
                     nll=nll_values,
                     memory_ratio=memory_ratio,
                     throughput_ratio=throughput_ratio,
+                    prefill_flops_ratio=prefill_flops_ratio(scale, method),
                 )
             )
     return rows
@@ -818,7 +862,7 @@ def _render_size_block(
         method = row.method
         if method.key == "sps":
             lines.append(r"        \rowcolor{winrow}")
-        cells = " & ".join([method.label, *cells_by_method.get(method.key, [])])
+        cells = " & ".join([method_latex_name(method), *cells_by_method.get(method.key, [])])
         lines.append(f"         & {cells} \\\\")
     return lines
 
@@ -875,6 +919,13 @@ def render_latex_table(rows: list[TableRow], *, scales: Iterable[str] | None = N
         [
             r"        \bottomrule",
             r"    \end{tabular}",
+            r"    \vspace*{2em}",
+            r"    \caption{\textbf{Per-corpus and per-benchmark expansion of the main results in "
+            r"\autoref{tab:main-compact}.} Per-corpus held-out NLL on four out-of-distribution "
+            r"corpora (WikiText, C4, Pile-Books3, GovReport) and per-benchmark zero-shot accuracy "
+            r"on five standard tasks (ARC-Easy, HellaSwag, PIQA, SciQ, LAMBADA), averaged into "
+            r"Corpus NLL and Task Accuracy in the main text. \textbf{Bold} marks the best per "
+            r"column within each size; \SPS rows are shaded.}",
             r"    \label{tab:main-full}",
             r"\end{table}",
         ]
@@ -892,13 +943,14 @@ def _compact_metric_values(row: TableRow) -> list[float | None]:
         row.downstream_avg,
         row.throughput_ratio,
         row.memory_ratio,
+        row.prefill_flops_ratio,
     ]
 
 
 def _compact_higher_is_better() -> list[bool]:
     # FW-E (lower better), Corpus NLL (lower), Task Acc (higher),
-    # Throughput (higher), Memory (lower).
-    return [False, False, True, True, False]
+    # Throughput (higher), Memory (lower), Prefill FLOPs (lower).
+    return [False, False, True, True, False, False]
 
 
 def _format_compact_cell(
@@ -1098,23 +1150,24 @@ def render_latex_table_compact(
         r"    \begin{tabular}{@{}c l",
         r"        S[table-format=1.3]",
         r"        S[table-format=1.3] S[table-format=2.1]",
-        r"        S[table-format=1.2] S[table-format=1.2]@{}}",
+        r"        S[table-format=1.2] S[table-format=1.2] S[table-format=1.2]@{}}",
         r"        \toprule",
         r"        & & {\textsc{Validation Loss}}",
         r"        & \multicolumn{2}{c}{\textsc{Generalization}}",
-        r"        & \multicolumn{2}{c}{\textsc{Inference Efficiency}} \\",
-        r"        \cmidrule(lr){3-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}",
+        r"        & \multicolumn{3}{c}{\textsc{Inference Efficiency}} \\",
+        r"        \cmidrule(lr){3-3} \cmidrule(lr){4-5} \cmidrule(lr){6-8}",
         r"        Size & Method",
         r"        & {FineWeb-Edu ($\downarrow$)}",
         r"        & {Corpus NLL ($\downarrow$)}",
-        r"        & {Task Accuracy (\%, $\uparrow$)}",
+        r"        & {Task Acc. (\%, $\uparrow$)}",
         r"        & {Throughput ($\times$, $\uparrow$)}",
-        r"        & {Peak Memory ($\times$, $\downarrow$)} \\",
+        r"        & {Peak Mem. ($\times$, $\downarrow$)}",
+        r"        & {FLOPs ($\times$, $\downarrow$)} \\",
         r"        \midrule",
     ]
 
     inter_size_separator = (
-        r"\arrayrulecolor{groupline}\cmidrule[0.3pt](l{2pt}r{2pt}){1-7}\arrayrulecolor{black}"
+        r"\arrayrulecolor{groupline}\cmidrule[0.3pt](l{2pt}r{2pt}){1-8}\arrayrulecolor{black}"
     )
     rendered_scale_count = 0
     for scale in selected_scales:
@@ -1143,6 +1196,15 @@ def render_latex_table_compact(
             r"        \bottomrule",
             r"    \end{tabular}%",
             r"    }",
+            r"    \vspace*{2em}",
+            r"    \caption{\textbf{\SPS outperforms all baselines on quality while remaining "
+            r"comparable to \Standard in memory and throughput.} Main results across XS--XL. "
+            r"\textbf{Bold} marks the best per column within each size; \SPS rows are shaded. "
+            r"Task accuracy averages 5 zero-shot benchmarks; Corpus NLL averages 4 corpora. "
+            r"Throughput is end-to-end tokens/sec for a combined prefill 1k + decode 3k workload "
+            r"at batch size 16 relative to \Standard on H100; Peak Memory is the ratio of peak "
+            r"GPU memory used during decode. FLOPs is forward FLOPs for a full 4096-token "
+            r"prefill relative to \Standard.}",
             r"    \label{tab:main-compact}",
             r"\end{table}",
         ]
@@ -1153,7 +1215,7 @@ def render_latex_table_compact(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entity", default=os.environ.get("WANDB_ENTITY"), help="W&B entity")
-    parser.add_argument("--project", default="pretraining_compression", help="W&B project")
+    parser.add_argument("--project", default=DEFAULT_WANDB_PROJECT, help="W&B project")
     parser.add_argument("--scales", nargs="+", default=list(DEFAULT_SCALES), choices=DEFAULT_SCALES)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -230,6 +231,12 @@ def windows_for_scale(scale: str, windows_override: Iterable[int] | None = None)
 
 def _warn(message: str) -> None:
     print(f"WARNING: {message}")
+
+
+# Default W&B project for every script that reads runs. Matches `conf/logging/default.yaml`,
+# so a clone that trains with the shipped recipes finds its own runs with no flags. The entity
+# is never defaulted -- it is always the user's own ($WANDB_ENTITY or --entity).
+DEFAULT_WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "sps")
 
 
 def _candidate_display_names(spec: RunSpec) -> list[str]:

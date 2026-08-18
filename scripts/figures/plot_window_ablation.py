@@ -50,6 +50,7 @@ from plotting.style import (
     sc,
 )
 from plotting.wandb_runs import (
+    DEFAULT_WANDB_PROJECT,
     USABLE_RUN_STATES,
     FinalPoint,
     ResolvedRun,
@@ -481,7 +482,7 @@ def write_csv(points: list[FinalPoint], csv_path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entity", default=os.environ.get("WANDB_ENTITY"))
-    parser.add_argument("--project", default="pretraining_compression")
+    parser.add_argument("--project", default=DEFAULT_WANDB_PROJECT)
     parser.add_argument("--scales", nargs="+", default=list(DEFAULT_SCALES))
     parser.add_argument(
         "--windows",

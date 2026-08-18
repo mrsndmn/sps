@@ -44,6 +44,7 @@ from matplotlib.lines import Line2D
 # is importable via the installed ``src`` package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tables"))
 
+from plotting.wandb_runs import DEFAULT_WANDB_PROJECT  # noqa: E402
 from plotting.style import (  # noqa: E402
     COLORBLIND_METHOD_COLORS,
     LEGEND_TEXT_COLOR,
@@ -311,7 +312,7 @@ def write_csv(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entity", default=os.environ.get("WANDB_ENTITY"))
-    parser.add_argument("--project", default="pretraining_compression")
+    parser.add_argument("--project", default=DEFAULT_WANDB_PROJECT)
     parser.add_argument("--scales", nargs="+", default=list(DEFAULT_SCALES))
     parser.add_argument(
         "--output",

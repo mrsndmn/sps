@@ -55,7 +55,7 @@ def test_default_wandb_dir_from_repo_config_expands_system_data_root(tmp_path):
     (repo_root / "conf" / "system").mkdir(parents=True)
     (repo_root / "conf" / "logging" / "default.yaml").write_text(
         "wandb_log: true\n"
-        "wandb_project: pretraining_compression\n"
+        "wandb_project: sps\n"
         "wandb_entity: null\n"
         "wandb_dir: ${system.data_root}/wandb\n"
     )

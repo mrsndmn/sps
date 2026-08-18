@@ -43,6 +43,7 @@ import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter, MultipleLocator
 
+from plotting.wandb_runs import DEFAULT_WANDB_PROJECT
 from plotting.style import (
     COLORBLIND_METHOD_COLORS,
     LEGEND_TEXT_COLOR,
@@ -66,7 +67,7 @@ SEED_SUFFIXES: tuple[str, ...] = ("", "_seed0", "_seed1")
 # or the whole WANDB_PATH) to point this at your own runs.
 WANDB_PATH = os.environ.get(
     "WANDB_PATH",
-    f"{os.environ.get('WANDB_ENTITY', '')}/{os.environ.get('WANDB_PROJECT', 'pretraining_compression')}",
+    f"{os.environ.get('WANDB_ENTITY', '')}/{DEFAULT_WANDB_PROJECT}",
 )
 METRIC_KEY = "val/token_nll"
 

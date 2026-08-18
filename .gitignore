@@ -29,8 +29,16 @@ htmlcov/
 *.swp
 .idea/
 .vscode/
+.claude/
 
 # Run outputs (not part of the release)
 outputs/
 wandb/
 *.log
+
+# Figure inputs/exports: data, not code. The tracked figures are the rendered PNG/PDF only;
+# the numbers behind them (W&B pull caches, per-point CSVs, run manifests) are regenerated
+# from your own runs by the figure scripts.
+figures/*.csv
+figures/*_cache.json
+figures/loss_vs_compute_manifest.txt

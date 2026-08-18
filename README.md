@@ -100,6 +100,22 @@ uv run python scripts/evaluate.py +experiment=s_sps_w64_20b +checkpoint=final sy
   Figure 4, and — for Figure 5 — `plot_gradient_params.py` (the future/present gradient-ratio
   panel) and `plot_persistent_window_nll.py` (the persistent-window Δℓ panel)).
   Figures are written to `figures/`.
+- **Architecture schematics** — `plot_attention_masks.py` draws the attention mask and the
+  prediction slot of each variant. It is the one figure script that needs no data and no W&B
+  access: the masks follow from the architecture, so it renders from a bare clone.
+- **Compute-matched comparisons** — `plot_loss_vs_compute.py` plots pre-decay validation NLL
+  against *training FLOPs* with a per-architecture compute-optimal frontier, and
+  `plot_validation_nll_history_wandb.py --x-axis combined-flops` renders the FLOPs-axis variant
+  of the validation-history figure. Both take their FLOP counts from
+  [`src/plotting/flops.py`](src/plotting/flops.py), the term-by-term (DeepMind-convention)
+  per-architecture accounting used everywhere training FLOPs appear on an axis.
+- **Multi-token-ahead probes** — `scripts/analysis/multitoken_head_nll.py` freezes one of your
+  trained checkpoints and trains one linear LM head per look-ahead `k ∈ 1..8` per stream,
+  measuring how far ahead each stream predicts. It takes the same
+  `--spec kind:label:/path/to/checkpoint.pt` as the other analyses;
+  `scripts/analysis/run_multitoken_head_nll.sh` submits the `(scale × variant)` grid (one GPU
+  per task, resolving checkpoints under `OUT_ROOT` and skipping pairs it cannot find) and
+  merges the per-run JSONs, and `scripts/figures/plot_multitoken_head_nll.py` renders the panel.
 - **Tables** — `scripts/tables/export_main_results_table.py` produces the main results
   table in two forms: the compact headline (validation loss, generalization, and
   inference-efficiency ratios; `tab:main-compact`) and its per-corpus / per-benchmark
@@ -107,6 +123,23 @@ uv run python scripts/evaluate.py +experiment=s_sps_w64_20b +checkpoint=final sy
 - **Inference-efficiency benchmarks** — `scripts/benchmark/`; see
   [`scripts/benchmark/REPRODUCE.md`](scripts/benchmark/REPRODUCE.md) for the throughput /
   peak-memory measurement protocol.
+
+### Figure data
+
+Every figure is produced from artifacts this repository generates — nothing is downloaded.
+There are two kinds of input:
+
+- **W&B history.** The validation-history, accuracy-gain, window-ablation, seed-variance and
+  loss-vs-compute figures read your own runs. They take `--entity` / `--project` and default to
+  `$WANDB_ENTITY` and the project in `conf/logging/default.yaml`, so runs trained with the
+  shipped recipes (each sets `wandb_run_name: ${experiment.name}`) resolve with no flags.
+  `plot_loss_vs_compute.py` caches its pull to JSON, so re-renders need no network.
+- **Local analysis outputs.** The Δ-NLL, gradient-ratio and multi-token-probe figures read
+  `outputs/…` trees written by the corresponding `scripts/analysis/run_*.sh` sweeps, which
+  read the `.pt` checkpoints your training runs wrote.
+
+Figures render with the LaTeX text engine to match the paper's Times; a host without a `latex`
+binary falls back to a serif approximation instead of failing.
 
 ## Repository layout
 

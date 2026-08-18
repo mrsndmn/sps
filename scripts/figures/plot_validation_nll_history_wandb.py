@@ -25,16 +25,24 @@ matplotlib.rcParams.update(
             "Times",
             "Nimbus Roman",
             "Liberation Serif",
+            # STIXGeneral = Times-metric fallback for hosts with no LaTeX and no Times;
+            # before DejaVu Serif so it wins there. Ignored under usetex; real Times wins if present.
+            "STIXGeneral",
             "DejaVu Serif",
             "serif",
         ],
+        # Times-metric math so $10^n$ tick labels render in a serif face matching the body text
+        # when usetex is off (no LaTeX install). Ignored under usetex, so a no-op for the
+        # paper's latex renders. Matches figure_common / the other figures.
+        "mathtext.fontset": "stix",
     }
 )
 import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from matplotlib.ticker import FixedLocator, FormatStrFormatter, FuncFormatter, LinearLocator, MaxNLocator
+from matplotlib.ticker import FixedLocator, FormatStrFormatter, FuncFormatter, LinearLocator, LogLocator, MaxNLocator
 
+from plotting.flops import training_flops_per_token
 from plotting.methods import (
     MainMethodSpec,
     main_method_for_family_window,
@@ -61,10 +69,11 @@ from plotting.style import (
     _apply_axes_background,
     _billions_formatter,
     bf,
-    enable_latex,
+    enable_latex_if_available,
     sc,
 )
 from plotting.wandb_runs import (
+    DEFAULT_WANDB_PROJECT,
     ResolvedRun,
     RunSpec,
     USABLE_RUN_STATES,
@@ -86,6 +95,9 @@ from plotting.legends import (
 Y_PADDING_FRACTION = 0.12
 MIN_Y_SPAN = 0.02
 HISTORY_X_MIN_FRACTION = 0.10
+# FLOPs axis (log-friendly): start well below the max so a log x-axis shows the full
+# pre-decay range (~2.8 decades) instead of only the final decade.
+FLOPS_X_MIN_FRACTION = 0.0015
 Y_BOUND_TAIL_FRACTION = 0.35
 X_PADDING_FACTOR = 1.02
 Y_LIMIT_ROUNDING_INTERVAL = 0.01
@@ -138,8 +150,11 @@ STANDARD_2X_TOKENS_SIZE_SUFFIX_BY_SCALE = {
 # standard matches SPS instead of running off the chart.
 STANDARD_2X_TOKENS_STOP_AT_SPS_FINAL_SCALES = frozenset({"xl"})
 STANDARD_2X_TOKENS_STOP_AT_SPS_METHOD_KEY = "sps"
-STANDARD_2X_TOKENS_COLOR = "#666666"
-STANDARD_2X_TOKENS_LINESTYLE = "-"
+STANDARD_2X_TOKENS_COLOR = "#000000"       # black dots (was a grey line) in the combined plots
+STANDARD_2X_TOKENS_LINESTYLE = "none"
+STANDARD_2X_TOKENS_MARKER = "o"
+STANDARD_2X_TOKENS_MARKERSIZE = 5.0
+STANDARD_2X_TOKENS_MARKER_TARGET_COUNT = 30  # ~this many evenly-spaced dots per panel
 # Also accept "crashed": the xl 100b more-tokens run crashed (past the displayed
 # range), but its logged history covers the plotted window, so we still want its
 # curve. _latest_run_with_states prefers finished/running, so a crashed run is only
@@ -187,7 +202,9 @@ COMBINED_Y_AXIS_LABEL = "Validation NLL"
 X_AXIS_TOKENS = "tokens"
 X_AXIS_GPU_HOURS = "gpu-hours"
 X_AXIS_COMBINED = "combined"
-X_AXIS_CHOICES = (X_AXIS_TOKENS, X_AXIS_GPU_HOURS, X_AXIS_COMBINED)
+X_AXIS_FLOPS = "flops"                     # per-panel training FLOPs (pre-decay); used internally
+X_AXIS_COMBINED_FLOPS = "combined-flops"   # 2x5 grid: tokens (top row) / training FLOPs (bottom row)
+X_AXIS_CHOICES = (X_AXIS_TOKENS, X_AXIS_GPU_HOURS, X_AXIS_COMBINED, X_AXIS_COMBINED_FLOPS)
 DEFAULT_GPU_HOURS_REFERENCE_INTERVAL = 1
 GPU_HOURS_PER_TOKEN_PRECISION = 12
 TIMING_HISTORY_KEYS = ["_step", "_timestamp", "_runtime", "tokens_seen", TRAINING_METRIC_KEY]
@@ -217,8 +234,12 @@ class HistoryResolvedRun:
 
 
 def _default_output_path(x_axis: str = X_AXIS_TOKENS) -> Path:
+    # The two "combined" figures are named for their BOTTOM row (the top row is training
+    # tokens in both): GPU-hours -> _gpu, training FLOPs -> _flops.
     if x_axis == X_AXIS_COMBINED:
-        return _repo_root() / "figures" / "history_combined.png"
+        return _repo_root() / "figures" / "history_combined_gpu.png"
+    if x_axis == X_AXIS_COMBINED_FLOPS:
+        return _repo_root() / "figures" / "history_combined_flops.png"
     if x_axis == X_AXIS_GPU_HOURS:
         return _repo_root() / "figures" / "history_given_gpu.png"
     return _repo_root() / "figures" / "history.png"
@@ -604,6 +625,43 @@ def _with_gpu_hours(
     )
 
 
+def _without_gpu_hours(
+    *,
+    spec: RunSpec,
+    run_id: str,
+    created_at: str,
+    tokens_seen: list[int],
+    metric_values: list[float],
+    timestamps: list[float | None],
+    runtimes: list[float | None],
+    gpu_count: int | None = None,
+) -> HistoryResolvedRun:
+    """A resolved run that carries no GPU-hour calibration.
+
+    FLOPs/token axes never display GPU hours, so a missing/flaky W&B
+    ``metadata.gpu_count`` should not drop the run. ``gpu_hours`` is None-filled
+    to the history length so ``write_csv``'s strict zip still lines up (the
+    column renders empty, i.e. "unknown", rather than a fabricated value)."""
+    return HistoryResolvedRun(
+        spec=spec,
+        run_id=run_id,
+        created_at=created_at,
+        tokens_seen=tokens_seen,
+        metric_values=metric_values,
+        timestamps=timestamps,
+        runtimes=runtimes,
+        gpu_count=gpu_count,
+        gpu_hours=[None] * len(tokens_seen),
+        calibration_start_index=0,
+        calibration_end_index=0,
+        calibration_start_tokens=0,
+        calibration_end_tokens=0,
+        calibration_seconds=float("nan"),
+        gpu_hours_per_token=float("nan"),
+        calibration_mode=CALIBRATION_MODE_SINGLE_RATE,
+    )
+
+
 def resolve_history_runs_with_gpu_hours(
     api,
     *,
@@ -614,6 +672,7 @@ def resolve_history_runs_with_gpu_hours(
     families: Iterable[str] = DEFAULT_FAMILIES,
     reference_interval: int = DEFAULT_GPU_HOURS_REFERENCE_INTERVAL,
     default_gpu_count: int | None = None,
+    require_gpu_hours: bool = True,
 ) -> list[HistoryResolvedRun]:
     resolved: list[HistoryResolvedRun] = []
     for scale in scales:
@@ -629,15 +688,29 @@ def resolve_history_runs_with_gpu_hours(
                     f"{TRAINING_METRIC_KEY!r} history"
                 )
                 continue
+            run_id = str(getattr(run, "id"))
             gpu_count = _metadata_gpu_count(run, default_gpu_count=default_gpu_count)
             if gpu_count is None:
-                _warn(
-                    f"skipping displayName={spec.display_name!r}; missing positive W&B metadata.gpu_count "
-                    "and no --default-gpu-count was provided"
+                if require_gpu_hours:
+                    _warn(
+                        f"skipping displayName={spec.display_name!r}; missing positive W&B "
+                        "metadata.gpu_count and no --default-gpu-count was provided"
+                    )
+                    continue
+                # FLOPs axis: keep the run without GPU-hour calibration.
+                resolved.append(
+                    _without_gpu_hours(
+                        spec=spec,
+                        run_id=run_id,
+                        created_at=str(getattr(run, "created_at")),
+                        tokens_seen=tokens_seen,
+                        metric_values=metric_values,
+                        timestamps=timestamps,
+                        runtimes=runtimes,
+                    )
                 )
                 continue
             try:
-                run_id = str(getattr(run, "id"))
                 target_started_at_epoch = _metadata_started_at_epoch(run)
                 resolved_run = _with_gpu_hours(
                     spec=spec,
@@ -653,7 +726,21 @@ def resolve_history_runs_with_gpu_hours(
                 )
                 resolved.append(resolved_run)
             except ValueError as exc:
-                _warn(f"skipping displayName={spec.display_name!r}; {exc}")
+                if not require_gpu_hours:
+                    resolved.append(
+                        _without_gpu_hours(
+                            spec=spec,
+                            run_id=run_id,
+                            created_at=str(getattr(run, "created_at")),
+                            tokens_seen=tokens_seen,
+                            metric_values=metric_values,
+                            timestamps=timestamps,
+                            runtimes=runtimes,
+                            gpu_count=gpu_count,
+                        )
+                    )
+                else:
+                    _warn(f"skipping displayName={spec.display_name!r}; {exc}")
     return resolved
 
 
@@ -870,18 +957,16 @@ def _standard_2x_tokens_line_kwargs(
     linewidth_multiplier: float = 1.0,
     alpha: float = HISTORY_REAL_LINE_ALPHA,
 ) -> dict[str, object]:
+    # Drawn as black dots (markers, no connecting line) rather than a grey line.
     return {
         "color": STANDARD_2X_TOKENS_COLOR,
-        "linewidth": FULL_ATTENTION_LINEWIDTH * HISTORY_LINEWIDTH_SCALE * linewidth_multiplier,
         "linestyle": STANDARD_2X_TOKENS_LINESTYLE,
+        "marker": STANDARD_2X_TOKENS_MARKER,
+        "markersize": STANDARD_2X_TOKENS_MARKERSIZE * linewidth_multiplier,
         "alpha": alpha,
         "label": sc(STANDARD_2X_TOKENS_LABEL),
         "zorder": STANDARD_HISTORY_ZORDER,
     }
-
-
-def _standard_2x_tokens_stroke_width(*, linewidth_multiplier: float = 1.0) -> float:
-    return FULL_ATTENTION_STROKE_LINEWIDTH * HISTORY_STROKE_LINEWIDTH_SCALE * linewidth_multiplier
 
 
 def _smooth_metric_values(values: list[float], sigma_points: float) -> list[float]:
@@ -914,6 +999,35 @@ def _uses_gpu_hours_axis(x_axis: str) -> bool:
     return x_axis in {X_AXIS_GPU_HOURS, X_AXIS_COMBINED}
 
 
+def _uses_flops_axis(x_axis: str) -> bool:
+    return x_axis in {X_AXIS_FLOPS, X_AXIS_COMBINED_FLOPS}
+
+
+def _needs_gpu_hours_resolution(x_axis: str) -> bool:
+    # combined-flops reuses the gpu-hours resolution path purely to pull the same set of
+    # runs (including the "Standard (More Tokens)" reference); the resolved gpu_hours are
+    # simply unused because FLOPs are computed from tokens_seen.
+    return _uses_gpu_hours_axis(x_axis) or x_axis == X_AXIS_COMBINED_FLOPS
+
+
+def _arch_for_run(run: "HistoryRun") -> str:
+    """Map a run's (family, window) to a FLOP-accounting architecture key (see plotting.flops).
+
+    Families are the clean names carried on RunSpec (the resolver builds specs from
+    DEFAULT_FAMILIES = full_attention/delayed_state/sps)."""
+    family = getattr(run.spec, "family", None)
+    window = getattr(run.spec, "window", None)
+    if family in ("full_attention", STANDARD_2X_TOKENS_FAMILY):
+        return "standard"
+    if family == "delayed_state":
+        return "delayed_state"
+    if family == "sps":
+        if window is not None and int(window) >= 4096:
+            return "two_x_memory"
+        return "sps"
+    return "standard"
+
+
 def _draw_standard_2x_tokens_handoff_guide(x_axis: str) -> bool:
     return _uses_gpu_hours_axis(x_axis)
 
@@ -940,6 +1054,8 @@ def _standard_2x_tokens_handoff_guide_kwargs() -> dict[str, object]:
 def _plot_x_min(max_x: float, *, x_axis: str) -> float:
     if x_axis == X_AXIS_TOKENS:
         return 0.0
+    if _uses_flops_axis(x_axis):
+        return max(0.0, float(max_x) * FLOPS_X_MIN_FRACTION)
     return max(0.0, float(max_x) * HISTORY_X_MIN_FRACTION)
 
 
@@ -1041,12 +1157,15 @@ def _truncate_line_at_target_nll(
 
 
 def _is_pre_decay_only_axis(x_axis: str) -> bool:
-    return _uses_gpu_hours_axis(x_axis)
+    return _uses_gpu_hours_axis(x_axis) or _uses_flops_axis(x_axis)
 
 
 def _run_x_values(run: HistoryRun, *, x_axis: str) -> list[float]:
     if x_axis == X_AXIS_TOKENS:
         return [float(tokens_seen) for tokens_seen in run.tokens_seen]
+    if _uses_flops_axis(x_axis):
+        per_token = training_flops_per_token(_arch_for_run(run), run.spec.scale)
+        return [per_token * float(tokens_seen) for tokens_seen in run.tokens_seen]
     if _uses_gpu_hours_axis(x_axis):
         gpu_hours = getattr(run, "gpu_hours", None)
         if gpu_hours is None:
@@ -1094,6 +1213,58 @@ def _gpu_hours_formatter(value: float, _pos: int) -> str:
     return f"{value:g}"
 
 
+def _flops_formatter(value: float, _pos: int) -> str:
+    """Tick label for the training-FLOPs axis: '$10^{n}$' or '$m{\\times}10^{n}$'.
+    Works on both log and linear scales (mathtext under usetex)."""
+    if value <= 0:
+        return ""
+    exp = int(math.floor(math.log10(value)))
+    mant = value / (10.0 ** exp)
+    label = f"{mant:.1f}".rstrip("0").rstrip(".")
+    if label in ("1", ""):
+        return rf"$10^{{{exp}}}$"
+    return rf"${label}{{\times}}10^{{{exp}}}$"
+
+
+def _linear_flops_ticks(vmin: float, vmax: float, *, max_ticks: int = 3) -> list[float]:
+    """Round tick values for a linear FLOPs axis, aiming for 2-3 per panel.
+
+    ``MaxNLocator`` ignores ``nbins`` once a ``steps`` whitelist is given and
+    emits ~5 colliding ticks on the wider (M/L/XL) panels, so pick the ticks
+    ourselves: scan 1/2/5-mantissa steps coarse->fine and take the finest step
+    that still fits the tick budget (relaxing the budget by one only if the
+    tighter budget cannot land at least two ticks)."""
+    if vmax <= 0:
+        return []
+    lo = max(vmin, 0.0)
+    top_exp = math.floor(math.log10(vmax))
+    steps = sorted(
+        mantissa * 10.0 ** exp
+        for exp in (top_exp - 1, top_exp)
+        for mantissa in (1.0, 2.0, 5.0)
+    )
+
+    def _ticks_for(step: float) -> list[float]:
+        return [
+            k * step
+            for k in range(1, int(vmax / step) + 1)
+            if lo <= k * step <= vmax * 1.0001
+        ]
+
+    chosen: list[float] = []
+    for budget in (max_ticks, max_ticks + 1):
+        chosen = []
+        for step in reversed(steps):  # coarse -> fine
+            candidate = _ticks_for(step)
+            if len(candidate) > budget:
+                break
+            if candidate:
+                chosen = candidate
+        if len(chosen) >= 2:
+            return chosen
+    return chosen
+
+
 def _bounds_series(
     run: HistoryRun,
     scale: str,
@@ -1111,7 +1282,7 @@ def _bounds_series(
         x_values
         and sps_match_target is not None
         and _is_standard_2x_tokens_run(run)
-        and _uses_gpu_hours_axis(x_axis)
+        and _is_pre_decay_only_axis(x_axis)
     ):
         smoothed = _smooth_metric_values(metric_values, smooth_sigma_points)
         x_values, metric_values = _truncate_line_at_target_nll(
@@ -1211,6 +1382,10 @@ def _nice_tick_interval(span: float, *, max_intervals: int = GPU_HOURS_X_MAJOR_T
 def _history_x_major_locator(x_axis: str):
     if x_axis == X_AXIS_TOKENS:
         return FixedLocator(HISTORY_TOKEN_X_MAJOR_TICKS)
+    if _uses_flops_axis(x_axis):
+        # Assumes a log x-scale (the primary FLOPs variant); the linear variant overrides
+        # this with a MaxNLocator in _render_combined_plot.
+        return LogLocator(base=10.0)
     if _uses_gpu_hours_axis(x_axis):
         return MaxNLocator(
             nbins=GPU_HOURS_X_MAJOR_TICK_MAX_INTERVALS,
@@ -1241,13 +1416,15 @@ def _style_history_ticks(ax, *, labelsize: int = HISTORY_AXIS_TICK_LABEL_SIZE) -
 def _x_axis_label(x_axis: str) -> str:
     if x_axis == X_AXIS_TOKENS:
         return "Training Tokens"
+    if _uses_flops_axis(x_axis):
+        return "Training FLOPs"
     if _uses_gpu_hours_axis(x_axis):
         return "GPU Hours"
     raise ValueError(f"Unsupported x-axis {x_axis!r}; expected one of {X_AXIS_CHOICES!r}")
 
 
 def _y_axis_label(x_axis: str) -> str:
-    if _uses_gpu_hours_axis(x_axis):
+    if _is_pre_decay_only_axis(x_axis):
         return "Pre-Decay Validation NLL"
     return TRAINING_METRIC_LABEL
 
@@ -1255,6 +1432,8 @@ def _y_axis_label(x_axis: str) -> str:
 def _x_axis_formatter(x_axis: str):
     if x_axis == X_AXIS_TOKENS:
         return FuncFormatter(_billions_formatter)
+    if _uses_flops_axis(x_axis):
+        return FuncFormatter(_flops_formatter)
     if _uses_gpu_hours_axis(x_axis):
         return FuncFormatter(_gpu_hours_formatter)
     raise ValueError(f"Unsupported x-axis {x_axis!r}; expected one of {X_AXIS_CHOICES!r}")
@@ -1314,6 +1493,9 @@ def _legend_groups_for_lines(
                     title=sc(STANDARD_2X_TOKENS_LABEL),
                     entries=[LegendEntry(line_key=STANDARD_2X_TOKENS_KEY, legend_label="")],
                     ncol=1,
+                    # Marker-only series: show several dots so the legend reads as a
+                    # dotted trajectory rather than a single point.
+                    numpoints=3,
                 )
             )
     if PRE_DECAY_MATCH_GUIDE_KEY in plotted_lines:
@@ -1342,7 +1524,7 @@ def _history_panel_runs(
     return [
         run
         for run in _scale_runs(resolved_runs, scale)
-        if (_is_standard_2x_tokens_run(run) and _uses_gpu_hours_axis(x_axis))
+        if (_is_standard_2x_tokens_run(run) and _is_pre_decay_only_axis(x_axis))
         or (
             (method := main_method_for_family_window(run.spec.family, run.spec.window)) is not None
             and method.key in selected_method_keys
@@ -1408,7 +1590,7 @@ def _draw_history_panel(
     standard_2x_tokens_runs: list[HistoryRun] = []
     for run in panel_runs:
         if _is_standard_2x_tokens_run(run):
-            if _uses_gpu_hours_axis(x_axis):
+            if _is_pre_decay_only_axis(x_axis):
                 standard_2x_tokens_runs.append(run)
             continue
         method = main_method_for_family_window(run.spec.family, run.spec.window)
@@ -1434,7 +1616,7 @@ def _draw_history_panel(
             x_values
             and sps_match_target is not None
             and _is_standard_2x_tokens_run(run)
-            and _uses_gpu_hours_axis(x_axis)
+            and _is_pre_decay_only_axis(x_axis)
         ):
             metric_values = _smooth_metric_values(metric_values, smooth_sigma_points)
             x_values, _ = _truncate_line_at_target_nll(
@@ -1527,19 +1709,15 @@ def _draw_history_panel(
             linewidth_multiplier=line_width_multiplier,
             alpha=line_alpha,
         )
+        # Black dots (no connecting line): show ~STANDARD_2X_TOKENS_MARKER_TARGET_COUNT evenly
+        # spaced markers with a thin white edge so they stay legible over the coloured lines.
+        if len(x_values) > STANDARD_2X_TOKENS_MARKER_TARGET_COUNT:
+            line_kwargs["markevery"] = max(
+                1, len(x_values) // STANDARD_2X_TOKENS_MARKER_TARGET_COUNT
+            )
+        line_kwargs["markeredgecolor"] = "white"
+        line_kwargs["markeredgewidth"] = 0.8 * line_width_multiplier
         line, = ax.plot(x_values, metric_values, **line_kwargs)
-        line.set_path_effects(
-            [
-                path_effects.Stroke(
-                    linewidth=_standard_2x_tokens_stroke_width(
-                        linewidth_multiplier=line_width_multiplier,
-                    ),
-                    foreground="white",
-                    alpha=stroke_alpha,
-                ),
-                path_effects.Normal(),
-            ]
-        )
         plotted_lines.setdefault(STANDARD_2X_TOKENS_KEY, line)
 
     title_text = scale.upper() if title is None else title
@@ -1567,6 +1745,8 @@ def _render_combined_plot(
     selected_families: tuple[str, ...],
     selected_methods: list[MainMethodSpec],
     selected_method_keys: set[str],
+    bottom_x_axis: str = X_AXIS_GPU_HOURS,
+    bottom_x_scale: str = "linear",
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1611,14 +1791,15 @@ def _render_combined_plot(
             smooth_sigma_points=COMBINED_SMOOTH_SIGMA_POINTS,
             draw_handoff_guide=True,
         )
+        bottom_ax = axes_by_row[1][col]
         _draw_history_panel(
-            axes_by_row[1][col],
+            bottom_ax,
             resolved_runs,
             scale=scale,
             selected_windows_override=selected_windows_override,
             selected_families=selected_families,
             selected_method_keys=selected_method_keys,
-            x_axis=X_AXIS_GPU_HOURS,
+            x_axis=bottom_x_axis,
             plotted_lines=plotted_lines,
             title="",
             title_fontsize=COMBINED_PANEL_TITLE_FONT_SIZE,
@@ -1630,6 +1811,26 @@ def _render_combined_plot(
             smooth_sigma_points=COMBINED_SMOOTH_SIGMA_POINTS,
             draw_handoff_guide=False,
         )
+        # The FLOPs bottom row can be shown on either a log or a linear x-scale.
+        if _uses_flops_axis(bottom_x_axis) and bottom_ax.has_data():
+            if bottom_x_scale == "log":
+                bottom_ax.set_xscale("log")
+                bottom_ax.xaxis.set_major_locator(LogLocator(base=10.0))
+            else:
+                # Narrow per-panel linear axes: 2-3 round ticks so the wide
+                # "m x 10^n" labels don't collide (MaxNLocator won't honor nbins
+                # here -- see _linear_flops_ticks).
+                x_lo, x_hi = bottom_ax.get_xlim()
+                linear_ticks = _linear_flops_ticks(x_lo, x_hi)
+                if linear_ticks:
+                    bottom_ax.xaxis.set_major_locator(FixedLocator(linear_ticks))
+                else:
+                    bottom_ax.xaxis.set_major_locator(
+                        MaxNLocator(nbins=3, steps=[1, 2, 5, 10], min_n_ticks=2)
+                    )
+            bottom_ax.xaxis.set_major_formatter(FuncFormatter(_flops_formatter))
+            bottom_ax.minorticks_off()
+            _style_history_ticks(bottom_ax, labelsize=COMBINED_AXIS_TICK_LABEL_SIZE)
 
     for col in range(len(selected_scales), 5):
         axes_by_row[0][col].set_visible(False)
@@ -1686,28 +1887,38 @@ def _render_combined_plot(
     fig.text(
         0.5,
         bottom_row_bottom - COMBINED_GPU_HOURS_X_LABEL_OFFSET,
-        bf(_x_axis_label(X_AXIS_GPU_HOURS)),
+        bf(_x_axis_label(bottom_x_axis)),
         ha="center",
         va="center",
         fontsize=COMBINED_AXIS_LABEL_FONT_SIZE,
         fontweight=AXIS_LABEL_FONT_WEIGHT,
         color=LEGEND_TEXT_COLOR,
     )
-    fig.text(
-        max(0.02, label_x),
-        0.5
-        * (
-            max(ax.get_position().y1 for ax in visible_top_axes)
-            + min(ax.get_position().y0 for ax in visible_bottom_axes)
-        ),
-        bf(COMBINED_Y_AXIS_LABEL),
-        ha="center",
-        va="center",
-        rotation="vertical",
-        fontsize=COMBINED_AXIS_LABEL_FONT_SIZE,
-        fontweight=AXIS_LABEL_FONT_WEIGHT,
-        color=LEGEND_TEXT_COLOR,
-    )
+    # One y label PER ROW, not one centred across both: the rows measure different things.
+    # The top row runs to the end of training (LR cool-down included); the bottom row is
+    # pre-decay only (_is_pre_decay_only_axis), because GPU-hours/FLOPs are only comparable
+    # across methods before the decay phase. A single shared label hid that difference and
+    # left the reader to guess why only one row carries the decay.
+    for row_axes, row_label in (
+        (visible_top_axes, COMBINED_Y_AXIS_LABEL),
+        (visible_bottom_axes, _y_axis_label(bottom_x_axis)),
+    ):
+        fig.text(
+            max(0.02, label_x),
+            0.5 * (
+                max(ax.get_position().y1 for ax in row_axes)
+                + min(ax.get_position().y0 for ax in row_axes)
+            ),
+            bf(row_label),
+            ha="center",
+            va="center",
+            rotation="vertical",
+            # The pre-decay label is ~1.7x longer than "Validation NLL" and has only one row
+            # of height to fit in, so step the size down when the text is long.
+            fontsize=COMBINED_AXIS_LABEL_FONT_SIZE * (0.78 if len(row_label) > 18 else 1.0),
+            fontweight=AXIS_LABEL_FONT_WEIGHT,
+            color=LEGEND_TEXT_COLOR,
+        )
     png_path, pdf_path = _paired_image_paths(output_path)
     png_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(png_path, dpi=180, bbox_inches="tight")
@@ -1723,7 +1934,8 @@ def render_plot(
     windows: Iterable[int] | None = None,
     families: Iterable[str] = DEFAULT_FAMILIES,
     x_axis: str = X_AXIS_TOKENS,
-) -> None:
+) -> list[Path]:
+    """Render the figure and return the base output path(s) written (one per variant)."""
     selected_scales = tuple(scales)
     selected_windows_override = None if windows is None else tuple(int(window) for window in windows)
     selected_families = tuple(families)
@@ -1744,7 +1956,23 @@ def render_plot(
             selected_methods=selected_methods,
             selected_method_keys=selected_method_keys,
         )
-        return
+        return [output_path]
+    if x_axis == X_AXIS_COMBINED_FLOPS:
+        # Tokens on top (as usual), training FLOPs on the bottom row, on a LINEAR x-scale.
+        # (A log variant exists in the git history as "<stem>_log"; the linear one is the
+        # figure we ship, so it is written to the unsuffixed stem.)
+        _render_combined_plot(
+            resolved_runs,
+            output_path,
+            selected_scales=selected_scales,
+            selected_windows_override=selected_windows_override,
+            selected_families=selected_families,
+            selected_methods=selected_methods,
+            selected_method_keys=selected_method_keys,
+            bottom_x_axis=X_AXIS_FLOPS,
+            bottom_x_scale="linear",
+        )
+        return [output_path]
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     fig = plt.figure(figsize=(22, 16))
@@ -1813,6 +2041,7 @@ def render_plot(
     fig.savefig(png_path, dpi=180, bbox_inches="tight")
     fig.savefig(pdf_path, bbox_inches="tight")
     plt.close(fig)
+    return [output_path]
 
 
 def _csv_float(value: object, *, precision: int = 8) -> str:
@@ -1904,7 +2133,7 @@ def write_csv(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entity", default=os.environ.get("WANDB_ENTITY"))
-    parser.add_argument("--project", default="pretraining_compression")
+    parser.add_argument("--project", default=DEFAULT_WANDB_PROJECT)
     parser.add_argument("--scales", nargs="+", default=list(DEFAULT_SCALES))
     parser.add_argument(
         "--windows",
@@ -1945,7 +2174,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    enable_latex()
+    # usetex (small-caps / bold TeX styling) needs a `latex` binary; without one the plot still
+    # renders, with small-caps/bold TeX styling degraded to plain serif text.
+    enable_latex_if_available()
     output_path = args.output or _default_output_path(args.x_axis)
     history_csv = args.history_csv or output_path.with_suffix(".csv")
     if args.gpu_hours_reference_interval < 0:
@@ -1959,10 +2190,14 @@ def main() -> None:
         raise RuntimeError("Expected the W&B package. Run this script with `uv run python ...`.")
 
     print(f"Using W&B states: {sorted(USABLE_RUN_STATES)}")
-    if _uses_gpu_hours_axis(args.x_axis):
+    if _needs_gpu_hours_resolution(args.x_axis):
         print(f"Using Standard (2x Tokens) W&B states: {sorted(STANDARD_2X_TOKENS_USABLE_RUN_STATES)}")
     api = wandb.Api()
-    if _uses_gpu_hours_axis(args.x_axis):
+    if _needs_gpu_hours_resolution(args.x_axis):
+        # FLOPs axes reuse this resolver only to pull the same run set (incl. the
+        # "Standard (More Tokens)" reference); they never display GPU hours, so a
+        # missing/flaky metadata.gpu_count must not drop runs.
+        require_gpu_hours = not _uses_flops_axis(args.x_axis)
         resolved_runs = resolve_history_runs_with_gpu_hours(
             api,
             entity=args.entity,
@@ -1972,6 +2207,7 @@ def main() -> None:
             families=args.families,
             reference_interval=args.gpu_hours_reference_interval,
             default_gpu_count=args.default_gpu_count,
+            require_gpu_hours=require_gpu_hours,
         )
         resolved_runs.extend(
             resolve_standard_2x_tokens_runs_with_gpu_hours(
@@ -1996,7 +2232,7 @@ def main() -> None:
         windows=args.windows,
         families=args.families,
     )
-    render_plot(
+    rendered_paths = render_plot(
         resolved_runs,
         output_path,
         scales=args.scales,
@@ -2010,8 +2246,9 @@ def main() -> None:
         for run in resolved_runs
     )
     print("Saved plots to:")
-    for path in _paired_image_paths(output_path):
-        print(f"  {path}")
+    for rendered in rendered_paths:
+        for path in _paired_image_paths(rendered):
+            print(f"  {path}")
     print(f"Saved history CSV to: {history_csv}")
     print(f"Resolved runs: {len(resolved_runs)}")
     print(f"Plotted history rows: {history_rows}")

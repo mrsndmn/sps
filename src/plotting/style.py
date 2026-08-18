@@ -7,6 +7,8 @@ selects its own backend and fonts before importing from ``plotting``.
 
 from __future__ import annotations
 
+import shutil
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -114,6 +116,19 @@ def enable_latex(preamble: str = LATEX_PREAMBLE) -> None:
     ``plotting.mpl_cache``) or usetex's cache cleanup races on NFS lock files.
     """
     plt.rcParams.update({"text.usetex": True, "text.latex.preamble": preamble})
+
+
+def enable_latex_if_available(preamble: str = LATEX_PREAMBLE) -> bool:
+    """Call ``enable_latex()`` when a ``latex`` binary is on PATH; otherwise warn and
+    leave usetex off, so the same script renders on hosts without a LaTeX install
+    (mathtext + the serif font stack) instead of crashing mid-render. Returns whether
+    usetex was enabled."""
+    if shutil.which("latex") is None:
+        print("[warn] 'latex' not on PATH -- rendering with the plain serif renderer "
+              "(usetex/small-caps disabled).")
+        return False
+    enable_latex(preamble)
+    return True
 
 
 def sc(label: str) -> str:

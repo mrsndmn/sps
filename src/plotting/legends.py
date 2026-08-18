@@ -16,7 +16,7 @@ STATE_PREDICTION_DECOUPLING_LABEL = "State-Prediction Decoupling"
 M_CLASSIC_LEGEND_GROUP_WIDTHS = {
     "Standard": 2.8,
     "Standard Attention": 4.9,
-    "Standard (More Tokens)": 6.1,
+    "Standard (More Tokens)": 8.0,
     "2x Memory": 3.6,
     "Delayed State": 4.4,
     "SPS": 2.0,
@@ -40,6 +40,9 @@ class LegendGroup:
     title: str
     entries: list[LegendEntry]
     ncol: int
+    # Markers drawn per handle. >1 renders a marker-only (dotted) series as several
+    # dots so it reads as a series in the legend, not a single stray point.
+    numpoints: int = 1
 
 
 # \textsc small caps render wider than the same text in mixed case, so the
@@ -114,6 +117,7 @@ def _render_m_classic_legend(
             frameon=False,
             fontsize=entry_fontsize,
             ncol=min(group.ncol, len(group.entries)),
+            numpoints=group.numpoints,
             columnspacing=1.6,
             handlelength=2.6,
             handletextpad=0.7,
