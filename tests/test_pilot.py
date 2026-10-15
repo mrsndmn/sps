@@ -87,6 +87,7 @@ def test_payload_quotes_staging_path():
     body = mlspace_launch.payload('train', 'sps example', Path('/tmp/path with spaces'), 'a', 'b')
     assert shlex.quote('/tmp/path with spaces') in body['script']
     assert '--filter ' + shlex.quote('sps example') in body['script']
+    assert '\n' not in body['script']
 
 
 def test_design_signature_tracks_inherited_configs(tmp_path, monkeypatch):

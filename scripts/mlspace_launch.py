@@ -154,7 +154,8 @@ def payload(phase, name, staged, author, nick):
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
-        script=f'set -eu\ncd {shlex.quote(str(staged))}\n' + shlex.join(command),
+        # MLSpace validates script as a single shell line (newlines rejected).
+        script=f'cd {shlex.quote(str(staged))} && ' + shlex.join(command),
         job_desc=f'sps-pilot {phase} {name} #{author} @{nick}',
         env_variables={'PYTHONPATH': f'{staged}:{staged}/src',
                        'HF_HOME': str(HF_HOME), 'PYTHONUNBUFFERED': '1',
