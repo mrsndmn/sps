@@ -10,10 +10,10 @@ Training function: `scripts.pilot_run.train`; experiment definitions and launch
 arguments live in `experiments.py` (`experiment_configs`).
 
 ## Results
-Data preparation and mask checks completed. Throughput probes failed before the
-first optimizer step because coarse chunk sharding left a distributed rank empty.
-The pilot sampler configuration and shared initial offset have been corrected;
-measured runtime estimates, training and evaluation remain pending.
+Data preparation, mask checks and both distributed throughput probes completed.
+Measured runtime forecasts fit the agreed training limit. Both main training jobs
+have been submitted; final quality comparisons and downstream evaluation remain
+pending. Runtime measurements and forecasts are saved in the preparation artifact.
 
 ## Conclusions
 Pending. A negative or inconclusive difference is a valid pilot outcome.
@@ -22,3 +22,4 @@ Pending. A negative or inconclusive difference is a valid pilot outcome.
 - 2026-10-15: Agreed pilot scope and added reproducible MLSpace launch paths.
 - 2026-10-15: Prepared reusable tokenized data; corrected pilot sampler coverage
   after the first distributed probe failed.
+- 2026-10-16: Completed throughput probes and submitted the paired training jobs.
