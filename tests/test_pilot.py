@@ -178,3 +178,39 @@ def test_lost_submission_response_blocks_retry_until_reconciled(tmp_path, monkey
     mlspace_launch.reconcile_intents({identity: job})
     assert not list((tmp_path / 'submission-intents').glob('*.json'))
     assert json.loads((tmp_path / 'submissions' / f'{job}.json').read_text())['job_name'] == job
+
+
+def test_submission_transport_never_retries_post():
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from threading import Thread
+    from types import SimpleNamespace
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    class Handler(BaseHTTPRequestHandler):
+        calls = 0
+        def do_POST(self):
+            Handler.calls += 1
+            self.send_response(503)
+            self.end_headers()
+        def log_message(self, *args):
+            pass
+    server = HTTPServer(('127.0.0.1', 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    session = requests.Session()
+    session.trust_env = False
+    session.mount('http://', HTTPAdapter(max_retries=Retry(total=3,
+        allowed_methods=['POST'], status_forcelist=[503])))
+    session.headers['X-Test-Auth'] = 'preserved'
+    try:
+        mlspace_launch.disable_submission_retries(SimpleNamespace(_session=session))
+        response = session.post(f'http://127.0.0.1:{server.server_port}/jobs', timeout=2)
+        assert response.status_code == 503
+        assert Handler.calls == 1
+        assert session.headers['X-Test-Auth'] == 'preserved'
+    finally:
+        session.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

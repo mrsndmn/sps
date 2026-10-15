@@ -105,6 +105,16 @@ def store_json(path, data):
     tmp.replace(path)
 
 
+def disable_submission_retries(client):
+    """The shared client retries POST by default; intent must cover ONE send."""
+    from urllib3.util.retry import Retry
+    session = client._session
+    for adapter in session.adapters.values():
+        adapter.max_retries = Retry(total=0, connect=0, read=0, status=0,
+                                    redirect=0, other=0)
+    session.max_redirects = 0
+
+
 def reconcile_intents(active_by_desc):
     for path in sorted((ARTIFACTS_ROOT / 'submission-intents').glob('*.json')):
         intent = json.loads(path.read_text())
@@ -186,6 +196,7 @@ def submit(args):
         # it, credentials nor an API connection.
         from mls.manager.job.utils import training_job_api_from_profile, get_in_progress_jobs
         client, extra = training_job_api_from_profile(args.profile)
+        disable_submission_retries(client)
         active = get_in_progress_jobs(client_profile=args.profile)
         active_by_desc = {normalize(j['job_desc']): j['job_name'] for j in active}
         reconcile_receipts(client, active_by_desc)
