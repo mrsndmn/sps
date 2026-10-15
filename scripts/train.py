@@ -20,6 +20,7 @@ $ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr=123.456.123
 """
 
 import os
+import json
 import time
 from contextlib import nullcontext
 from dataclasses import asdict
@@ -59,6 +60,15 @@ def main(cfg: DictConfig):
     # Determine output directory from wandb run name
     dir_name = cfg.logging.wandb_run_name
     out_dir = os.path.join(cfg.system.data_root, "out", dir_name)
+
+    started_at = time.perf_counter()
+
+    def record_metrics(event, **values):
+        # Only rank zero calls this, after creating out_dir. Keep metrics even
+        # when external W&B logging is disabled.
+        with open(os.path.join(out_dir, 'metrics.jsonl'), 'a') as handle:
+            handle.write(json.dumps(dict(event=event,
+                elapsed_seconds=time.perf_counter() - started_at, **values)) + '\n')
     
     # DDP setup
     ddp = int(os.environ.get('RANK', -1)) != -1
@@ -457,7 +467,9 @@ def main(cfg: DictConfig):
                         end = start + cfg.training.micro_batch_size
                         X_slice = X[start:end]
                         Y_slice = Y[start:end]
-                        model_out = model(X_slice, Y_slice)
+                        # Validation runs on rank zero only. Calling the DDP
+                        # wrapper here would broadcast buffers to training ranks.
+                        model_out = raw_model(X_slice, Y_slice)
                         _, loss_slice, stats = model_out
                         loss_total += float(loss_slice.detach())
                         if stats:
@@ -651,6 +663,8 @@ def main(cfg: DictConfig):
             tokens_seen = iter_num * tokens_per_iter
             val_nll = losses.get('val_token_nll', float("nan"))
             val_ppl = losses.get('val_token_ppl', float("nan"))
+            record_metrics('validation', tokens=tokens_seen, nll=float(val_nll),
+                           seconds=eval_time)
             print(
                 f"eval | iter {iter_num:>6} | val nll: {val_nll:.4f} (ppl {val_ppl:.2f}) | "
                 f"tokens: {_format_tokens(tokens_seen)} | eval: {eval_time*1000:.0f}ms"
@@ -774,6 +788,8 @@ def main(cfg: DictConfig):
             avg_nll_loss = train_metrics.get("token_nll")
             train_ppl = train_metrics.get("token_ppl", float("nan"))
             tokens_seen = iter_num * tokens_per_iter
+            record_metrics('train', tokens=(iter_num + 1) * tokens_per_iter,
+                           loss=avg_loss, step_seconds=dt, lr=lr)
             if hasattr(base_model, 'estimate_mfu'):
                 if local_iter_num >= 5:
                     mfu = base_model.estimate_mfu(cfg.training.micro_batch_size * gradient_accumulation_steps, dt)
@@ -822,6 +838,8 @@ def main(cfg: DictConfig):
                 tokens_seen = iter_num * tokens_per_iter
                 val_nll_eval = losses.get('val_token_nll', float("nan"))
                 val_ppl_eval = losses.get('val_token_ppl', float("nan"))
+                record_metrics('final', tokens=tokens_seen, nll=float(val_nll_eval),
+                               seconds=eval_time)
                 print(
                     f"final | iter {iter_num:>6} | val nll: {val_nll_eval:.4f} (ppl {val_ppl_eval:.2f}) | "
                     f"tokens: {_format_tokens(tokens_seen)} | eval: {eval_time*1000:.0f}ms"

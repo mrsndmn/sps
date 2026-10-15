@@ -159,6 +159,29 @@ uv run pytest                 # fast CPU-safe tests
 uv run pytest -m cuda         # GPU tests (Triton kernels)
 ```
 
+## MLSpace pilot artifacts
+
+`experiments.py` defines the pilot registry and all numerical settings.
+`python run_train_jobs.py --dry` and `python run_eval.py --dry` print plans without
+API calls, credentials or writes. Submission requires the read-only shared `mls`
+package in the existing environment. Run `python run_train_jobs.py --phase prepare`
+first: this reuses pinned FineWeb-Edu cache files where present, downloads only
+missing pilot shards, tokenizes them, and measures both methods with four-GPU DDP.
+Inspect `prepared.json`, then `python run_train_jobs.py` submits training.
+`python run_eval.py` submits the downstream tasks after training succeeds.
+
+Artifacts live outside the checkout at `/home/jovyan/sps-artifacts`, a local link
+to the shared NFS target specified in `experiments.py`. Workers use that NFS target
+directly: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
+checkpoints and evaluation outputs, `sanity` holds throughput probes, `code` holds
+immutable committed snapshots, `hf` holds downloaded HF shards, and `submissions`
+holds full job-ID receipts. The existing project venv is reused; do not mutate its
+dependencies while jobs are running. Local metrics are always saved as JSONL.
+
+Preparation and downstream evaluation have separate timeouts from the main
+training limit. Queue time is not included in runtime estimates. A failed job has
+no success marker and can be resubmitted; successful and active jobs are skipped.
+
 ## Citation
 
 ```bibtex

@@ -76,7 +76,8 @@ def _sdpa_reference_attention_sps(
 
 @pytest.mark.cuda
 @pytest.mark.parametrize("has_document_mask", [False, True])
-def test_triton_sps_sliding_matches_sdpa_forward_backward(has_document_mask: bool):
+@pytest.mark.parametrize("window_size", [0, 3])
+def test_triton_sps_sliding_matches_sdpa_forward_backward(has_document_mask: bool, window_size: int):
     sps_sliding_attention = _import_triton_sps_attention()
 
     torch.manual_seed(17)
@@ -84,7 +85,6 @@ def test_triton_sps_sliding_matches_sdpa_forward_backward(has_document_mask: boo
     dtype = torch.bfloat16
     b, h, t, d = 1, 2, 16, 64
     two_t = 2 * t
-    window_size = 3
     sm_scale = 1.0 / math.sqrt(d)
 
     q_tri = torch.randn(b, h, two_t, d, device=device, dtype=dtype, requires_grad=True)

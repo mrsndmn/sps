@@ -33,6 +33,7 @@ htmlcov/
 
 # Run outputs (not part of the release)
 outputs/
+run/
 wandb/
 *.log
 
