@@ -57,6 +57,7 @@ def overrides(exp, *, probe=False):
         f'experiment.name={exp.name}', f'logging.wandb_run_name={exp.name}',
         'logging.wandb_log=false', 'system.compile=false',
         'training.micro_batch_size=6', f'training.global_batch_size={GLOBAL_BATCH_SIZE}',
+        'training.chunk_size_units=1024',
         f'training.max_tokens={PROBE_STEPS * TOKENS_PER_STEP if probe else TRAIN_TOKENS}',
         f'training.eval_total_tokens={TOKENS_PER_STEP if probe else 1048576}',
         f'training.eval_interval_tokens={TRAIN_TOKENS if probe else 50000000}',

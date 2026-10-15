@@ -14,6 +14,9 @@ Arkhip job_wait observation rather than polling shells.
 - `scripts/evaluate.py`: one lm-eval task per process, final-checkpoint resolution,
   task-scoped JSON outputs; model behavior comes from the selected experiment.
 - `experiments.py`: pilot model registry, data source, paths and train/eval commands.
+- `src/training/sampler.py`: shared rank-independent initial offset, distributed
+  sequence/chunk sharding and exact per-rank resume order; regression tests in
+  `src/modeling/tests/core/test_sampler.py` cover the small pilot corpus.
 - `run_train_jobs.py --phase prepare`: MLSpace data preparation and both four-GPU
   throughput probes. `--phase train` submits the two paired training jobs only
   after successful preparation. `--dry` plans without API calls or writes.

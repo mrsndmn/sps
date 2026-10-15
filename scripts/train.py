@@ -46,6 +46,7 @@ from training import (
     prepare_wandb_dir_from_config,
 )
 from tqdm import trange
+from training.sampler import initial_sampler_offset
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
@@ -262,7 +263,7 @@ def main(cfg: DictConfig):
                 print(f"   Restored sampler_samples_seen_per_rank to {sampler_samples_seen_per_rank}")
         else:
             # Randomize starting position for fresh training runs
-            sampler_start_offset = random.randint(0, min(1_000_000, len(train_dataset) // 2))
+            sampler_start_offset = initial_sampler_offset(len(train_dataset), base_seed)
             print(f"   Randomized starting position (offset={sampler_start_offset:,})")
         if sampler_type == "fixed_random_chunk":
             train_sampler = FixedRandomChunkDistributedSampler(
@@ -309,6 +310,12 @@ def main(cfg: DictConfig):
                 start_offset=sampler_start_offset,
             )
     
+    if len(train_sampler) == 0:
+        raise ValueError(
+            f'No training sequences for rank {ddp_rank}; reduce '
+            'training.chunk_size_units or provide more training data'
+        )
+
     # Create DataLoader
     train_loader = DataLoader(
         train_dataset,

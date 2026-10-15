@@ -7,6 +7,13 @@ import random
 from torch.utils.data import Sampler
 
 
+def initial_sampler_offset(dataset_len: int, seed: int) -> int:
+    """Choose a shared data offset independently of rank-specific model RNGs."""
+    if dataset_len <= 0:
+        raise ValueError('Training dataset must contain at least one sequence')
+    return random.Random(seed).randint(0, min(1_000_000, dataset_len // 2))
+
+
 class DistributedSequentialSampler(Sampler):
     """A memory-efficient sampler that shards a dataset across DDP ranks sequentially.
 
