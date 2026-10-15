@@ -118,7 +118,11 @@ def test_submission_lock_prevents_concurrent_entry_and_releases(tmp_path, monkey
     assert not (tmp_path / '.submission-lock').exists()
 
 
-def test_receipt_blocks_duplicate_when_list_api_lags(tmp_path, monkeypatch):
+@pytest.mark.parametrize('pending,failed,completed', [
+    ('Pending', 'Failed', 'Completed'), ('pending', 'failed', 'completed'),
+    ('PENDING', 'FAILED', 'COMPLETED'),
+])
+def test_receipt_blocks_duplicate_when_list_api_lags(tmp_path, monkeypatch, pending, failed, completed):
     monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
     receipts = tmp_path / 'submissions'
     receipts.mkdir()
@@ -126,7 +130,7 @@ def test_receipt_blocks_duplicate_when_list_api_lags(tmp_path, monkeypatch):
     (receipts / 'receipt.json').write_text(json.dumps(dict(identity='pilot prepare',
         job_name=job, phase='prepare', name='data-and-probes')))
     class Client:
-        status = 'Pending'
+        status = pending
         def get_job_status(self, job_name):
             assert job_name == job
             return dict(status=self.status)
@@ -134,11 +138,11 @@ def test_receipt_blocks_duplicate_when_list_api_lags(tmp_path, monkeypatch):
     active = {}
     mlspace_launch.reconcile_receipts(client, active)
     assert active == {'pilot prepare': job}
-    client.status = 'Failed'
+    client.status = failed
     active = {}
     mlspace_launch.reconcile_receipts(client, active)
     assert active == {}
-    client.status = 'Completed'
+    client.status = completed
     with pytest.raises(RuntimeError, match='without success marker'):
         mlspace_launch.reconcile_receipts(client, {})
 

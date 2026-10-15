@@ -86,8 +86,11 @@ def reconcile_receipts(client, active_by_desc):
         status = result.get('status')
         if status is None:
             raise RuntimeError(f'Cannot establish job status for {receipt["job_name"]}')
-        retryable = {'Failed', 'Stopped', 'Terminated', 'Deleted', 'Cancelled', 'Canceled'}
-        if status in {'Completed', 'Succeeded'}:
+        # The API returns lowercase states; some mls versions/title-cased
+        # fixtures use uppercase initials. Reconcile both identically.
+        status = str(status).strip().casefold()
+        retryable = {'failed', 'stopped', 'terminated', 'deleted', 'cancelled', 'canceled'}
+        if status in {'completed', 'succeeded'}:
             marker = ARTIFACTS_ROOT / 'prepared.json' if receipt['phase'] == 'prepare' else (
                 RUN_ROOT / 'out' / receipt['name'] /
                 ('trained.json' if receipt['phase'] == 'train' else 'evaluated.json'))
