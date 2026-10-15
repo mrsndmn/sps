@@ -9,6 +9,9 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+from contextlib import contextmanager
+import socket
+import time
 
 from experiments import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
@@ -52,6 +55,48 @@ def normalize(desc):
     return ' '.join(re.sub(r'[#@]\S+', '', desc).split())
 
 
+@contextmanager
+def submission_lock():
+    """NFS mkdir is atomic; fail closed rather than trusting NFS flock leases."""
+    ARTIFACTS_ROOT.mkdir(parents=True, exist_ok=True)
+    lock = ARTIFACTS_ROOT / '.submission-lock'
+    try:
+        lock.mkdir()
+    except FileExistsError:
+        raise RuntimeError(f'Another submission holds {lock}; inspect owner.json before removing a stale lock')
+    try:
+        (lock / 'owner.json').write_text(json.dumps(dict(host=socket.gethostname(),
+                                                       pid=os.getpid(), started=time.time())))
+        yield
+    finally:
+        shutil.rmtree(lock)
+
+
+def reconcile_receipts(client, active_by_desc):
+    # A just-submitted job may not yet appear in the list API. Its durable
+    # receipt prevents a second submission; only a confirmed failed/cancelled
+    # state permits retry. Unknown or unreachable states fail closed.
+    for path in sorted((ARTIFACTS_ROOT / 'submissions').glob('*.json')):
+        receipt = json.loads(path.read_text())
+        identity = receipt['identity']
+        if identity in active_by_desc:
+            continue
+        result = client.get_job_status(receipt['job_name'])
+        status = result.get('status')
+        if status is None:
+            raise RuntimeError(f'Cannot establish job status for {receipt["job_name"]}')
+        retryable = {'Failed', 'Stopped', 'Terminated', 'Deleted', 'Cancelled', 'Canceled'}
+        if status in {'Completed', 'Succeeded'}:
+            marker = ARTIFACTS_ROOT / 'prepared.json' if receipt['phase'] == 'prepare' else (
+                RUN_ROOT / 'out' / receipt['name'] /
+                ('trained.json' if receipt['phase'] == 'train' else 'evaluated.json'))
+            if not marker.exists():
+                raise RuntimeError(f'Job {receipt["job_name"]} completed without success marker {marker}')
+            continue
+        if status not in retryable:
+            active_by_desc[identity] = receipt['job_name']
+
+
 def payload(phase, name, staged, author, nick):
     command = [str(PYTHON), '-m', 'scripts.pilot_run', phase]
     if phase != 'prepare':
@@ -78,6 +123,13 @@ def main(default_phase='train'):
     parser.add_argument('--filter')
     parser.add_argument('--dry', action='store_true')
     args = parser.parse_args()
+    if args.dry:
+        return submit(args)
+    with submission_lock():
+        return submit(args)
+
+
+def submit(args):
     repo = Path(git('rev-parse', '--show-toplevel'))
     commit = git('rev-parse', 'HEAD')
     candidates = [('data-and-probes', ARTIFACTS_ROOT / 'prepared.json')] if args.phase == 'prepare' else [
@@ -94,6 +146,7 @@ def main(default_phase='train'):
         client, extra = training_job_api_from_profile(args.profile)
         active = get_in_progress_jobs(client_profile=args.profile)
         active_by_desc = {normalize(j['job_desc']): j['job_name'] for j in active}
+        reconcile_receipts(client, active_by_desc)
         staged = stage_repo(repo, commit)
     else:
         staged = STAGING_ROOT / commit
@@ -130,7 +183,7 @@ def main(default_phase='train'):
         active_by_desc[identity] = job_name
         receipt = ARTIFACTS_ROOT / 'submissions' / f'{job_name}.json'
         receipt.parent.mkdir(parents=True, exist_ok=True)
-        receipt.write_text(json.dumps(dict(phase=args.phase, **jobs[-1]), indent=2))
+        receipt.write_text(json.dumps(dict(phase=args.phase, identity=identity, **jobs[-1]), indent=2))
         print(json.dumps(jobs[-1]))
     print('__MLS_JOBS_JSON__')
     print(json.dumps(dict(phase=args.phase, jobs=jobs)))

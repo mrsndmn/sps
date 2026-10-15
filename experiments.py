@@ -85,8 +85,14 @@ def output_dir(exp):
 
 def design_signature():
     """Reject stale completion/probe markers after a design change."""
+    repo = Path(__file__).resolve().parent
+    inputs = sorted([*repo.glob('conf/**/*.yaml'), *repo.glob('src/**/*.py'),
+                     repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
+    sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
+               for p in inputs}
     design = dict(repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
                   val_fraction=VAL_FRACTION, val_seed=VAL_SEED,
                   commands=[train_command(e) for e in experiment_configs],
-                  probes=[train_command(e, probe=True) for e in experiment_configs], tasks=TASKS)
+                  probes=[train_command(e, probe=True) for e in experiment_configs],
+                  tasks=TASKS, sources=sources)
     return hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()

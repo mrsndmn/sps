@@ -87,3 +87,71 @@ def test_payload_quotes_staging_path():
     body = mlspace_launch.payload('train', 'sps example', Path('/tmp/path with spaces'), 'a', 'b')
     assert shlex.quote('/tmp/path with spaces') in body['script']
     assert '--filter ' + shlex.quote('sps example') in body['script']
+
+
+def test_design_signature_tracks_inherited_configs(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, '__file__', str(tmp_path / 'experiments.py'))
+    for name in ('scripts/train.py', 'scripts/evaluate.py', 'conf/model/sps.yaml',
+                 'conf/optimizer/adamw.yaml'):
+        p = tmp_path / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('initial')
+    before = config.design_signature()
+    (tmp_path / 'conf/model/sps.yaml').write_text('changed model dimensions')
+    assert config.design_signature() != before
+    before = config.design_signature()
+    (tmp_path / 'conf/optimizer/adamw.yaml').write_text('changed optimizer')
+    assert config.design_signature() != before
+
+
+def test_submission_lock_prevents_concurrent_entry_and_releases(tmp_path, monkeypatch):
+    monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
+    with mlspace_launch.submission_lock():
+        with pytest.raises(RuntimeError, match='Another submission'):
+            with mlspace_launch.submission_lock():
+                pytest.fail('Concurrent submitter entered critical section')
+    assert not (tmp_path / '.submission-lock').exists()
+    with pytest.raises(ValueError):
+        with mlspace_launch.submission_lock():
+            raise ValueError('API failure')
+    assert not (tmp_path / '.submission-lock').exists()
+
+
+def test_receipt_blocks_duplicate_when_list_api_lags(tmp_path, monkeypatch):
+    monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
+    receipts = tmp_path / 'submissions'
+    receipts.mkdir()
+    job = 'lm-mpi-job-48fcb78d-e22e-4076-a28d-f92f4e1d6b0c'
+    (receipts / 'receipt.json').write_text(json.dumps(dict(identity='pilot prepare',
+        job_name=job, phase='prepare', name='data-and-probes')))
+    class Client:
+        status = 'Pending'
+        def get_job_status(self, job_name):
+            assert job_name == job
+            return dict(status=self.status)
+    client = Client()
+    active = {}
+    mlspace_launch.reconcile_receipts(client, active)
+    assert active == {'pilot prepare': job}
+    client.status = 'Failed'
+    active = {}
+    mlspace_launch.reconcile_receipts(client, active)
+    assert active == {}
+    client.status = 'Completed'
+    with pytest.raises(RuntimeError, match='without success marker'):
+        mlspace_launch.reconcile_receipts(client, {})
+
+
+def test_changed_design_cannot_resume_partial_checkpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(pilot_run, 'ARTIFACTS_ROOT', tmp_path)
+    monkeypatch.setattr(pilot_run, 'output_dir', lambda e: tmp_path / e.name)
+    exp = config.collect_experiments()[0]
+    dest = tmp_path / exp.name
+    dest.mkdir()
+    (tmp_path / 'prepared.json').write_text(json.dumps(dict(
+        design_signature=config.design_signature(), estimates={exp.name: dict(
+            token_budget=config.TRAIN_TOKENS, projected_training_hours=1)})))
+    (dest / 'run-config.json').write_text(json.dumps(dict(design_signature='old')))
+    (dest / 'ckpt.pt').touch()
+    with pytest.raises(RuntimeError, match='Partial checkpoints'):
+        pilot_run.train(exp)

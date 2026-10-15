@@ -94,6 +94,14 @@ def train(exp):
     if prediction['token_budget'] != TRAIN_TOKENS or prediction['projected_training_hours'] > MAX_HOURS:
         raise RuntimeError('Run preparation again for the current experiment budget')
     dest = output_dir(exp)
+    identity = dest / 'run-config.json'
+    if identity.exists():
+        if json.loads(identity.read_text())['design_signature'] != design_signature():
+            raise RuntimeError('Partial checkpoints belong to a different design; use a new run name')
+    else:
+        if list(dest.glob('*.pt')):
+            raise RuntimeError('Cannot resume checkpoints without an experiment identity')
+        write_json(identity, dict(design_signature=design_signature(), command=train_command(exp)))
     if (dest / 'trained.json').exists():
         return
     started = time.time()
