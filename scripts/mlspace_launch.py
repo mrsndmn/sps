@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+import hashlib
 from contextlib import contextmanager
 import socket
 import time
@@ -97,6 +98,47 @@ def reconcile_receipts(client, active_by_desc):
             active_by_desc[identity] = receipt['job_name']
 
 
+def store_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix('.tmp')
+    tmp.write_text(json.dumps(data, indent=2))
+    tmp.replace(path)
+
+
+def reconcile_intents(active_by_desc):
+    for path in sorted((ARTIFACTS_ROOT / 'submission-intents').glob('*.json')):
+        intent = json.loads(path.read_text())
+        identity = intent['identity']
+        if identity not in active_by_desc:
+            raise RuntimeError(f'Unresolved MLSpace submission at {path}; reconcile with job history '
+                               'before clearing it. Automatic resubmission is blocked.')
+        job_name = active_by_desc[identity]
+        store_json(ARTIFACTS_ROOT / 'submissions' / f'{job_name}.json',
+                   dict(intent, job_name=job_name))
+        path.unlink()
+
+
+def submit_payload(client, body, phase, name, commit):
+    identity = normalize(body['job_desc'])
+    intent = ARTIFACTS_ROOT / 'submission-intents' / (
+        hashlib.sha256(identity.encode()).hexdigest() + '.json')
+    if intent.exists():
+        raise RuntimeError(f'Unresolved MLSpace submission at {intent}')
+    # Persist BEFORE the API call. A lost response must never cause automatic
+    # resubmission, even if the server's job list has not caught up yet.
+    data = dict(phase=phase, identity=identity, name=name, commit=commit,
+                attempted_at=time.time())
+    store_json(intent, data)
+    result = client.run_job(body)
+    job_name = result.get('job_name')
+    if not job_name or not re.fullmatch(r'lm-mpi-job-[0-9a-f-]{36}', job_name):
+        raise RuntimeError(f'MLSpace rejected submission; reconcile intent at {intent}: {result}')
+    uuid.UUID(job_name.removeprefix('lm-mpi-job-'))
+    store_json(ARTIFACTS_ROOT / 'submissions' / f'{job_name}.json', dict(data, job_name=job_name))
+    intent.unlink()
+    return dict(name=name, job_name=job_name, commit=commit)
+
+
 def payload(phase, name, staged, author, nick):
     command = [str(PYTHON), '-m', 'scripts.pilot_run', phase]
     if phase != 'prepare':
@@ -147,6 +189,7 @@ def submit(args):
         active = get_in_progress_jobs(client_profile=args.profile)
         active_by_desc = {normalize(j['job_desc']): j['job_name'] for j in active}
         reconcile_receipts(client, active_by_desc)
+        reconcile_intents(active_by_desc)
         staged = stage_repo(repo, commit)
     else:
         staged = STAGING_ROOT / commit
@@ -174,16 +217,8 @@ def submit(args):
             continue
         # Single submission attempt: never hold an ephemeral shell retrying a
         # quota failure. The caller may retry after the allocation changes.
-        result = client.run_job(body)
-        job_name = result.get('job_name')
-        if not job_name or not re.fullmatch(r'lm-mpi-job-[0-9a-f-]{36}', job_name):
-            raise RuntimeError(f'MLSpace rejected submission: {result}')
-        uuid.UUID(job_name.removeprefix('lm-mpi-job-'))
-        jobs.append(dict(name=name, job_name=job_name, commit=commit))
-        active_by_desc[identity] = job_name
-        receipt = ARTIFACTS_ROOT / 'submissions' / f'{job_name}.json'
-        receipt.parent.mkdir(parents=True, exist_ok=True)
-        receipt.write_text(json.dumps(dict(phase=args.phase, identity=identity, **jobs[-1]), indent=2))
+        jobs.append(submit_payload(client, body, args.phase, name, commit))
+        active_by_desc[identity] = jobs[-1]['job_name']
         print(json.dumps(jobs[-1]))
     print('__MLS_JOBS_JSON__')
     print(json.dumps(dict(phase=args.phase, jobs=jobs)))

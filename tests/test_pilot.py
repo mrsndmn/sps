@@ -155,3 +155,26 @@ def test_changed_design_cannot_resume_partial_checkpoint(tmp_path, monkeypatch):
     (dest / 'ckpt.pt').touch()
     with pytest.raises(RuntimeError, match='Partial checkpoints'):
         pilot_run.train(exp)
+
+
+def test_lost_submission_response_blocks_retry_until_reconciled(tmp_path, monkeypatch):
+    monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
+    body = mlspace_launch.payload('prepare', 'data-and-probes', Path('/stage'), 'a', 'b')
+    identity = mlspace_launch.normalize(body['job_desc'])
+    class Client:
+        calls = 0
+        def run_job(self, payload):
+            self.calls += 1
+            raise TimeoutError('Server accepted job but response was lost')
+    client = Client()
+    with pytest.raises(TimeoutError):
+        mlspace_launch.submit_payload(client, body, 'prepare', 'data-and-probes', 'commit')
+    with pytest.raises(RuntimeError, match='Unresolved'):
+        mlspace_launch.reconcile_intents({})
+    with pytest.raises(RuntimeError, match='Unresolved'):
+        mlspace_launch.submit_payload(client, body, 'prepare', 'data-and-probes', 'commit')
+    assert client.calls == 1
+    job = 'lm-mpi-job-48fcb78d-e22e-4076-a28d-f92f4e1d6b0c'
+    mlspace_launch.reconcile_intents({identity: job})
+    assert not list((tmp_path / 'submission-intents').glob('*.json'))
+    assert json.loads((tmp_path / 'submissions' / f'{job}.json').read_text())['job_name'] == job
