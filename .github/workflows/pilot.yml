@@ -13,4 +13,7 @@ jobs:
       - run: python run_train_jobs.py --dry
       - run: python run_train_jobs.py --dry --phase prepare
       - run: python run_eval.py --dry
+      - run: SPS_EXPERIMENT_SUITE=10b python run_train_jobs.py --dry --phase prepare
+      - run: SPS_EXPERIMENT_SUITE=10b python run_train_jobs.py --dry
+      - run: SPS_EXPERIMENT_SUITE=10b python run_eval.py --dry
       - run: python -m compileall -q scripts experiments.py run_train_jobs.py run_eval.py

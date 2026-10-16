@@ -4,12 +4,15 @@ import json
 import os
 from pathlib import Path
 import statistics
+import math
 import subprocess
 import time
 
 from experiments import (ARTIFACTS_ROOT, RUN_ROOT, SANITY_ROOT, TRAIN_TOKENS,
                         TOKENS_PER_STEP, MAX_HOURS, TASKS, collect_experiments,
-                        train_command, eval_command, output_dir, design_signature)
+                        train_command, eval_command, output_dir, design_signature,
+                        COMMON_ROOT, RUNTIME_SAFETY_FACTOR, GLOBAL_BATCH_SIZE, BLOCK_SIZE,
+                        CHUNK_SIZE_UNITS, TRAINING_SEED)
 
 
 def run_logged(command, log, *, timeout):
@@ -47,12 +50,43 @@ def estimate(exp):
     if len(steps) < 8 or any(v <= 0 for v in steps):
         raise RuntimeError('Probe did not produce eight stable step measurements')
     seconds = statistics.median(steps)
-    # Safety factor includes data/communication variation, plus one hour for
-    # validation, checkpoint I/O and startup. Downstream evaluation is separate.
-    projected = seconds * (TRAIN_TOKENS / TOKENS_PER_STEP) * 1.5 + 3600
+    reference = None
+    if exp.reference_name is not None:
+        reference_path = COMMON_ROOT / 'runs' / 'out' / exp.reference_name
+        prior = json.loads((reference_path / 'trained.json').read_text())
+        prior_rows = [json.loads(line) for line in
+                      (reference_path / 'metrics.jsonl').read_text().splitlines()]
+        final = next(r for r in reversed(prior_rows) if r['event'] == 'final')
+        # Include all observed validation/checkpoint overhead from the completed
+        # reference run; never replace a slower fresh probe by a faster history.
+        prior_step = prior['seconds'] / (final['tokens'] / TOKENS_PER_STEP)
+        seconds = max(seconds, prior_step)
+        reference = dict(name=exp.reference_name, seconds_per_step=prior_step)
+    projected = seconds * (TRAIN_TOKENS / TOKENS_PER_STEP) * RUNTIME_SAFETY_FACTOR + 3600
     return dict(step_seconds=seconds, tokens_per_second=TOKENS_PER_STEP / seconds,
                 projected_training_hours=projected / 3600,
-                token_budget=TRAIN_TOKENS, max_hours=MAX_HOURS)
+                token_budget=TRAIN_TOKENS, max_hours=MAX_HOURS,
+                safety_factor=RUNTIME_SAFETY_FACTOR, reference=reference)
+
+
+def validate_training_coverage(manifest):
+    from training.sampler import FixedRandomChunkDistributedSampler, initial_sampler_offset
+    dataset_len = manifest['tokens']['train'] - BLOCK_SIZE
+    offset = initial_sampler_offset(dataset_len, TRAINING_SEED)
+    coverage = {}
+    for exp in collect_experiments():
+        required = math.ceil(TRAIN_TOKENS / TOKENS_PER_STEP) * GLOBAL_BATCH_SIZE // exp.num_gpus
+        capacities = []
+        for rank in range(exp.num_gpus):
+            sampler = FixedRandomChunkDistributedSampler(dataset_len, exp.num_gpus,
+                rank, BLOCK_SIZE, chunk_size_units=CHUNK_SIZE_UNITS,
+                seed=TRAINING_SEED, start_offset=offset)
+            if len(sampler) < required:
+                raise RuntimeError(f'Insufficient unique training data for rank {rank}: '
+                                   f'{len(sampler)} sequence starts, need {required}')
+            capacities.append(len(sampler))
+        coverage[exp.name] = dict(required_per_rank=required, available_per_rank=capacities)
+    return coverage
 
 
 def prepare():
@@ -67,6 +101,7 @@ def prepare():
                 '-k', 'sliding_matches'], SANITY_ROOT / 'mask-tests.log', timeout=1800)
     from scripts.pilot_data import prepare as prepare_data
     manifest = prepare_data()
+    coverage = validate_training_coverage(manifest)
     SANITY_ROOT.mkdir(parents=True, exist_ok=True)
     data_link = SANITY_ROOT / 'data'
     if not data_link.exists():
@@ -82,7 +117,7 @@ def prepare():
         print(exp.name, estimates[exp.name], flush=True)
     if max(e['projected_training_hours'] for e in estimates.values()) > MAX_HOURS:
         raise RuntimeError('Measured training exceeds time budget; reduce matched budget in code')
-    write_json(ARTIFACTS_ROOT / 'prepared.json', dict(data=manifest, estimates=estimates,
+    write_json(ARTIFACTS_ROOT / 'prepared.json', dict(data=manifest, estimates=estimates, coverage=coverage,
                                                    design_signature=design_signature()))
 
 

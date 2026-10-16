@@ -3,11 +3,55 @@ from pathlib import Path
 import shlex
 import subprocess
 import sys
+import os
 
 import pytest
 
 import experiments as config
 from scripts import mlspace_launch, pilot_run
+
+
+def test_long_suite_is_tenfold_and_preserves_pilot_paths():
+    script = '''
+import json
+import experiments as e
+from scripts.mlspace_launch import payload
+print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),cache=str(e.HF_HOME),
+ names=[x.name for x in e.collect_experiments()],budget=e.TRAIN_TOKENS,
+ args=e.overrides(e.collect_experiments()[0]),
+ payload=payload('train',e.collect_experiments()[0].name,e.STAGING_ROOT,'a','b'))))
+'''
+    results = {}
+    for suite in ('1b', '10b'):
+        env = dict(os.environ, SPS_EXPERIMENT_SUITE=suite)
+        results[suite] = json.loads(subprocess.check_output([sys.executable, '-c', script],env=env,text=True))
+    short, long = results['1b'], results['10b']
+    assert long['budget'] == short['budget'] * 10
+    assert Path(long['root']).parent == Path(short['root'])
+    assert long['cache'] == short['cache']
+    assert set(short['names']).isdisjoint(long['names'])
+    assert long['payload']['env_variables']['SPS_EXPERIMENT_SUITE'] == '10b'
+    assert long['payload']['job_desc'] != short['payload']['job_desc']
+    a, b = (dict(x.split('=',1) for x in r['args']) for r in (short,long))
+    assert b['+experiment'] == a['+experiment']
+    for key in ('scheduler.warmup_tokens','scheduler.lr_decay_tokens'):
+        assert int(b[key]) == int(a[key]) * 10
+
+
+def test_runtime_forecast_uses_completed_reference_as_floor(tmp_path, monkeypatch):
+    monkeypatch.setattr(pilot_run, 'COMMON_ROOT', tmp_path)
+    monkeypatch.setattr(pilot_run, 'SANITY_ROOT', tmp_path / 'probe')
+    exp = config.ExperimentConfig('new', 's_full_attention_20b', reference_name='old')
+    probe = tmp_path / 'probe/out/new'
+    probe.mkdir(parents=True)
+    (probe/'metrics.jsonl').write_text('\n'.join(json.dumps(dict(event='train',step_seconds=2)) for _ in range(8)))
+    old = tmp_path / 'runs/out/old'
+    old.mkdir(parents=True)
+    (old/'trained.json').write_text(json.dumps(dict(seconds=100)))
+    (old/'metrics.jsonl').write_text(json.dumps(dict(event='final',tokens=10*config.TOKENS_PER_STEP)))
+    estimate = pilot_run.estimate(exp)
+    assert estimate['step_seconds'] == 10
+    assert estimate['reference']['name'] == 'old'
 
 
 def test_pair_has_matched_budget_and_distinct_methods():

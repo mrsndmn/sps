@@ -182,6 +182,14 @@ Preparation and downstream evaluation have separate timeouts from the main
 training limit. Queue time is not included in runtime estimates. A failed job has
 no success marker and can be resubmitted; successful and active jobs are skipped.
 
+### Longer training
+
+The longer comparison uses `SPS_EXPERIMENT_SUITE=10b` with the same launchers:
+`SPS_EXPERIMENT_SUITE=10b python run_train_jobs.py --phase prepare`, followed by
+`SPS_EXPERIMENT_SUITE=10b python run_train_jobs.py` and, after completion,
+`SPS_EXPERIMENT_SUITE=10b python run_eval.py`. Its artifacts and submission receipts
+are isolated from the default pilot; the cache and staged code are shared.
+
 ## Citation
 
 ```bibtex

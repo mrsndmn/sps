@@ -14,6 +14,9 @@ Arkhip job_wait observation rather than polling shells.
 - `scripts/evaluate.py`: one lm-eval task per process, final-checkpoint resolution,
   task-scoped JSON outputs; model behavior comes from the selected experiment.
 - `experiments.py`: pilot model registry, data source, paths and train/eval commands.
+  `SPS_EXPERIMENT_SUITE=10b` selects the longer comparison. Its artifact root and
+  job identities are separate; HF cache, Python headers and committed snapshots
+  are shared. The selector propagates into each MLSpace worker and subprocess.
 - `src/training/sampler.py`: shared rank-independent initial offset, distributed
   sequence/chunk sharding and exact per-rank resume order; regression tests in
   `src/modeling/tests/core/test_sampler.py` cover the small pilot corpus.
@@ -25,8 +28,12 @@ Arkhip job_wait observation rather than polling shells.
 - `scripts/pilot_data.py`: pinned FineWeb-Edu shard reuse/download, hash-based
   document split, GPT-2 encoding and uint16 memmaps with completion manifest.
 - `scripts/pilot_run.py`: worker-side preparation, throughput estimates and timeout
-  guards; training/eval subprocess logs and terminal markers.
+  guards; training/eval subprocess logs and terminal markers. Preparation checks
+  unique-data coverage for every rank; longer-run estimates also use completed
+  pilot runtimes as a conservative floor for fresh throughput probes.
 - `scripts/mlspace_launch.py`: dedup, committed-code snapshots, payload creation
   and submission receipts. Jobs consume staged source and the existing shared venv.
 - `tests/test_pilot.py` and GitHub Actions: CPU-safe orchestration and configuration
-  tests. Existing model tests live under `src/modeling/tests`; GPU tests require CUDA.
+  tests for both suites. `tests/test_long_training.py` checks long-run sampler
+  capacity with the installed torch environment. Existing model tests live under
+  `src/modeling/tests`; GPU tests require CUDA.

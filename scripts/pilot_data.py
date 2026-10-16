@@ -6,7 +6,7 @@ import shutil
 
 from experiments import (DATASET_REPO, DATASET_REVISION, DATA_FILES,
                         EXISTING_HF_CACHES, HF_HOME, RUN_ROOT, VAL_FRACTION, VAL_SEED,
-                        TRAIN_TOKENS)
+                        TRAIN_TOKENS, MIN_FREE_BYTES)
 
 
 def prepare():
@@ -32,7 +32,7 @@ def prepare():
     dest.mkdir(parents=True, exist_ok=True)
     # Deliberately conservative: source shards, uint16 output, temporary files,
     # checkpoints and downstream caches. No full 350BT download is attempted.
-    required = 40 * 10**9
+    required = MIN_FREE_BYTES
     free = shutil.disk_usage(dest).free
     if free < required:
         raise RuntimeError(f'Need {required / 1e9:.0f} GB free; have {free / 1e9:.1f} GB')

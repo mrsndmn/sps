@@ -3,12 +3,17 @@ from dataclasses import dataclass
 from pathlib import Path
 import hashlib
 import json
+import os
 
-ARTIFACTS_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
+SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
+if SUITE not in {'1b', '10b'}:
+    raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
+COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
+ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / '10b'
 RUN_ROOT = ARTIFACTS_ROOT / 'runs'
 SANITY_ROOT = ARTIFACTS_ROOT / 'sanity'
-STAGING_ROOT = ARTIFACTS_ROOT / 'code'
-HF_HOME = ARTIFACTS_ROOT / 'hf'
+STAGING_ROOT = COMMON_ROOT / 'code'
+HF_HOME = COMMON_ROOT / 'hf'
 PYTHON = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps/.venv/bin/python')
 INSTANCE_TYPES_BY_NUM_GPUS = {4: 'a100.4gpu'}
 BASE_IMAGE = 'cr.ai.cloud.ru/aicloud-base-images/py3.12-torch2.7.0:0.0.41'
@@ -16,6 +21,11 @@ DATASET_REPO = 'HuggingFaceFW/fineweb-edu'
 DATASET_REVISION = '87f09149ef4734204d70ed1d046ddc9ca3f2b8f9'
 # Three complete sample-10BT shards supply roughly two billion source tokens.
 DATA_FILES = tuple(f'sample/10BT/{i:03d}_00000.parquet' for i in range(3))
+if SUITE == '10b':
+    # Spread the larger corpus across crawl partitions, with >10B GPT-2 tokens
+    # after the held-out split. Reuse the same pinned repository/cache.
+    DATA_FILES = (tuple(f'sample/100BT/{i:03d}_00000.parquet' for i in range(14))
+                  + ('sample/100BT/000_00001.parquet', 'sample/100BT/001_00001.parquet'))
 EXISTING_HF_CACHES = (
     Path('/home/jovyan/.cache/huggingface/hub'),
     Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/.cache/huggingface/hub'),
@@ -26,11 +36,19 @@ TASKS = ('arc_easy', 'hellaswag', 'piqa', 'sciq', 'lambada_openai')
 GLOBAL_BATCH_SIZE = 96
 BLOCK_SIZE = 4096
 TOKENS_PER_STEP = GLOBAL_BATCH_SIZE * BLOCK_SIZE
+CHUNK_SIZE_UNITS = 1024
+TRAINING_SEED = 1337
 TRAIN_TOKENS = 2544 * TOKENS_PER_STEP  # 1,000,341,504; exact update boundary
+if SUITE == '10b':
+    TRAIN_TOKENS *= 10
 PROBE_STEPS = 16
 MAX_HOURS = 24
 VAL_FRACTION = 0.01
 VAL_SEED = 2357
+MIN_FREE_BYTES = (120 if SUITE == '10b' else 40) * 10**9
+# The long run has a complete prior run for calibration rather than only a
+# short probe. Keep a margin plus one hour for startup and checkpoint I/O.
+RUNTIME_SAFETY_FACTOR = 1.15 if SUITE == '10b' else 1.5
 
 
 @dataclass(frozen=True)
@@ -38,12 +56,20 @@ class ExperimentConfig:
     name: str
     recipe: str
     num_gpus: int = 4
+    reference_name: str | None = None
 
 
 experiment_configs = [
     ExperimentConfig('s_standard_pilot_1b', 's_full_attention_20b'),
     ExperimentConfig('s_sps_w0_pilot_1b', 's_sps_w0_20b'),
 ]
+if SUITE == '10b':
+    experiment_configs = [
+        ExperimentConfig('s_standard_10b', 's_full_attention_20b',
+                         reference_name='s_standard_pilot_1b'),
+        ExperimentConfig('s_sps_w0_10b', 's_sps_w0_20b',
+                         reference_name='s_sps_w0_pilot_1b'),
+    ]
 
 
 def collect_experiments(filter_name=None):
@@ -57,16 +83,16 @@ def overrides(exp, *, probe=False):
         f'experiment.name={exp.name}', f'logging.wandb_run_name={exp.name}',
         'logging.wandb_log=false', 'system.compile=false',
         'training.micro_batch_size=6', f'training.global_batch_size={GLOBAL_BATCH_SIZE}',
-        'training.chunk_size_units=1024',
+        f'training.chunk_size_units={CHUNK_SIZE_UNITS}',
         f'training.max_tokens={PROBE_STEPS * TOKENS_PER_STEP if probe else TRAIN_TOKENS}',
         f'training.eval_total_tokens={TOKENS_PER_STEP if probe else 1048576}',
-        f'training.eval_interval_tokens={TRAIN_TOKENS if probe else 50000000}',
+        f'training.eval_interval_tokens={TRAIN_TOKENS if probe else (250000000 if SUITE == "10b" else 50000000)}',
         f'training.skip_first_eval={str(probe).lower()}',
         f'training.init_from={"scratch" if probe else "resume"}',
-        f'training.save_every={TRAIN_TOKENS if probe else 250000000}',
-        f'training.rolling_save_every={TRAIN_TOKENS if probe else 100000000}',
-        f'scheduler.warmup_tokens={TOKENS_PER_STEP if probe else 10000000}',
-        f'scheduler.lr_decay_tokens={TOKENS_PER_STEP if probe else 100000000}',
+        f'training.save_every={TRAIN_TOKENS if probe else (1000000000 if SUITE == "10b" else 250000000)}',
+        f'training.rolling_save_every={TRAIN_TOKENS if probe else (250000000 if SUITE == "10b" else 100000000)}',
+        f'scheduler.warmup_tokens={TOKENS_PER_STEP if probe else (100000000 if SUITE == "10b" else 10000000)}',
+        f'scheduler.lr_decay_tokens={TOKENS_PER_STEP if probe else (1000000000 if SUITE == "10b" else 100000000)}',
     ]
 
 

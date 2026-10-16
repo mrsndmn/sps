@@ -16,7 +16,7 @@ import time
 
 from experiments import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
-                        collect_experiments, output_dir, design_signature)
+                        collect_experiments, output_dir, design_signature, SUITE)
 from scripts.pilot_headers import HEADER_ROOT
 
 
@@ -159,8 +159,9 @@ def payload(phase, name, staged, author, nick):
     return dict(
         # MLSpace validates script as a single shell line (newlines rejected).
         script=f'cd {shlex.quote(str(staged))} && ' + shlex.join(command),
-        job_desc=f'sps-pilot {phase} {name} #{author} @{nick}',
+        job_desc=f'sps-{"pilot" if SUITE == "1b" else SUITE} {phase} {name} #{author} @{nick}',
         env_variables={'PYTHONPATH': f'{staged}:{staged}/src',
+                       'SPS_EXPERIMENT_SUITE': SUITE,
                        'HF_HOME': str(HF_HOME), 'PYTHONUNBUFFERED': '1',
                        'CC': '/usr/bin/gcc',
                        'C_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
