@@ -233,3 +233,20 @@ def test_real_native_cuda_verifier_matches_original_generator_and_probabilities(
         state, _, _ = reference._prefill_generation_state(prefix[None], 8, require_batched=True)
         oracle = reference._decode_generation_state(state, corrected[-1:], active)
         torch.testing.assert_close(cached, oracle[0], atol=0, rtol=0)
+
+
+def test_proposal_cache_drift_is_diagnostic_while_native_target_stays_exact(monkeypatch):
+    mtp = model()
+    original = ev.PrefixCache.ensure
+    def different_valid_proposal(self, prefix):
+        logits = original(self, prefix).clone()
+        logits[:, 0] += 4.0
+        return logits
+    monkeypatch.setattr(ev.PrefixCache, 'ensure', different_valid_proposal)
+    report = ev.check_cached_logits(mtp, torch.tensor([1,2,3]))
+    assert report['passed']
+    assert report['proposal_comparison'] == 'diagnostic_only'
+    assert report['maximum_proposal_logit_error'] >= 3.9
+    assert report['maximum_proposal_probability_error'] > .01
+    assert report['maximum_reference_logit_error'] == 0
+    assert report['native_reference_atol'] == report['native_reference_rtol'] == 0

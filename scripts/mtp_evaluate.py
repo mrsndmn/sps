@@ -23,8 +23,6 @@ from modeling.mtp_speculative import speculative_generate
 
 # Bound vocabulary projections during validation; every real prefix is evaluated.
 METRIC_CHUNK = 32
-PROPOSAL_LOGIT_ATOL = 0.03
-PROPOSAL_PROBABILITY_ATOL = 0.001
 
 
 def probabilities(logits, config, temperature=MTP_TEMPERATURE):
@@ -260,11 +258,12 @@ def benchmark_speculative(model, prefix, *, mode, max_new_tokens=MTP_NEW_TOKENS,
 
 @torch.inference_mode()
 def check_cached_logits(model, prefix):
-    """Bound proposal rounding drift; demand exact native target probabilities.
+    """Report proposal drift; demand exact native target probabilities.
 
-    BF16 shape-dependent rounding changes proposal logits. This is acceptable
-    because acceptance uses the actual proposal probabilities and native target.
-    Proposal error bounds are diagnostic guards, not target equivalence claims.
+    Proposal cache/full differences are diagnostics, not correctness gates.
+    Proposals may be any valid distribution: speculative acceptance uses the
+    actual q probabilities, validated by the decoder, and the exact native p.
+    Logical cache recovery and causality are tested independently.
     """
     adapter = SpeculativeAdapter(model, max_new_tokens=model.horizons+1)
     max_raw = 0.0
@@ -277,8 +276,6 @@ def check_cached_logits(model, prefix):
         probability_error = float((probabilities(raw, model.config)-probabilities(expected, model.config)).abs().max())
         max_raw = max(max_raw, raw_error)
         max_probability = max(max_probability, probability_error)
-        if raw_error > PROPOSAL_LOGIT_ATOL or probability_error > PROPOSAL_PROBABILITY_ATOL:
-            raise RuntimeError(f'Proposal cache drift exceeds declared bounds: logits={raw_error}, probabilities={probability_error}')
         return probabilities(raw, model.config)
     q = check_proposal(prefix)
     draft = q.argmax(-1)
@@ -304,8 +301,8 @@ def check_cached_logits(model, prefix):
     corrected_logits = model.reference._decode_generation_state(untouched, correction[None], active)[0]
     torch.testing.assert_close(recovered, corrected_logits, atol=0, rtol=0)
     return dict(passed=True, verifier_backend='native_sequential',
-                proposal_logit_atol=PROPOSAL_LOGIT_ATOL,
-                proposal_probability_atol=PROPOSAL_PROBABILITY_ATOL,
+                proposal_comparison='diagnostic_only',
+                proposal_probability_validation='speculative decoder validates actual q; acceptance uses actual q and native p',
                 maximum_proposal_logit_error=max_raw,
                 maximum_proposal_probability_error=max_probability,
                 maximum_reference_logit_error=float((verified-expected).abs().max()),
@@ -328,7 +325,8 @@ def evaluate(exp, checkpoint_path):
         raise RuntimeError('Generation benchmark exceeds source context capacity')
     report = dict(verifier_backend='native_sequential',
         limitations=['Native sequential verification preserves the source decoding distribution; it cannot measure the potential speed of parallel verification.',
-                     'Native branch cache copies and accepted-prefix replay are included in generation timings.'],
+                     'Native branch cache copies and accepted-prefix replay are included in generation timings.',
+                     'Proposal cache/full numerical differences are diagnostic; acceptance uses the actual proposal probabilities and the exact native target.'],
         source=str(MTP_SOURCE), checkpoint=str(checkpoint_path), horizons=exp.horizons,
         device=torch.cuda.get_device_name(device), torch_version=torch.__version__,
         settings=dict(batch_size=1, prompts=len(prompts), prompt_tokens=MTP_PROMPT_TOKENS,
