@@ -112,13 +112,17 @@ def train(exp):
     final=dest/'adaptation_final.pt'
     if not final.is_file():raise RuntimeError('Missing final adaptation checkpoint')
     write_json(dest/'trained.json',dict(checkpoint=str(final),design_signature=signature,
-        source_sha256=prepared['source_sha256'],seconds=time.monotonic()-start,estimate=forecast))
+        source_sha256=prepared['source_sha256'],
+        data_manifest_sha256=prepared['data']['manifest_sha256'],
+        seconds=time.monotonic()-start,estimate=forecast))
 
 
 def evaluate(exp):
     dest=e.output_dir(exp)
     trained=json.loads((dest/'trained.json').read_text())
     if trained['design_signature']!=e.design_signature():raise RuntimeError('Stale training identity')
+    from scripts.mtp_common import validate_evaluation_inputs
+    validate_evaluation_inputs(trained)
     run_logged([str(e.PYTHON),'-m','scripts.mtp_evaluate','--filter',exp.name],
         dest/'eval.log',timeout=8*3600)
     if not (dest/'evaluation.json').is_file():raise RuntimeError('Missing evaluation results')

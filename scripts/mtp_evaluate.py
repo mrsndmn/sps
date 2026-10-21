@@ -312,6 +312,9 @@ def check_cached_logits(model, prefix):
 @torch.inference_mode()
 def evaluate(exp, checkpoint_path):
     """Measure pre/post quality and generation against the same fixed reference."""
+    from scripts.mtp_common import validate_evaluation_inputs
+    trained=json.loads((output_dir(exp)/'trained.json').read_text())
+    validate_evaluation_inputs(trained)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if device.type != 'cuda':
         raise RuntimeError('Production generation benchmarks require CUDA and the original SPS cached generator')

@@ -4,6 +4,7 @@ import subprocess
 import sys
 
 import torch
+import pytest
 
 
 def test_mtp_registry_isolated_and_four_gpu_dry():
@@ -69,3 +70,28 @@ def test_mtp_forecast_excludes_compilation_and_enforces_full_budget(tmp_path,mon
     assert estimate['seconds_per_step']==2
     assert estimate['estimated_hours_range'][0]<estimate['estimated_hours_range'][1]<2
     assert estimate['token_budget']==e.TRAIN_TOKENS
+
+
+@pytest.mark.parametrize('changed',['source','data'])
+def test_evaluation_refuses_changed_inputs_before_start(tmp_path,monkeypatch,changed):
+    import hashlib
+    import experiments as e
+    from scripts import mtp_common,mtp_run,mtp_evaluate
+    source=tmp_path/'source.pt';source.write_bytes(b'original source')
+    data=tmp_path/'data';data.mkdir();manifest=data/'manifest.json';manifest.write_bytes(b'original data')
+    trained=dict(design_signature=e.design_signature(),checkpoint=str(tmp_path/'final.pt'),
+        source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        data_manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
+    (tmp_path/'trained.json').write_text(json.dumps(trained))
+    monkeypatch.setattr(mtp_common,'MTP_SOURCE',source)
+    monkeypatch.setattr(mtp_common,'MTP_DATA',data)
+    monkeypatch.setattr(e,'output_dir',lambda exp:tmp_path)
+    monkeypatch.setattr(mtp_evaluate,'output_dir',lambda exp:tmp_path)
+    exp=e.ExperimentConfig('model','sps',horizons=2)
+    if changed=='source':source.write_bytes(b'replacement source')
+    else:manifest.write_bytes(b'replacement data')
+    monkeypatch.setattr(mtp_run,'run_logged',lambda *a,**k:pytest.fail('evaluation must not start'))
+    with pytest.raises(RuntimeError,match='changed'):
+        mtp_run.evaluate(exp)
+    with pytest.raises(RuntimeError,match='changed'):
+        mtp_evaluate.evaluate(exp,tmp_path/'final.pt')

@@ -1,5 +1,6 @@
 """Shared frozen-checkpoint loading, document-safe targets and data order."""
 from pathlib import Path
+import hashlib
 import numpy as np
 import torch
 
@@ -59,3 +60,18 @@ class TokenSequences(torch.utils.data.Dataset):
 def validation_starts(token_count, context, count):
     # Match prefixes across every N; reserve the largest future horizon.
     return [i*context for i in range(min(count,(token_count-MTP_MAX_HORIZONS)//context))]
+
+
+def validate_evaluation_inputs(trained):
+    """Bind downstream results to the actual frozen model and held-out corpus."""
+    for path, key, label in (
+        (MTP_SOURCE, 'source_sha256', 'source checkpoint'),
+        (MTP_DATA/'manifest.json', 'data_manifest_sha256', 'data manifest'),
+    ):
+        expected=trained.get(key)
+        digest=hashlib.sha256()
+        with path.open('rb') as handle:
+            for chunk in iter(lambda:handle.read(8*1024*1024),b''):
+                digest.update(chunk)
+        if not expected or digest.hexdigest()!=expected:
+            raise RuntimeError(f'Evaluation {label} changed or has no recorded identity')
