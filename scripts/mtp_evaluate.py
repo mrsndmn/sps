@@ -6,6 +6,7 @@ All proposal, reference and cache recovery work is inside speculative timing.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 import math
 import time
 
@@ -17,13 +18,13 @@ from experiments import (MTP_INFERENCE_BACKEND, MTP_CONTEXT, MTP_EVAL_PROMPTS,
     MTP_TEMPERATURE, MTP_VAL_TOKENS, output_dir)
 from scripts.mtp_common import (TokenSequences, load_mtp, shifted_targets,
                                 validation_starts)
-from modeling.models.sps.mtp import SPSMTP, truncate_cache
+from modeling.models.sps.mtp import truncate_cache
 from modeling.mtp_speculative import speculative_generate
 
 # Bound vocabulary projections during validation; every real prefix is evaluated.
 METRIC_CHUNK = 32
-CACHE_ATOL = 2e-4
-CACHE_RTOL = 2e-3
+PROPOSAL_LOGIT_ATOL = 0.03
+PROPOSAL_PROBABILITY_ATOL = 0.001
 
 
 def probabilities(logits, config, temperature=MTP_TEMPERATURE):
@@ -65,13 +66,58 @@ class PrefixCache:
         return logits[0]
 
 
+class NativePrefixVerifier:
+    """Use exactly the native SPS cached decoding distribution.
+
+    Verification is sequential. A temporary branch copies the native cache,
+    including document/reset state. The accepted base stays intact after a
+    rejection; appending the actual continuation replays native decode steps.
+    Both snapshot and replay are real overhead included by the caller's timer.
+    """
+    def __init__(self, reference, max_new_tokens=MTP_NEW_TOKENS):
+        self.reference = reference
+        self.max_new_tokens = max_new_tokens
+        self.state = None
+        self.prefix = None
+        self.last_logits = None
+
+    @torch.inference_mode()
+    def ensure(self, prefix):
+        extends = (self.prefix is not None and prefix.numel() >= self.prefix.numel()
+                   and torch.equal(prefix[:self.prefix.numel()], self.prefix))
+        if not extends:
+            budget = min(self.max_new_tokens, self.reference.config.block_size-prefix.numel())
+            self.state, logits, _ = self.reference._prefill_generation_state(
+                prefix[None], budget, require_batched=True)
+            self.last_logits = logits[0]
+        else:
+            active = torch.ones(1, dtype=torch.bool, device=prefix.device)
+            for token in prefix[self.prefix.numel():]:
+                logits = self.reference._decode_generation_state(self.state, token[None], active)
+                self.reference._advance_decode_state(self.state, token[None], active)
+                self.last_logits = logits[0]
+        self.prefix = prefix.detach().clone()
+        return self.last_logits
+
+    @torch.inference_mode()
+    def verify_logits(self, prefix, draft):
+        first = self.ensure(prefix)
+        branch = deepcopy(self.state)
+        rows = [first]
+        active = torch.ones(1, dtype=torch.bool, device=prefix.device)
+        for token in draft:
+            logits = self.reference._decode_generation_state(branch, token[None], active)
+            self.reference._advance_decode_state(branch, token[None], active)
+            rows.append(logits[0])
+        return torch.stack(rows)
+
+
 class SpeculativeAdapter:
-    def __init__(self, model, temperature=MTP_TEMPERATURE):
+    def __init__(self, model, temperature=MTP_TEMPERATURE, max_new_tokens=MTP_NEW_TOKENS):
         self.model = model
         self.temperature = temperature
         self.proposer = PrefixCache(model)
-        # Shares frozen reference parameters, but has separate real-prefix KV state.
-        self.verifier = PrefixCache(SPSMTP(model.reference, 1, backend=model.backend).eval())
+        self.verifier = NativePrefixVerifier(model.reference, max_new_tokens)
 
     def prefill(self, prefix):
         self.proposer.ensure(prefix)
@@ -81,12 +127,10 @@ class SpeculativeAdapter:
         return probabilities(self.proposer.ensure(prefix), self.model.config, self.temperature)
 
     def verify(self, prefix, draft):
-        first = self.verifier.ensure(prefix)[0:1]
-        following = self.verifier.append(draft)[:, 0]
-        return probabilities(torch.cat((first, following)), self.model.config, self.temperature)
+        raw = self.verifier.verify_logits(prefix, draft)
+        return probabilities(raw, self.model.config, self.temperature)
 
     def finish(self, prefix):
-        # A terminal rejection/EOS may leave draft states beyond the final output.
         self.proposer.ensure(prefix)
         self.verifier.ensure(prefix)
 
@@ -195,7 +239,7 @@ def benchmark_speculative(model, prefix, *, mode, max_new_tokens=MTP_NEW_TOKENS,
                           seed=MTP_SEED):
     _sync(prefix.device)
     start = time.perf_counter()
-    adapter = SpeculativeAdapter(model)
+    adapter = SpeculativeAdapter(model, max_new_tokens=max_new_tokens)
     adapter.prefill(prefix)
     _sync(prefix.device)
     prefill_seconds = time.perf_counter()-start
@@ -208,7 +252,7 @@ def benchmark_speculative(model, prefix, *, mode, max_new_tokens=MTP_NEW_TOKENS,
     _sync(prefix.device)
     total = time.perf_counter()-start
     row = _timing(result.token_ids, total, prefill_seconds)
-    row.update(rounds=result.rounds, accepted_by_horizon=list(result.accepted_by_horizon),
+    row.update(verifier_backend='native_sequential', rounds=result.rounds, accepted_by_horizon=list(result.accepted_by_horizon),
                proposed_by_horizon=list(result.proposed_by_horizon),
                accepted_tokens_per_round=sum(result.accepted_by_horizon)/result.rounds if result.rounds else 0)
     return row
@@ -216,30 +260,56 @@ def benchmark_speculative(model, prefix, *, mode, max_new_tokens=MTP_NEW_TOKENS,
 
 @torch.inference_mode()
 def check_cached_logits(model, prefix):
-    """Production-backend oracle, outside benchmarks, including rollback."""
-    adapter = SpeculativeAdapter(model)
-    raw = adapter.proposer.ensure(prefix)
-    full = model.forward_selected(prefix[None], [prefix.numel()-1])[0, -1]
-    torch.testing.assert_close(raw, full, atol=CACHE_ATOL, rtol=CACHE_RTOL)
-    q = probabilities(raw, model.config)
+    """Bound proposal rounding drift; demand exact native target probabilities.
+
+    BF16 shape-dependent rounding changes proposal logits. This is acceptable
+    because acceptance uses the actual proposal probabilities and native target.
+    Proposal error bounds are diagnostic guards, not target equivalence claims.
+    """
+    adapter = SpeculativeAdapter(model, max_new_tokens=model.horizons+1)
+    max_raw = 0.0
+    max_probability = 0.0
+    def check_proposal(tokens):
+        nonlocal max_raw, max_probability
+        raw = adapter.proposer.ensure(tokens)
+        expected = model.forward_selected(tokens[None], [tokens.numel()-1])[0, -1]
+        raw_error = float((raw-expected).abs().max())
+        probability_error = float((probabilities(raw, model.config)-probabilities(expected, model.config)).abs().max())
+        max_raw = max(max_raw, raw_error)
+        max_probability = max(max_probability, probability_error)
+        if raw_error > PROPOSAL_LOGIT_ATOL or probability_error > PROPOSAL_PROBABILITY_ATOL:
+            raise RuntimeError(f'Proposal cache drift exceeds declared bounds: logits={raw_error}, probabilities={probability_error}')
+        return probabilities(raw, model.config)
+    q = check_proposal(prefix)
     draft = q.argmax(-1)
-    verified = adapter.verify(prefix, draft)
-    max_error = float((raw-full).abs().max())
-    for j in range(draft.numel()+1):
-        tokens = torch.cat((prefix, draft[:j]))
-        expected = model.forward_selected(tokens[None], [tokens.numel()-1])[0, -1, 0]
-        cached = adapter.verifier.ensure(tokens)[0]
-        torch.testing.assert_close(cached, expected, atol=CACHE_ATOL, rtol=CACHE_RTOL)
-        torch.testing.assert_close(verified[j], probabilities(expected, model.config),
-                                   atol=CACHE_ATOL, rtol=CACHE_RTOL)
-        max_error = max(max_error, float((cached-expected).abs().max()))
+    verified = adapter.verifier.verify_logits(prefix, draft)
+    check_proposal(torch.cat((prefix, draft)))
+    # Build an independent native cache at the same prompt, then use exactly the
+    # reference generator's token-at-a-time path for every target distribution.
+    state, logits, _ = model.reference._prefill_generation_state(
+        prefix[None], model.horizons+1, require_batched=True)
+    untouched = deepcopy(state)
+    expected = [logits[0]]
+    active = torch.ones(1, dtype=torch.bool, device=prefix.device)
+    for token in draft:
+        logits = model.reference._decode_generation_state(state, token[None], active)
+        model.reference._advance_decode_state(state, token[None], active)
+        expected.append(logits[0])
+    expected = torch.stack(expected)
+    torch.testing.assert_close(verified, expected, atol=0, rtol=0)
     correction = (draft[0]+1) % model.config.eos_token_id
     corrected = torch.cat((prefix, correction[None]))
-    recovered = adapter.proposer.ensure(corrected)
-    expected = model.forward_selected(corrected[None], [corrected.numel()-1])[0, -1]
-    torch.testing.assert_close(recovered, expected, atol=CACHE_ATOL, rtol=CACHE_RTOL)
-    return dict(passed=True, atol=CACHE_ATOL, rtol=CACHE_RTOL,
-                maximum_logit_error=max(max_error, float((recovered-expected).abs().max())))
+    check_proposal(corrected)
+    recovered = adapter.verifier.ensure(corrected)
+    corrected_logits = model.reference._decode_generation_state(untouched, correction[None], active)[0]
+    torch.testing.assert_close(recovered, corrected_logits, atol=0, rtol=0)
+    return dict(passed=True, verifier_backend='native_sequential',
+                proposal_logit_atol=PROPOSAL_LOGIT_ATOL,
+                proposal_probability_atol=PROPOSAL_PROBABILITY_ATOL,
+                maximum_proposal_logit_error=max_raw,
+                maximum_proposal_probability_error=max_probability,
+                maximum_reference_logit_error=float((verified-expected).abs().max()),
+                native_reference_atol=0, native_reference_rtol=0)
 
 
 @torch.inference_mode()
@@ -256,7 +326,10 @@ def evaluate(exp, checkpoint_path):
         raise RuntimeError('Insufficient held-out benchmark prompts')
     if MTP_PROMPT_TOKENS + MTP_NEW_TOKENS > model.config.block_size:
         raise RuntimeError('Generation benchmark exceeds source context capacity')
-    report = dict(source=str(MTP_SOURCE), checkpoint=str(checkpoint_path), horizons=exp.horizons,
+    report = dict(verifier_backend='native_sequential',
+        limitations=['Native sequential verification preserves the source decoding distribution; it cannot measure the potential speed of parallel verification.',
+                     'Native branch cache copies and accepted-prefix replay are included in generation timings.'],
+        source=str(MTP_SOURCE), checkpoint=str(checkpoint_path), horizons=exp.horizons,
         device=torch.cuda.get_device_name(device), torch_version=torch.__version__,
         settings=dict(batch_size=1, prompts=len(prompts), prompt_tokens=MTP_PROMPT_TOKENS,
                       max_new_tokens=MTP_NEW_TOKENS, temperature=MTP_TEMPERATURE, seed=MTP_SEED,

@@ -1,5 +1,5 @@
 """Small CPU checks for evaluation cache recovery, targets and timing contracts."""
-from types import SimpleNamespace
+from types import SimpleNamespace, MethodType
 
 import pytest
 import torch
@@ -23,6 +23,17 @@ def model(n=3):
     ref = SPSModelBase(SPSConfig(vocab_size=19, block_size=16, n_layer=1,
         n_head=2, hidden_size=16, intermediate_size=24, eos_token_id=16,
         pad_token_id=17, predict_token_id=18, window_size=0, dropout=0.0))
+    # Native-method contract on CPU; the small oracle evaluates exact full logits.
+    oracle = SPSMTP(ref, 1, backend='sdpa').eval()
+    def prefill(self, ids, budget, **kwargs):
+        return SimpleNamespace(input_ids=ids.clone(), budget=budget), oracle(ids)[:, -1, 0], 'cpu_oracle'
+    def decode(self, state, token, active):
+        return oracle(torch.cat((state.input_ids, token[:, None]), 1))[:, -1, 0]
+    def advance(self, state, token, active):
+        state.input_ids = torch.cat((state.input_ids, token[:, None]), 1)
+    ref._prefill_generation_state = MethodType(prefill, ref)
+    ref._decode_generation_state = MethodType(decode, ref)
+    ref._advance_decode_state = MethodType(advance, ref)
     return SPSMTP(ref, n, backend='sdpa').eval()
 
 
@@ -46,7 +57,7 @@ def test_adapter_recovers_rejected_cache_and_matches_full_conditionals():
         expected = ev.probabilities(mtp(corrected[None])[0, -1], mtp.config, .7)
         torch.testing.assert_close(q, expected, atol=2e-5, rtol=2e-4)
         adapter.finish(corrected)
-        assert torch.equal(adapter.verifier.cache.input_ids[0], corrected)
+        assert torch.equal(adapter.verifier.prefix, corrected)
         # Same prefix, shorter prefix, and EOS boundary all recover correctly.
         for ids in (corrected, prefix, torch.tensor([1, 16, 3, 4])):
             actual = adapter.propose(ids)
@@ -128,7 +139,8 @@ def test_quality_restores_training_backend_and_checks_raw_cache_logits(monkeypat
     mtp.backend = 'sdpa'
     result = ev.check_cached_logits(mtp, torch.tensor([1,2,3]))
     assert result['passed']
-    assert result['maximum_logit_error'] < 2e-4
+    assert result['maximum_proposal_logit_error'] < 2e-4
+    assert result['maximum_reference_logit_error'] == 0
 
 
 def test_timed_speculation_records_actual_emitted_tokens_and_counters():
@@ -164,3 +176,60 @@ def test_cli_uses_validated_trained_marker_checkpoint(monkeypatch, tmp_path):
     monkeypatch.setattr(experiments, 'design_signature', lambda: 'changed')
     with pytest.raises(RuntimeError, match='Stale'):
         ev.main(['--filter', 'chosen'])
+
+
+def test_native_verifier_branch_snapshot_matches_source_after_eos_and_rejection():
+    mtp = model()
+    verifier = ev.NativePrefixVerifier(mtp.reference, max_new_tokens=8)
+    prefix = torch.tensor([1, 2])
+    first = verifier.ensure(prefix).clone()
+    state = verifier.state
+    draft = torch.tensor([16, 3, 4])
+    expected = []
+    with torch.inference_mode():
+        for j in range(4):
+            ids = torch.cat((prefix, draft[:j]))
+            expected.append(mtp(ids[None])[0, -1, 0])
+        actual = verifier.verify_logits(prefix, draft)
+        torch.testing.assert_close(actual, torch.stack(expected), atol=2e-5, rtol=2e-4)
+        assert verifier.state is state
+        assert verifier.prefix.tolist() == [1, 2]
+        torch.testing.assert_close(verifier.ensure(prefix), first, atol=0, rtol=0)
+        # The rejected branch crossed EOS. The replacement retains no branch state.
+        corrected = torch.tensor([1, 2, 9])
+        actual = verifier.ensure(corrected)
+        expected = mtp(corrected[None])[0, -1, 0]
+        torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-4)
+        assert verifier.state.input_ids.tolist() == [[1, 2, 9]]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='native SPS generator requires CUDA')
+def test_real_native_cuda_verifier_matches_original_generator_and_probabilities():
+    from modeling.models.sps import SPSModel
+    torch.manual_seed(37)
+    reference = SPSModel(SPSConfig(vocab_size=19, block_size=32, n_layer=1,
+        n_head=1, hidden_size=64, intermediate_size=128, eos_token_id=16,
+        pad_token_id=17, predict_token_id=18, window_size=0, dropout=0.0)).cuda().eval()
+    mtp = SPSMTP(reference, 3, backend='sdpa').cuda().eval()
+    prefix = torch.tensor([1, 2, 16, 3], device='cuda')
+    with torch.inference_mode():
+        base = ev.benchmark_reference(reference, prefix, mode='greedy', max_new_tokens=8)
+        actual = ev.benchmark_speculative(mtp, prefix, mode='greedy', max_new_tokens=8)
+        assert actual['token_ids'] == base['token_ids']
+        assert actual['verifier_backend'] == 'native_sequential'
+        adapter = ev.SpeculativeAdapter(mtp, max_new_tokens=8)
+        draft = torch.tensor([16, 4, 5], device='cuda')
+        probabilities = adapter.verify(prefix, draft)
+        state, logits, _ = reference._prefill_generation_state(prefix[None], 8, require_batched=True)
+        expected = [ev.probabilities(logits[0], mtp.config)]
+        active = torch.ones(1, dtype=torch.bool, device='cuda')
+        for token in draft:
+            logits = reference._decode_generation_state(state, token[None], active)
+            reference._advance_decode_state(state, token[None], active)
+            expected.append(ev.probabilities(logits[0], mtp.config))
+        torch.testing.assert_close(probabilities, torch.stack(expected), atol=0, rtol=0)
+        corrected = torch.cat((prefix, torch.tensor([9], device='cuda')))
+        cached = adapter.verifier.ensure(corrected)
+        state, _, _ = reference._prefill_generation_state(prefix[None], 8, require_batched=True)
+        oracle = reference._decode_generation_state(state, corrected[-1:], active)
+        torch.testing.assert_close(cached, oracle[0], atol=0, rtol=0)
