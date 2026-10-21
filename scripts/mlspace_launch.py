@@ -153,7 +153,7 @@ def submit_payload(client, body, phase, name, commit):
 
 
 def payload(phase, name, staged, author, nick):
-    command = [str(PYTHON), '-m', 'scripts.pilot_run', phase]
+    command = [str(PYTHON), '-m', 'scripts.mtp_run' if SUITE == 'mtp' else 'scripts.pilot_run', phase]
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
@@ -164,6 +164,8 @@ def payload(phase, name, staged, author, nick):
                        'SPS_EXPERIMENT_SUITE': SUITE,
                        'HF_HOME': str(HF_HOME), 'PYTHONUNBUFFERED': '1',
                        'CC': '/usr/bin/gcc',
+                       'CXX': '/usr/bin/g++',
+                       'CPLUS_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
                        'C_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
                        'OMP_NUM_THREADS': '8', 'TOKENIZERS_PARALLELISM': 'false'},
         instance_type=INSTANCE_TYPES_BY_NUM_GPUS[4], region='SR004',
