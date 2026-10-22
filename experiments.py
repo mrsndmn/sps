@@ -6,10 +6,10 @@ import json
 import os
 
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'1b', '10b'}:
+if SUITE not in {'1b', '10b', 'mtp'}:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
-ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / '10b'
+ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
 RUN_ROOT = ARTIFACTS_ROOT / 'runs'
 SANITY_ROOT = ARTIFACTS_ROOT / 'sanity'
 STAGING_ROOT = COMMON_ROOT / 'code'
@@ -57,6 +57,7 @@ class ExperimentConfig:
     recipe: str
     num_gpus: int = 4
     reference_name: str | None = None
+    horizons: int = 1
 
 
 experiment_configs = [
@@ -70,6 +71,42 @@ if SUITE == '10b':
         ExperimentConfig('s_sps_w0_10b', 's_sps_w0_20b',
                          reference_name='s_sps_w0_pilot_1b'),
     ]
+
+
+# Embedding-only adaptation: source settings and benchmark workloads live here.
+MTP_SOURCE = COMMON_ROOT / '10b/runs/out/s_sps_w0_10b/ckpt_tokens_10003415040_final.pt'
+MTP_DATA = COMMON_ROOT / '10b/runs/data/fineweb-edu'
+MTP_CONTEXT = 1024
+MTP_MICRO_BATCH = 2
+MTP_GLOBAL_BATCH = 64
+MTP_STEP_TOKENS = MTP_CONTEXT * MTP_GLOBAL_BATCH
+MTP_TRAIN_STEPS = (1_000_000_000 + MTP_STEP_TOKENS - 1) // MTP_STEP_TOKENS
+MTP_PROBE_STEPS = 16
+MTP_LR = 0.01
+MTP_WARMUP_STEPS = 100
+MTP_WEIGHT_DECAY = 0.0
+MTP_BETAS = (0.9, 0.95)
+MTP_GRAD_CLIP = 1.0
+MTP_EVAL_INTERVAL = 500
+MTP_VAL_TOKENS = 131072
+MTP_EVAL_PROMPTS = 16
+MTP_PROMPT_TOKENS = 128
+MTP_NEW_TOKENS = 128
+MTP_TEMPERATURE = 1.0
+MTP_SEED = 1337
+MTP_BACKEND = 'auto'
+MTP_INFERENCE_BACKEND = 'sdpa'
+MTP_MAX_HORIZONS = 4
+MTP_PRECHECK_PROMPTS = 2
+MTP_PRECHECK_NEW_TOKENS = 16
+if SUITE == 'mtp':
+    BLOCK_SIZE = MTP_CONTEXT
+    GLOBAL_BATCH_SIZE = MTP_GLOBAL_BATCH
+    TOKENS_PER_STEP = MTP_STEP_TOKENS
+    TRAIN_TOKENS = MTP_TRAIN_STEPS * TOKENS_PER_STEP
+    PROBE_STEPS = MTP_PROBE_STEPS
+    experiment_configs = [ExperimentConfig(f's_sps_mtp_n{n}_emb_1b', 's_sps_w0_20b', horizons=n)
+                          for n in (2, 3, 4)]
 
 
 def collect_experiments(filter_name=None):
@@ -97,6 +134,10 @@ def overrides(exp, *, probe=False):
 
 
 def train_command(exp, *, probe=False):
+    if SUITE == 'mtp':
+        return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
+                f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.mtp_train',
+                '--filter', exp.name, *(['--probe'] if probe else [])]
     return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
             f'--nproc_per_node={exp.num_gpus}', 'scripts/train.py', *overrides(exp, probe=probe)]
 
@@ -115,6 +156,8 @@ def design_signature():
     repo = Path(__file__).resolve().parent
     inputs = sorted([*repo.glob('conf/**/*.yaml'), *repo.glob('src/**/*.py'),
                      repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
+    if SUITE == 'mtp':
+        inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py')]
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
     design = dict(repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,

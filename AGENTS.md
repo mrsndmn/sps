@@ -37,3 +37,19 @@ Arkhip job_wait observation rather than polling shells.
   tests for both suites. `tests/test_long_training.py` checks long-run sampler
   capacity with the installed torch environment. Existing model tests live under
   `src/modeling/tests`; GPU tests require CUDA.
+
+- `SPS_EXPERIMENT_SUITE=mtp`: embedding-only SPS MTP registry in `experiments.py`;
+  `run_train_jobs.py`/`run_eval.py` reuse staging/dedup with a separate artifact root.
+- `src/modeling/models/sps/mtp.py`: frozen real-state encoder, group-local prediction
+  attention, new input embeddings and prefix-only KV cache with rollback.
+- `src/modeling/mtp_speculative.py`: generic exact greedy/sampling proposal acceptance,
+  residual correction and finite-budget/EOS handling.
+- `scripts/mtp_common.py`: source/adaptation loading, matched rank-sharded input
+  sequences and document-safe multi-horizon target masks.
+- `scripts/mtp_train.py`: torchrun embedding-only adaptation, resume, per-horizon
+  validation and lightweight adaptation checkpoints; `scripts/mtp_run.py` wraps
+  four-GPU correctness/throughput preparation, bounded training and evaluation.
+- `scripts/mtp_evaluate.py`: per-horizon quality and reference-verified greedy and
+  sampling generation benchmarks against the original SPS generation path.
+- `tests/test_mtp_*.py`: model causality/freeze/cache, probabilistic acceptance,
+  benchmark adapters, source registry and launch/data orchestration checks.
