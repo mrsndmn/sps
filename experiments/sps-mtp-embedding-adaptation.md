@@ -11,8 +11,12 @@ Artifacts use a separate suite directory under the existing shared artifact root
 prepared data, source checkpoint, environment and HF cache are reused.
 
 ## Results
-Implementation and correctness/throughput validation are in progress. No trained
-adaptation results or measured generation speedups are available yet.
+Preparation completed with 62 correctness tests passing on the worker. Native
+reference logits and greedy outputs matched exactly on the source-checkpoint
+checks. Measured throughput was approximately 121.7k, 87.3k and 69.5k input tokens/s
+for the three horizon counts in registry order. Conservative training-time ranges
+are 3.0–4.5, 4.0–5.8 and 4.9–7.0 hours, excluding queue time. All adaptation jobs
+have been submitted. Final quality and generation-speed results remain pending.
 
 ## Conclusions
 Compare per-horizon quality, proposal acceptance and end-to-end generation speed
@@ -23,3 +27,5 @@ speedup is not an assumed outcome.
 
 ## Changelog
 - 2026-10-21: Completed interactive requirements interview and began implementation.
+- 2026-10-22: Verified preparation, reported measured runtime estimates and submitted
+  the three adaptation jobs with durable observation.
