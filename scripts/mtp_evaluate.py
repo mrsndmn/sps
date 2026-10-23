@@ -122,11 +122,11 @@ def _native_reference(model, reference):
 
 
 class SpeculativeAdapter:
-    def __init__(self, model, temperature=MTP_TEMPERATURE, max_new_tokens=MTP_NEW_TOKENS, *, reference=None):
+    def __init__(self, model, temperature=MTP_TEMPERATURE, max_new_tokens=MTP_NEW_TOKENS, *, reference=None, verifier_factory=NativePrefixVerifier):
         self.model = model
         self.temperature = temperature
         self.proposer = PrefixCache(model)
-        self.verifier = NativePrefixVerifier(_native_reference(model, reference), max_new_tokens)
+        self.verifier = verifier_factory(_native_reference(model, reference), max_new_tokens)
 
     def prefill(self, prefix):
         self.proposer.ensure(prefix)
@@ -245,10 +245,10 @@ def benchmark_reference(reference, prefix, *, mode, max_new_tokens=MTP_NEW_TOKEN
 
 @torch.inference_mode()
 def benchmark_speculative(model, prefix, *, mode, max_new_tokens=MTP_NEW_TOKENS,
-                          seed=MTP_SEED, reference=None):
+                          seed=MTP_SEED, reference=None, verifier_factory=NativePrefixVerifier):
     _sync(prefix.device)
     start = time.perf_counter()
-    adapter = SpeculativeAdapter(model, max_new_tokens=max_new_tokens, reference=reference)
+    adapter = SpeculativeAdapter(model, max_new_tokens=max_new_tokens, reference=reference, verifier_factory=verifier_factory)
     adapter.prefill(prefix)
     _sync(prefix.device)
     prefill_seconds = time.perf_counter()-start
@@ -261,7 +261,7 @@ def benchmark_speculative(model, prefix, *, mode, max_new_tokens=MTP_NEW_TOKENS,
     _sync(prefix.device)
     total = time.perf_counter()-start
     row = _timing(result.token_ids, total, prefill_seconds)
-    row.update(verifier_backend='native_sequential', rounds=result.rounds, accepted_by_horizon=list(result.accepted_by_horizon),
+    row.update(verifier_backend=getattr(adapter.verifier, 'backend', 'native_sequential'), rounds=result.rounds, accepted_by_horizon=list(result.accepted_by_horizon),
                proposed_by_horizon=list(result.proposed_by_horizon),
                accepted_tokens_per_round=sum(result.accepted_by_horizon)/result.rounds if result.rounds else 0)
     return row

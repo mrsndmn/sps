@@ -6,7 +6,7 @@ import json
 import os
 
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze'}:
+if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel'}:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
@@ -97,7 +97,7 @@ MTP_SEED = 1337
 MTP_BACKEND = 'auto'
 MTP_INFERENCE_BACKEND = 'sdpa'
 MTP_MAX_HORIZONS = 4
-MTP_UNFREEZE = SUITE == 'mtp-unfreeze'
+MTP_UNFREEZE = SUITE in {'mtp-unfreeze', 'mtp-parallel'}
 MTP_PARENT_ROOT = COMMON_ROOT / 'mtp/runs/out'
 MTP_PARENT_INPUT_TOKENS = MTP_TRAIN_STEPS * MTP_STEP_TOKENS
 MTP_PARENT_STEP_TOKENS = MTP_STEP_TOKENS
@@ -115,7 +115,7 @@ if MTP_UNFREEZE:
     MTP_EVAL_INTERVAL = (10_000_000 + MTP_STEP_TOKENS - 1) // MTP_STEP_TOKENS
     MTP_EVAL_PROMPTS = 64
     MAX_HOURS = 4
-if SUITE in {'mtp', 'mtp-unfreeze'}:
+if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel'}:
     BLOCK_SIZE = MTP_CONTEXT
     GLOBAL_BATCH_SIZE = MTP_GLOBAL_BATCH
     TOKENS_PER_STEP = MTP_STEP_TOKENS
@@ -153,7 +153,7 @@ def overrides(exp, *, probe=False):
 
 
 def train_command(exp, *, probe=False):
-    if SUITE in {'mtp', 'mtp-unfreeze'}:
+    if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel'}:
         return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
                 f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.mtp_train',
                 '--filter', exp.name, *(['--probe'] if probe else [])]
@@ -175,7 +175,7 @@ def design_signature():
     repo = Path(__file__).resolve().parent
     inputs = sorted([*repo.glob('conf/**/*.yaml'), *repo.glob('src/**/*.py'),
                      repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
-    if SUITE in {'mtp', 'mtp-unfreeze'}:
+    if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel'}:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py')]
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
@@ -185,3 +185,17 @@ def design_signature():
                   probes=[train_command(e, probe=True) for e in experiment_configs],
                   tasks=TASKS, sources=sources)
     return hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
+
+
+def training_marker(exp):
+    """Evaluation-only suites consume immutable completed runs."""
+    if SUITE == 'mtp-parallel':
+        return COMMON_ROOT / 'mtp-unfreeze/runs/out' / exp.name / 'trained.json'
+    return output_dir(exp) / 'trained.json'
+
+
+# Parallel verifier numerical audit uses held-out prompts outside timed regions.
+MTP_PARALLEL_PROB_ATOL = 0.005
+MTP_PARALLEL_AUDIT_PROMPTS = 8
+
+MTP_PARALLEL_TIMEOUT_SECONDS = 4 * 3600

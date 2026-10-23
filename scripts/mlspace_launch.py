@@ -16,7 +16,7 @@ import time
 
 from experiments import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
-                        collect_experiments, output_dir, design_signature, SUITE)
+                        collect_experiments, output_dir, design_signature, SUITE, training_marker)
 from scripts.pilot_headers import HEADER_ROOT
 
 
@@ -154,6 +154,8 @@ def submit_payload(client, body, phase, name, commit):
 
 def payload(phase, name, staged, author, nick):
     command = [str(PYTHON), '-m', 'scripts.mtp_run' if SUITE in {'mtp', 'mtp-unfreeze'} else 'scripts.pilot_run', phase]
+    if SUITE == 'mtp-parallel':
+        command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
@@ -189,6 +191,8 @@ def main(default_phase='train'):
 
 
 def submit(args):
+    if SUITE == 'mtp-parallel' and args.phase != 'eval':
+        raise ValueError('mtp-parallel is evaluation-only')
     repo = Path(git('rev-parse', '--show-toplevel'))
     commit = git('rev-parse', 'HEAD')
     candidates = [('data-and-probes', ARTIFACTS_ROOT / 'prepared.json')] if args.phase == 'prepare' else [
@@ -220,8 +224,8 @@ def submit(args):
                 raise RuntimeError(f'Stale completion marker at {marker}; use a new artifact root/run name')
             print(f'Skip completed: {name}')
             continue
-        if args.phase == 'eval' and not (output_dir(next(
-                e for e in collect_experiments() if e.name == name)) / 'trained.json').exists():
+        if args.phase == 'eval' and not training_marker(next(
+                e for e in collect_experiments() if e.name == name)).exists():
             print(f'Skip evaluation without trained checkpoint: {name}')
             continue
         body = payload(args.phase, name, staged, args.author_name, args.telegram_nick)
