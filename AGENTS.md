@@ -64,3 +64,12 @@ Arkhip job_wait observation rather than polling shells.
   original SPS; its weights never share parameter storage with the trained draft.
 - `tests/test_mtp_unfreeze_*.py`: CE, optimizer parameter deduplication/LR grouping,
   full-checkpoint restoration, warmstart provenance and continuation registry.
+
+- `SPS_EXPERIMENT_SUITE=mtp-parallel`: evaluation-only registry consuming completed
+  full-continuation drafts and their learned parents, with isolated artifacts.
+- `src/modeling/models/sps/parallel_verify.py`: layer-parallel causal real/predict
+  pairs using native q2 attention and verified-prefix KV rollback.
+- `scripts/mtp_parallel_evaluate.py`: native numerical audit and matched parallel
+  greedy/sampling measurements; records full greedy mismatch counts explicitly.
+- `tests/test_mtp_parallel.py`: block causality, EOS, rejection/cache reuse, short
+  budgets, CUDA native comparisons and evaluation-only submission routing.
