@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import statistics
+import shutil
 import time
 
 import experiments as e
@@ -18,6 +19,8 @@ def file_digest(path):
 
 
 def check_data():
+    if e.MTP_UNFREEZE and shutil.disk_usage(e.MTP_DATA).free<e.MTP_CHECKPOINT_FREE_BYTES:
+        raise RuntimeError('Insufficient free space for full draft checkpoints')
     manifest=json.loads((e.MTP_DATA/'manifest.json').read_text())
     if (manifest['revision']!=e.DATASET_REVISION or manifest['tokenizer']!='gpt2'
             or manifest['repo']!=e.DATASET_REPO or manifest['dtype']!='uint16'):
@@ -27,10 +30,12 @@ def check_data():
             raise RuntimeError('Incomplete prepared corpus')
     from scripts.mtp_common import sequence_starts
     required=e.MTP_TRAIN_STEPS*e.MTP_GLOBAL_BATCH//4
-    capacity=[len(sequence_starts(manifest['tokens']['train'],e.MTP_CONTEXT,4,rank)) for rank in range(4)]
+    parent_samples=e.MTP_PARENT_INPUT_TOKENS//(e.MTP_PARENT_CONTEXT*4) if e.MTP_UNFREEZE else 0
+    capacity=[len(sequence_starts(manifest['tokens']['train'],e.MTP_CONTEXT,4,rank,resume=parent_samples)) for rank in range(4)]
     if min(capacity)<required:raise RuntimeError('Insufficient unique rank coverage')
     return dict(manifest_sha256=file_digest(e.MTP_DATA/'manifest.json'),tokens=manifest['tokens'],
-                required_sequences_per_rank=required,available_sequences_per_rank=capacity)
+                required_sequences_per_rank=required,available_sequences_per_rank=capacity,
+                parent_samples_per_rank=parent_samples)
 
 
 def estimate(exp):
@@ -54,24 +59,29 @@ def prepare():
     headers()
     e.SANITY_ROOT.mkdir(parents=True,exist_ok=True)
     data=check_data()
-    run_logged([str(e.PYTHON),'-m','pytest','-q','tests/test_mtp_model.py',
-                'tests/test_mtp_speculative.py','tests/test_mtp_evaluate.py'],
+    run_logged(['/usr/bin/env','SPS_EXPERIMENT_SUITE=mtp',str(e.PYTHON),'-m','pytest','-q','tests/test_mtp_model.py',
+                'tests/test_mtp_speculative.py','tests/test_mtp_evaluate.py',
+                'tests/test_mtp_unfreeze_jobs.py','tests/test_mtp_unfreeze_loading.py'],
                e.SANITY_ROOT/'correctness.log',timeout=3600)
     # Verify the actual pretrained source before spending the adaptation budget.
     from scripts.mtp_common import load_mtp, TokenSequences, validation_starts
     from scripts.mtp_evaluate import check_cached_logits, benchmark_reference, benchmark_speculative
     model=load_mtp(e.MTP_MAX_HORIZONS, 'cuda', backend=e.MTP_INFERENCE_BACKEND).eval()
+    verifier_args={}
+    if e.MTP_UNFREEZE:
+        from scripts.mtp_common import load_reference
+        verifier_args['reference']=load_reference('cuda').requires_grad_(False).eval()
     validation=TokenSequences('val',e.MTP_PROMPT_TOKENS)
     checks=[]
     for start in validation_starts(len(validation.tokens),e.MTP_PROMPT_TOKENS,e.MTP_PRECHECK_PROMPTS):
         prompt=validation[start][:e.MTP_PROMPT_TOKENS].cuda()
-        cached=check_cached_logits(model,prompt)
-        baseline=benchmark_reference(model.reference,prompt,mode='greedy',max_new_tokens=e.MTP_PRECHECK_NEW_TOKENS)
-        speculative=benchmark_speculative(model,prompt,mode='greedy',max_new_tokens=e.MTP_PRECHECK_NEW_TOKENS)
+        cached=check_cached_logits(model,prompt,**verifier_args)
+        baseline=benchmark_reference(verifier_args.get('reference',model.reference),prompt,mode='greedy',max_new_tokens=e.MTP_PRECHECK_NEW_TOKENS)
+        speculative=benchmark_speculative(model,prompt,mode='greedy',max_new_tokens=e.MTP_PRECHECK_NEW_TOKENS,**verifier_args)
         if baseline['token_ids']!=speculative['token_ids']:
             raise RuntimeError('Production-checkpoint speculative greedy mismatch')
         checks.append(dict(cached=cached,greedy_exact=True))
-    del model
+    del model,verifier_args
     torch.cuda.empty_cache()
     write_json(e.SANITY_ROOT/'source-correctness.json',checks)
     estimates={}
@@ -81,7 +91,11 @@ def prepare():
         run_logged(e.train_command(exp,probe=True),e.SANITY_ROOT/f'{exp.name}.log',timeout=7200)
         estimates[exp.name]=estimate(exp)
         print(json.dumps(dict(name=exp.name,estimate=estimates[exp.name])),flush=True)
-    result=dict(design_signature=e.design_signature(),data=data,
+    warmstarts={}
+    if e.MTP_UNFREEZE:
+        from scripts.mtp_common import warmstart_metadata
+        warmstarts={exp.name:warmstart_metadata(exp.horizons) for exp in e.collect_experiments()}
+    result=dict(design_signature=e.design_signature(),data=data,warmstarts=warmstarts,
                 source_sha256=file_digest(e.MTP_SOURCE),estimates=estimates)
     write_json(e.ARTIFACTS_ROOT/'probe-results.json',result)
     if max(x['projected_training_hours'] for x in estimates.values())>e.MAX_HOURS:
@@ -97,6 +111,11 @@ def train(exp):
     if prepared['data']['manifest_sha256']!=file_digest(e.MTP_DATA/'manifest.json'):
         raise RuntimeError('Source data changed')
     check_data()
+    parent=None
+    if e.MTP_UNFREEZE:
+        from scripts.mtp_common import warmstart_metadata
+        parent=warmstart_metadata(exp.horizons)
+        if prepared['warmstarts'].get(exp.name)!=parent:raise RuntimeError('Warmstart checkpoint changed')
     forecast=prepared['estimates'][exp.name]
     if forecast['token_budget']!=e.TRAIN_TOKENS or forecast['projected_training_hours']>e.MAX_HOURS:
         raise RuntimeError('Unapproved runtime/budget')
@@ -106,7 +125,7 @@ def train(exp):
         if json.loads(identity.read_text())['design_signature']!=signature:raise RuntimeError('Stale run identity')
     elif list(dest.glob('*.pt')):raise RuntimeError('Missing partial-run identity')
     write_json(identity,dict(design_signature=signature,source_sha256=prepared['source_sha256'],
-        command=e.train_command(exp),estimate=forecast))
+        command=e.train_command(exp),estimate=forecast,warmstart=parent))
     start=time.monotonic()
     run_logged(e.train_command(exp),dest/'train.log',timeout=e.MAX_HOURS*3600)
     final=dest/'adaptation_final.pt'
@@ -114,7 +133,7 @@ def train(exp):
     write_json(dest/'trained.json',dict(checkpoint=str(final),design_signature=signature,
         source_sha256=prepared['source_sha256'],
         data_manifest_sha256=prepared['data']['manifest_sha256'],
-        seconds=time.monotonic()-start,estimate=forecast))
+        seconds=time.monotonic()-start,estimate=forecast,warmstart=parent))
 
 
 def evaluate(exp):
@@ -133,7 +152,7 @@ def evaluate(exp):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('phase',choices=('prepare','train','eval'))
     parser.add_argument('--filter');args=parser.parse_args()
-    if e.SUITE!='mtp':raise RuntimeError('Select SPS_EXPERIMENT_SUITE=mtp')
+    if e.SUITE not in {'mtp','mtp-unfreeze'}:raise RuntimeError('Select an MTP suite')
     if args.phase=='prepare':return prepare()
     matches=e.collect_experiments(args.filter)
     if len(matches)!=1:raise ValueError('Select exactly one experiment')

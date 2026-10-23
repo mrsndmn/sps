@@ -152,3 +152,7 @@ def validate_evaluation_inputs(trained):
                 digest.update(chunk)
         if not expected or digest.hexdigest()!=expected:
             raise RuntimeError(f'Evaluation {label} changed or has no recorded identity')
+
+    parent=trained.get('warmstart')
+    if parent and file_sha256(parent['path'])!=parent.get('sha256'):
+        raise RuntimeError('Warmstart checkpoint changed since training')
