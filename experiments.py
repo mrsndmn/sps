@@ -6,7 +6,7 @@ import json
 import os
 
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'1b', '10b', 'mtp'}:
+if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze'}:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
@@ -97,9 +97,25 @@ MTP_SEED = 1337
 MTP_BACKEND = 'auto'
 MTP_INFERENCE_BACKEND = 'sdpa'
 MTP_MAX_HORIZONS = 4
+MTP_UNFREEZE = SUITE == 'mtp-unfreeze'
+MTP_PARENT_ROOT = COMMON_ROOT / 'mtp/runs/out'
+MTP_PARENT_INPUT_TOKENS = MTP_TRAIN_STEPS * MTP_STEP_TOKENS
+MTP_PARENT_STEP_TOKENS = MTP_STEP_TOKENS
+MTP_PARENT_CONTEXT = MTP_CONTEXT
+MTP_EMBED_LR = MTP_LR
+MTP_CHECKPOINT_FREE_BYTES = 20_000_000_000
 MTP_PRECHECK_PROMPTS = 2
 MTP_PRECHECK_NEW_TOKENS = 16
-if SUITE == 'mtp':
+if MTP_UNFREEZE:
+    MTP_TRAIN_STEPS = (50_000_000 + MTP_STEP_TOKENS - 1) // MTP_STEP_TOKENS
+    MTP_LR = 1e-5
+    MTP_EMBED_LR = 1e-4
+    MTP_WARMUP_STEPS = 30
+    MTP_WEIGHT_DECAY = 0.01
+    MTP_EVAL_INTERVAL = (10_000_000 + MTP_STEP_TOKENS - 1) // MTP_STEP_TOKENS
+    MTP_EVAL_PROMPTS = 64
+    MAX_HOURS = 4
+if SUITE in {'mtp', 'mtp-unfreeze'}:
     BLOCK_SIZE = MTP_CONTEXT
     GLOBAL_BATCH_SIZE = MTP_GLOBAL_BATCH
     TOKENS_PER_STEP = MTP_STEP_TOKENS
@@ -107,6 +123,9 @@ if SUITE == 'mtp':
     PROBE_STEPS = MTP_PROBE_STEPS
     experiment_configs = [ExperimentConfig(f's_sps_mtp_n{n}_emb_1b', 's_sps_w0_20b', horizons=n)
                           for n in (2, 3, 4)]
+    if MTP_UNFREEZE:
+        experiment_configs = [ExperimentConfig(f's_sps_mtp_n{n}_unfreeze_ce_50m', 's_sps_w0_20b', horizons=n)
+                              for n in (2, 3, 4)]
 
 
 def collect_experiments(filter_name=None):
@@ -134,7 +153,7 @@ def overrides(exp, *, probe=False):
 
 
 def train_command(exp, *, probe=False):
-    if SUITE == 'mtp':
+    if SUITE in {'mtp', 'mtp-unfreeze'}:
         return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
                 f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.mtp_train',
                 '--filter', exp.name, *(['--probe'] if probe else [])]
@@ -156,7 +175,7 @@ def design_signature():
     repo = Path(__file__).resolve().parent
     inputs = sorted([*repo.glob('conf/**/*.yaml'), *repo.glob('src/**/*.py'),
                      repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
-    if SUITE == 'mtp':
+    if SUITE in {'mtp', 'mtp-unfreeze'}:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py')]
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}

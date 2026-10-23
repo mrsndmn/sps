@@ -205,3 +205,89 @@ def test_actual_padding_hidden_states_are_isolated():
     actual=model(ids)
     handle.remove()
     torch.testing.assert_close(actual[:,2:],baseline[:,2:],atol=0,rtol=0)
+
+
+def test_unfrozen_loss_reaches_real_embeddings_and_real_only_mlp_states():
+    model = SPSMTP(tiny(), 3, backend='sdpa', train_backbone=True)
+    real_states = {}
+
+    def capture_embedding(module, args, output):
+        real_states['embedding'] = output
+
+    def capture_real_mlp(module, args, output):
+        if output.shape[1] == 4:
+            real_states['mlp'] = output
+
+    handles = [model.reference.transformer.wte.register_forward_hook(capture_embedding),
+               model.reference.transformer.h[0].mlp.register_forward_hook(capture_real_mlp)]
+    try:
+        logits = model(torch.tensor([[1, 2, 3, 4]]))
+    finally:
+        for handle in handles:
+            handle.remove()
+    loss = F.cross_entropy(logits[:, -1].reshape(-1, 19), torch.tensor([5, 6, 7]))
+    assert all(state.requires_grad for state in real_states.values())
+    grads = torch.autograd.grad(loss, tuple(real_states.values()))
+    assert all(torch.isfinite(grad).all() and grad.abs().sum() > 0 for grad in grads)
+
+
+def test_unfrozen_appended_loss_reaches_past_real_keys_and_values():
+    model = SPSMTP(tiny(), 3, backend='sdpa', train_backbone=True)
+    cache, _ = model.encode(torch.tensor([[1, 2]]))
+    past = tuple(state for layer in cache.layers for state in layer)
+    assert all(state.requires_grad for state in past)
+    _, logits = model.encode(torch.tensor([[3, 4]]), cache, positions=[3])
+    loss = F.cross_entropy(logits.reshape(-1, 19), torch.tensor([5, 6, 7]))
+    grads = torch.autograd.grad(loss, past)
+    assert all(torch.isfinite(grad).all() and grad.abs().sum() > 0 for grad in grads)
+
+
+def test_unfrozen_tied_embedding_updates_once_and_modes_control_real_graph():
+    model = SPSMTP(tiny(), 3, backend='sdpa', train_backbone=True)
+    assert all(parameter.requires_grad for parameter in model.parameters())
+    assert model.reference.training
+    weight = model.reference.transformer.wte.weight
+    assert model.reference.lm_head.weight is weight
+    parameters = list(model.parameters())
+    assert sum(parameter is weight for parameter in parameters) == 1
+    before = weight.detach().clone()
+    optimizer = torch.optim.SGD(parameters, lr=.1)
+    logits = model(torch.tensor([[1, 2, 3, 4]]))
+    F.cross_entropy(logits.reshape(-1, 19), torch.arange(12) % 16).backward()
+    expected = before - .1 * weight.grad
+    assert model.new_embeddings.grad.abs().sum() > 0
+    assert all(parameter.grad is not None for parameter in model.reference.parameters())
+    optimizer.step()
+    torch.testing.assert_close(weight, expected)
+    assert not torch.equal(weight, before)
+    model.eval()
+    assert not model.reference.training
+    cache, _ = model.encode(torch.tensor([[1, 2]]))
+    assert all(not state.requires_grad for layer in cache.layers for state in layer)
+    model.train()
+    assert model.reference.training
+    with torch.no_grad():
+        cache, _ = model.encode(torch.tensor([[1, 2]]))
+    assert all(not state.requires_grad for layer in cache.layers for state in layer)
+    frozen = SPSMTP(tiny(), 3, backend='sdpa').train()
+    assert not frozen.reference.training
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='CUDA required')
+def test_cuda_unfrozen_flex_backward_through_real_and_prediction_kv():
+    model = SPSMTP(tiny(n_head=1, hidden_size=64).cuda(), 3,
+                   backend='flex', train_backbone=True).cuda()
+    ids = torch.tensor([[1, 2, 3, 4]], device='cuda')
+    with torch.autocast('cuda', dtype=torch.bfloat16):
+        cache, _ = model.encode(ids[:, :2])
+        past = tuple(state for layer in cache.layers for state in layer)
+        for state in past:
+            state.retain_grad()
+        _, logits = model.encode(ids[:, 2:], cache, positions=[3])
+        loss = F.cross_entropy(logits.float().reshape(-1, 19),
+                               torch.tensor([5, 6, 7], device='cuda'))
+    loss.backward()
+    assert all(state.grad is not None and torch.isfinite(state.grad).all()
+               and state.grad.abs().sum() > 0 for state in past)
+    assert all(parameter.grad is not None and torch.isfinite(parameter.grad).all()
+               for parameter in model.parameters())

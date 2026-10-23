@@ -1,4 +1,4 @@
-"""Frozen SPS with input-only, group-local multi-token prediction embeddings.
+"""SPS with group-local multi-token prediction and optional backbone training.
 
 Real-token KV states never depend on a prediction slot. A prediction query has one
 joint softmax over its causal real prefix and its own group's causal slots. The
@@ -7,6 +7,7 @@ SDPA is the small-sequence CPU oracle. Cached tensors contain only real states.
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 import torch
@@ -34,8 +35,7 @@ def truncate_cache(cache: MTPCache, length: int) -> MTPCache:
                     tuple((k[:, :, :length], v[:, :, :length]) for k, v in cache.layers))
 
 
-# Compiling the kernel (rather than the model) preserves the eager frozen/grad
-# boundary. FlexAttention's backward computes gradients for prediction Q/K/V.
+# Compile the attention kernel while preserving the eager stream/gradient boundary.
 _compiled_flex = None
 
 
@@ -45,10 +45,12 @@ class SPSMTP(nn.Module):
     ``positions`` in forward_selected/encode may be [S] or [B,S], and are absolute
     real-token indices. encode's default returns every newly appended prefix;
     supplying positions avoids projecting all prefixes to the large vocabulary.
-    Cache reuse is for inference: reference tensors are immutable after creation.
+    Caches retain autograd history during backbone training. Reuse them only within
+    the same backward/optimizer step; inference caches hold detached real states.
     """
 
-    def __init__(self, reference: nn.Module, horizons: int, backend: str = "auto"):
+    def __init__(self, reference: nn.Module, horizons: int, backend: str = "auto",
+                 train_backbone: bool = False):
         super().__init__()
         if not isinstance(horizons, int) or horizons < 1:
             raise ValueError("horizons must be a positive integer")
@@ -63,8 +65,9 @@ class SPSMTP(nn.Module):
         self.config = reference.config
         self.horizons = horizons
         self.backend = backend
-        reference.requires_grad_(False)
-        reference.eval()
+        self.train_backbone = train_backbone
+        reference.requires_grad_(train_backbone)
+        reference.train(self.training and train_backbone)
         initial = reference.transformer.wte.weight[self.config.predict_token_id].detach()
         self.new_embeddings = nn.Parameter(initial.repeat(horizons - 1, 1))
         self.register_buffer("freqs_cis", precompute_freqs_cis(
@@ -73,7 +76,7 @@ class SPSMTP(nn.Module):
 
     def train(self, mode: bool = True):
         super().train(mode)
-        self.reference.eval()
+        self.reference.train(mode and self.train_backbone)
         return self
 
     def truncate_cache(self, cache: MTPCache, length: int) -> MTPCache:
@@ -172,7 +175,8 @@ class SPSMTP(nn.Module):
         positions = torch.arange(previous, total, device=input_ids.device)[None].expand(b, -1)
         real_mask = self._mask(docs, positions, predict=False)
         layers = []
-        with torch.no_grad():
+        retain_graph = self.train_backbone and self.training and torch.is_grad_enabled()
+        with nullcontext() if retain_graph else torch.no_grad():
             x = self.reference.transformer.wte(input_ids)
             for i, block in enumerate(self.reference.transformer.h):
                 q, k, v = self._qkv(block, x, positions)
@@ -181,7 +185,7 @@ class SPSMTP(nn.Module):
                     k = torch.cat((old_k, k), dim=2)
                     v = torch.cat((old_v, v), dim=2)
                 x = self._residual(block, x, self._attention(q, k, v, real_mask))
-                layers.append((k.detach(), v.detach()))
+                layers.append((k, v) if retain_graph else (k.detach(), v.detach()))
         return MTPCache(all_ids.detach(), tuple(layers)), docs
 
     def _predict(self, cache: MTPCache, docs: Tensor, positions: Tensor):

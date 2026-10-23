@@ -53,3 +53,14 @@ Arkhip job_wait observation rather than polling shells.
   sampling generation benchmarks against the original SPS generation path.
 - `tests/test_mtp_*.py`: model causality/freeze/cache, probabilistic acceptance,
   benchmark adapters, source registry and launch/data orchestration checks.
+
+- `SPS_EXPERIMENT_SUITE=mtp-unfreeze`: continues each completed embedding-only
+  parent with plain CE on all horizons and trains the complete Transformer and
+  tied input/output embeddings. Full draft/optimizer checkpoints use an isolated
+  artifact root; the sampler starts after the parent's consumed input sequences.
+- `scripts/mtp_common.py`: validates parent checkpoints and source/data identities,
+  restores full draft weights and preserves tied parameter identity.
+- `scripts/mtp_evaluate.py`: updated drafts are verified against a separately loaded
+  original SPS; its weights never share parameter storage with the trained draft.
+- `tests/test_mtp_unfreeze_*.py`: CE, optimizer parameter deduplication/LR grouping,
+  full-checkpoint restoration, warmstart provenance and continuation registry.

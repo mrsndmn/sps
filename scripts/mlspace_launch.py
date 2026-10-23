@@ -153,7 +153,7 @@ def submit_payload(client, body, phase, name, commit):
 
 
 def payload(phase, name, staged, author, nick):
-    command = [str(PYTHON), '-m', 'scripts.mtp_run' if SUITE == 'mtp' else 'scripts.pilot_run', phase]
+    command = [str(PYTHON), '-m', 'scripts.mtp_run' if SUITE in {'mtp', 'mtp-unfreeze'} else 'scripts.pilot_run', phase]
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
