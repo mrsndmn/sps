@@ -250,3 +250,67 @@ def test_proposal_cache_drift_is_diagnostic_while_native_target_stays_exact(monk
     assert report['maximum_proposal_probability_error'] > .01
     assert report['maximum_reference_logit_error'] == 0
     assert report['native_reference_atol'] == report['native_reference_rtol'] == 0
+
+
+def test_explicit_native_verifier_is_independent_of_updated_draft():
+    draft = model()
+    original = model().reference
+    prefix = torch.tensor([1, 2, 3])
+    with torch.inference_mode():
+        expected = ev.SpeculativeAdapter(model()).verify(prefix, torch.tensor([4, 5, 6]))
+        for parameter in draft.reference.parameters():
+            parameter.add_(torch.randn_like(parameter) * .2)
+        adapter = ev.SpeculativeAdapter(draft, reference=original)
+        actual = adapter.verify(prefix, torch.tensor([4, 5, 6]))
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+        assert adapter.verifier.reference is original
+        report = ev.check_cached_logits(draft, prefix, reference=original)
+        assert report['maximum_reference_logit_error'] == 0
+        result = ev.benchmark_speculative(draft, prefix, mode='greedy',
+            max_new_tokens=4, reference=original)
+        adapter = ev.SpeculativeAdapter(model())
+        expected_ids = speculative_generate(prefix, adapter.propose, adapter.verify,
+            max_new_tokens=4, eos_token_id=16).token_ids.tolist()
+        assert result['token_ids'] == expected_ids
+
+
+def test_trainable_draft_requires_independent_native_reference():
+    draft = model()
+    draft.train_backbone = True
+    with pytest.raises(RuntimeError, match='independent'):
+        ev.SpeculativeAdapter(draft)
+    with pytest.raises(RuntimeError, match='shar'):
+        ev.SpeculativeAdapter(draft, reference=draft.reference)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='native SPS generator requires CUDA')
+def test_updated_cuda_draft_uses_immutable_native_verifier():
+    from copy import deepcopy
+    from modeling.models.sps import SPSModel
+    torch.manual_seed(43)
+    original = SPSModel(SPSConfig(vocab_size=19, block_size=32, n_layer=1,
+        n_head=1, hidden_size=64, intermediate_size=128, eos_token_id=16,
+        pad_token_id=17, predict_token_id=18, window_size=0, dropout=0.0)).cuda().eval()
+    draft = SPSMTP(deepcopy(original), 3, backend='sdpa', train_backbone=True).cuda().eval()
+    prefix = torch.tensor([1, 2, 16, 3], device='cuda')
+    snapshot = {k:v.clone() for k,v in original.state_dict().items()}
+    with torch.inference_mode():
+        draft.reference.transformer.wte.weight.add_(torch.randn_like(draft.reference.transformer.wte.weight)*.3)
+        base = ev.benchmark_reference(original, prefix, mode='greedy', max_new_tokens=6)
+        actual = ev.benchmark_speculative(draft, prefix, mode='greedy',
+            max_new_tokens=6, reference=original)
+        assert actual['token_ids'] == base['token_ids']
+        assert ev.check_cached_logits(draft, prefix, reference=original)['maximum_reference_logit_error'] == 0
+        for key,value in original.state_dict().items():
+            torch.testing.assert_close(value, snapshot[key], atol=0, rtol=0)
+
+
+def test_full_checkpoint_restored_for_inference_still_requires_original_target():
+    from scripts.mtp_common import restore_draft
+    draft = model()
+    restore_draft(draft, dict(source=str(ev.MTP_SOURCE), horizons=draft.horizons,
+        train_backbone=True, backbone=draft.reference.state_dict(),
+        new_embeddings=draft.new_embeddings.detach().clone()))
+    assert not draft.train_backbone
+    with pytest.raises(RuntimeError, match='independent'):
+        ev.SpeculativeAdapter(draft)

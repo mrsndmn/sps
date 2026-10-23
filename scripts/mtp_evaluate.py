@@ -17,7 +17,7 @@ from experiments import (MTP_INFERENCE_BACKEND, MTP_CONTEXT, MTP_EVAL_PROMPTS,
     MTP_NEW_TOKENS, MTP_PROMPT_TOKENS, MTP_SEED, MTP_SOURCE,
     MTP_TEMPERATURE, MTP_VAL_TOKENS, output_dir)
 from scripts.mtp_common import (TokenSequences, load_mtp, shifted_targets,
-                                validation_starts)
+                                validation_starts, restore_draft, load_reference)
 from modeling.models.sps.mtp import truncate_cache
 from modeling.mtp_speculative import speculative_generate
 
@@ -110,12 +110,23 @@ class NativePrefixVerifier:
         return torch.stack(rows)
 
 
+def _native_reference(model, reference):
+    if reference is None:
+        if getattr(model, 'train_backbone', False) or getattr(model, 'has_adapted_backbone', False):
+            raise RuntimeError('Trainable drafts require an independent original native reference')
+        return model.reference
+    draft_storage = {p.untyped_storage().data_ptr() for p in model.parameters()}
+    if any(p.untyped_storage().data_ptr() in draft_storage for p in reference.parameters()):
+        raise RuntimeError('Native reference must not share parameter storage with the draft')
+    return reference
+
+
 class SpeculativeAdapter:
-    def __init__(self, model, temperature=MTP_TEMPERATURE, max_new_tokens=MTP_NEW_TOKENS):
+    def __init__(self, model, temperature=MTP_TEMPERATURE, max_new_tokens=MTP_NEW_TOKENS, *, reference=None):
         self.model = model
         self.temperature = temperature
         self.proposer = PrefixCache(model)
-        self.verifier = NativePrefixVerifier(model.reference, max_new_tokens)
+        self.verifier = NativePrefixVerifier(_native_reference(model, reference), max_new_tokens)
 
     def prefill(self, prefix):
         self.proposer.ensure(prefix)
@@ -234,10 +245,10 @@ def benchmark_reference(reference, prefix, *, mode, max_new_tokens=MTP_NEW_TOKEN
 
 @torch.inference_mode()
 def benchmark_speculative(model, prefix, *, mode, max_new_tokens=MTP_NEW_TOKENS,
-                          seed=MTP_SEED):
+                          seed=MTP_SEED, reference=None):
     _sync(prefix.device)
     start = time.perf_counter()
-    adapter = SpeculativeAdapter(model, max_new_tokens=max_new_tokens)
+    adapter = SpeculativeAdapter(model, max_new_tokens=max_new_tokens, reference=reference)
     adapter.prefill(prefix)
     _sync(prefix.device)
     prefill_seconds = time.perf_counter()-start
@@ -257,7 +268,7 @@ def benchmark_speculative(model, prefix, *, mode, max_new_tokens=MTP_NEW_TOKENS,
 
 
 @torch.inference_mode()
-def check_cached_logits(model, prefix):
+def check_cached_logits(model, prefix, *, reference=None):
     """Report proposal drift; demand exact native target probabilities.
 
     Proposal cache/full differences are diagnostics, not correctness gates.
@@ -265,7 +276,8 @@ def check_cached_logits(model, prefix):
     actual q probabilities, validated by the decoder, and the exact native p.
     Logical cache recovery and causality are tested independently.
     """
-    adapter = SpeculativeAdapter(model, max_new_tokens=model.horizons+1)
+    adapter = SpeculativeAdapter(model, max_new_tokens=model.horizons+1, reference=reference)
+    reference = adapter.verifier.reference
     max_raw = 0.0
     max_probability = 0.0
     def check_proposal(tokens):
@@ -283,14 +295,14 @@ def check_cached_logits(model, prefix):
     check_proposal(torch.cat((prefix, draft)))
     # Build an independent native cache at the same prompt, then use exactly the
     # reference generator's token-at-a-time path for every target distribution.
-    state, logits, _ = model.reference._prefill_generation_state(
+    state, logits, _ = reference._prefill_generation_state(
         prefix[None], model.horizons+1, require_batched=True)
     untouched = deepcopy(state)
     expected = [logits[0]]
     active = torch.ones(1, dtype=torch.bool, device=prefix.device)
     for token in draft:
-        logits = model.reference._decode_generation_state(state, token[None], active)
-        model.reference._advance_decode_state(state, token[None], active)
+        logits = reference._decode_generation_state(state, token[None], active)
+        reference._advance_decode_state(state, token[None], active)
         expected.append(logits[0])
     expected = torch.stack(expected)
     torch.testing.assert_close(verified, expected, atol=0, rtol=0)
@@ -298,7 +310,7 @@ def check_cached_logits(model, prefix):
     corrected = torch.cat((prefix, correction[None]))
     check_proposal(corrected)
     recovered = adapter.verifier.ensure(corrected)
-    corrected_logits = model.reference._decode_generation_state(untouched, correction[None], active)[0]
+    corrected_logits = reference._decode_generation_state(untouched, correction[None], active)[0]
     torch.testing.assert_close(recovered, corrected_logits, atol=0, rtol=0)
     return dict(passed=True, verifier_backend='native_sequential',
                 proposal_comparison='diagnostic_only',
@@ -319,6 +331,9 @@ def evaluate(exp, checkpoint_path):
     if device.type != 'cuda':
         raise RuntimeError('Production generation benchmarks require CUDA and the original SPS cached generator')
     model = load_mtp(exp.horizons, device, backend=MTP_INFERENCE_BACKEND).eval()
+    # Keep the immutable target separate even when the restored draft is frozen
+    # for inference: its backbone may contain previously fine-tuned weights.
+    reference = load_reference(device).requires_grad_(False).eval()
     data = TokenSequences('val', MTP_PROMPT_TOKENS, exp.horizons)
     starts = validation_starts(len(data.tokens), MTP_PROMPT_TOKENS, MTP_EVAL_PROMPTS)
     prompts = [data[start][:MTP_PROMPT_TOKENS].to(device) for start in starts]
@@ -338,22 +353,22 @@ def evaluate(exp, checkpoint_path):
         baseline={}, before={}, after={})
     # Original SPS never changes: reuse its measured baseline for both phases.
     for mode in ('greedy', 'sample'):
-        benchmark_reference(model.reference, prompts[0], mode=mode)
-        report['baseline'][mode] = [benchmark_reference(model.reference, prefix,
+        benchmark_reference(reference, prompts[0], mode=mode)
+        report['baseline'][mode] = [benchmark_reference(reference, prefix,
             mode=mode, seed=MTP_SEED+i) for i, prefix in enumerate(prompts)]
     for phase in ('before', 'after'):
         if phase == 'after':
             checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-            if checkpoint['source'] != str(MTP_SOURCE) or checkpoint['horizons'] != exp.horizons:
-                raise RuntimeError('Adaptation checkpoint source/horizon mismatch')
-            model.new_embeddings.copy_(checkpoint['new_embeddings'])
+            if checkpoint.get('design_signature') != trained['design_signature']:
+                raise RuntimeError('Adaptation checkpoint design signature mismatch')
+            restore_draft(model, checkpoint)
         section = report[phase]
         section['horizon_metrics'] = horizon_metrics(model, device)
-        section['cached_logits'] = check_cached_logits(model, prompts[0])
+        section['cached_logits'] = check_cached_logits(model, prompts[0], reference=reference)
         section['generation'] = {}
         for mode in ('greedy', 'sample'):
-            benchmark_speculative(model, prompts[0], mode=mode)
-            rows = [benchmark_speculative(model, prefix, mode=mode, seed=MTP_SEED+i)
+            benchmark_speculative(model, prompts[0], mode=mode, reference=reference)
+            rows = [benchmark_speculative(model, prefix, mode=mode, seed=MTP_SEED+i, reference=reference)
                     for i, prefix in enumerate(prompts)]
             baseline = report['baseline'][mode]
             for row, base in zip(rows, baseline):
@@ -390,8 +405,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--filter', required=True)
     args = parser.parse_args(argv)
-    if experiments.SUITE != 'mtp':
-        raise RuntimeError('Select SPS_EXPERIMENT_SUITE=mtp')
+    if experiments.SUITE not in {'mtp', 'mtp-unfreeze'}:
+        raise RuntimeError('Select SPS_EXPERIMENT_SUITE=mtp or mtp-unfreeze')
     matches = experiments.collect_experiments(args.filter)
     if len(matches) != 1:
         raise ValueError('Select exactly one MTP experiment')
