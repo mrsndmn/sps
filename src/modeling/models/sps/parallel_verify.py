@@ -16,7 +16,7 @@ from modeling.models.utils.decode_attention import KVSegment, triton_segmented_q
 
 
 @torch.inference_mode()
-def block_decode(reference, cache, tokens):
+def block_decode(reference, cache, tokens, *, return_features=False):
     """Append [T] real tokens in one layer traversal; return cache and [T,V]."""
     if tokens.ndim != 1 or tokens.numel() == 0:
         raise ValueError('Expected nonempty one-dimensional block')
@@ -73,8 +73,10 @@ def block_decode(reference, cache, tokens):
         x = x+block.attn.c_proj(y)
         x = x+block.mlp(block.mlp_norm(x))
         layers.append((real_k,real_v))
-    logits = reference.lm_head(reference.transformer.output_norm(x)[:,1])
-    return MTPCache(ids,tuple(layers)),logits
+    features = reference.transformer.output_norm(x)[:,1]
+    logits = reference.lm_head(features)
+    result = (MTPCache(ids,tuple(layers)),logits)
+    return (*result,features) if return_features else result
 
 
 class ParallelPrefixVerifier:
@@ -87,13 +89,20 @@ class ParallelPrefixVerifier:
         self.cache = None
         self.prefix = None
         self.logits = None
+        self.features = None
         self.block_calls = 0
 
     def _prefill(self, prefix):
         # Use the original prefill kernels, preserving the common initial state.
         if prefix.is_cuda:
             budget = min(self.max_new_tokens,self.reference.config.block_size-prefix.numel())
-            state,logits,_ = self.reference._prefill_generation_state(prefix[None],budget,require_batched=True)
+            captured=[]
+            hook=self.reference.lm_head.register_forward_pre_hook(lambda module,args:captured.append(args[0].detach()))
+            try:
+                state,logits,_ = self.reference._prefill_generation_state(prefix[None],budget,require_batched=True)
+            finally:
+                hook.remove()
+            self.features=captured[-1]
             start = 0
             eos = (prefix[:-1] == self.reference.config.eos_token_id).nonzero().flatten()
             if eos.numel(): start = int(eos[-1])+1
@@ -106,7 +115,7 @@ class ParallelPrefixVerifier:
             self.cache=MTPCache(prefix[None].clone(),tuple(layers))
             self.logits=logits
         else:
-            self.cache,self.logits=block_decode(self.reference,None,prefix)
+            self.cache,self.logits,self.features=block_decode(self.reference,None,prefix,return_features=True)
         self.prefix=prefix.clone()
 
     @torch.inference_mode()
@@ -125,14 +134,20 @@ class ParallelPrefixVerifier:
             self.cache=truncate_cache(self.cache,common)
             self.prefix=self.prefix[:common]
             self.logits=self.logits[:common-offset]
+            self.features=self.features[:common-offset]
         else:
             self.cache=truncate_cache(self.cache,common)
-            self.cache,new=block_decode(self.reference,self.cache,prefix[common:])
+            self.cache,new,features=block_decode(self.reference,self.cache,prefix[common:],return_features=True)
             self.block_calls+=1
             retained=max(0,common-offset)
             self.logits=torch.cat((self.logits[:retained],new),0)
+            self.features=torch.cat((self.features[:retained],features),0)
             self.prefix=prefix.clone()
         return self.logits[-1]
+
+    def ensure_features(self,prefix):
+        self.ensure(prefix)
+        return self.features[-1]
 
     @property
     def logit_offset(self):
@@ -150,15 +165,17 @@ class ParallelPrefixVerifier:
             if offset < common < prefix.numel():
                 pending=prefix.numel()-common
                 self.cache=truncate_cache(self.cache,common)
-                self.cache,new=block_decode(self.reference,self.cache,
-                    torch.cat((prefix[common:],draft)))
+                self.cache,new,features=block_decode(self.reference,self.cache,
+                    torch.cat((prefix[common:],draft)),return_features=True)
                 self.block_calls+=1
                 self.logits=torch.cat((self.logits[:common-offset],new),0)
+                self.features=torch.cat((self.features[:common-offset],features),0)
                 self.prefix=torch.cat((prefix,draft))
                 return new[pending-1:]
         first=self.ensure(prefix)
-        self.cache,new=block_decode(self.reference,self.cache,draft)
+        self.cache,new,features=block_decode(self.reference,self.cache,draft,return_features=True)
         self.block_calls+=1
         self.logits=torch.cat((self.logits,new),0)
+        self.features=torch.cat((self.features,features),0)
         self.prefix=torch.cat((prefix,draft))
         return torch.cat((first[None],new),0)

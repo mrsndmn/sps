@@ -115,9 +115,9 @@ def shifted_targets(tokens, context, horizons, *, eos, pad):
     return torch.stack(targets, dim=-1)
 
 
-def sequence_starts(token_count, context, world, rank, *, seed=MTP_SEED, resume=0):
+def sequence_starts(token_count, context, world, rank, *, seed=MTP_SEED, resume=0, reserve_horizons=MTP_MAX_HORIZONS):
     from training.sampler import FixedRandomChunkDistributedSampler, initial_sampler_offset
-    length = token_count - context - MTP_MAX_HORIZONS + 1
+    length = token_count - context - reserve_horizons + 1
     return FixedRandomChunkDistributedSampler(length, world, rank, context,
         chunk_size_units=1024, seed=seed, start_offset=initial_sampler_offset(length,seed),
         resume_samples_seen_per_rank=resume)

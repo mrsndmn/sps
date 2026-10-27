@@ -188,7 +188,7 @@ class SPSMTP(nn.Module):
                 layers.append((k, v) if retain_graph else (k.detach(), v.detach()))
         return MTPCache(all_ids.detach(), tuple(layers)), docs
 
-    def _predict(self, cache: MTPCache, docs: Tensor, positions: Tensor):
+    def _predict(self, cache: MTPCache, docs: Tensor, positions: Tensor, *, return_hidden=False):
         b, s = positions.shape
         n = self.horizons
         original = self.reference.transformer.wte.weight[self.config.predict_token_id][None]
@@ -202,6 +202,8 @@ class SPSMTP(nn.Module):
             v = torch.cat((real_v, v), dim=2)
             x = self._residual(block, x, self._attention(q, k, v, predict_mask))
         x = self.reference.transformer.output_norm(x)
+        if return_hidden:
+            return x.reshape(b,s,n,-1)
         return self.reference.lm_head(x).reshape(b, s, n, -1)
 
     def forward(self, input_ids: Tensor) -> Tensor:
