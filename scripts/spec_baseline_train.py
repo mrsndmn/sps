@@ -6,7 +6,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 import experiments as e
 from scripts.mtp_common import TokenSequences,sequence_starts
-from scripts.spec_baseline_common import construct,identities,restore,trainable_state,loss_for,validate_resume
+from scripts.spec_baseline_common import construct,identities,restore,trainable_state,loss_for,validate_resume,finalize_checkpoint
 from scripts.pilot_run import write_json
 
 
@@ -83,9 +83,9 @@ def main():
             if rank==0:
                 record(dict(event='validation',step=step+1,ce=validation(model,exp,device)))
                 save(step+1,'latest.pt')
-                if step+1==steps:save(step+1,'draft_final.pt')
             dist.barrier()
         if time.monotonic()-start>e.BASELINE_MAX_HOURS*3600:raise TimeoutError('Baseline training time cap')
+    if not a.probe and rank==0:finalize_checkpoint(dest,exp,signature,identity)
     dist.barrier();dist.destroy_process_group()
 
 

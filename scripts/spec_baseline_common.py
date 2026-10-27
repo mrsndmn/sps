@@ -89,3 +89,16 @@ def validate_resume(state,signature,identity):
             or state.get('tokens')!=step*e.BASELINE_STEP_TOKENS):
         raise RuntimeError('Changed or inconsistent baseline resume identity')
     return step
+
+
+def finalize_checkpoint(dest,exp,signature,identity):
+    """Recover the final artifact even if a completed run stopped before publishing it."""
+    import shutil
+    latest=dest/'latest.pt'
+    state=torch.load(latest,map_location='cpu',weights_only=False,mmap=True)
+    if validate_resume(state,signature,identity)!=e.BASELINE_STEPS or state.get('recipe')!=exp.recipe:
+        raise RuntimeError('Cannot finalize incomplete or incompatible baseline checkpoint')
+    final=dest/'draft_final.pt';temporary=final.with_suffix('.tmp')
+    shutil.copyfile(latest,temporary)
+    temporary.replace(final)
+    return final

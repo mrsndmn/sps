@@ -241,3 +241,25 @@ def test_ar_cuda_inference_without_autocast():
             cache,logits=model.encode(ids[:,i:i+1],cache);parts.append(logits)
         torch.testing.assert_close(full,torch.cat(parts,1),atol=1e-3,rtol=1e-2)
         assert torch.isfinite(full).all()
+
+
+def test_completed_resume_recovers_final_checkpoint_idempotently(tmp_path):
+    import experiments as e
+    from scripts.spec_baseline_common import finalize_checkpoint,validate_resume
+    exp=e.ExperimentConfig('heads','medusa')
+    identity=dict(source_sha256='source',data_manifest_sha256='data')
+    state=dict(recipe=exp.recipe,step=e.BASELINE_STEPS,
+        tokens=e.BASELINE_STEPS*e.BASELINE_STEP_TOKENS,design_signature='sig',
+        model={'weight':torch.tensor([3.])},optimizer={},**identity)
+    torch.save(state,tmp_path/'latest.pt')
+    assert list(range(validate_resume(state,'sig',identity),e.BASELINE_STEPS))==[]
+    for _ in range(2):
+        final=finalize_checkpoint(tmp_path,exp,'sig',identity)
+        restored=torch.load(final,weights_only=False)
+        assert restored['step']==e.BASELINE_STEPS
+        torch.testing.assert_close(restored['model']['weight'],state['model']['weight'])
+    final.unlink()
+    state.update(step=e.BASELINE_STEPS-1,tokens=(e.BASELINE_STEPS-1)*e.BASELINE_STEP_TOKENS)
+    torch.save(state,tmp_path/'latest.pt')
+    with pytest.raises(RuntimeError,match='incomplete'):finalize_checkpoint(tmp_path,exp,'sig',identity)
+    assert not final.exists()
