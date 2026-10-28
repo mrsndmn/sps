@@ -18,18 +18,37 @@ pass. Every method starts with an original-target anchor. Conditional AR proposa
 probabilities are evaluated on the actual earlier sampled draft tokens.
 
 ## Results
-Implementation and four-GPU throughput preparation are in progress. Existing
-FineWeb memmaps and the original SPS checkpoint are reused. No new download is
-needed. The heads inherit a pretrained frozen encoder; the small AR model starts
-from scratch, which is an explicit difference in their initialization budgets.
+All training and evaluations completed. Medusa heads trained in 6,636 seconds;
+the small AR draft trained in 1,706 seconds. Existing FineWeb memmaps were reused.
+
+History lookup achieved 1.90–2.40× greedy speedup and 0.99–1.00× sampling speedup.
+Medusa-style heads achieved 1.14–1.18× greedy and 1.15–1.21× sampling speedup.
+Small AR achieved 1.30–1.35× greedy and 0.89–1.09× sampling speedup; its shortest
+proposal block was fastest. Full MTP continuations achieved 0.94–0.97× greedy
+and 0.83–0.94× sampling speedup.
+
+Detailed acceptance counts, timing breakdowns, paired native rates, input and
+checkpoint identities, full job names and source-result hashes are saved in
+`run/reports/spec-baselines/results.json` and `generation_summary.csv`.
+Greedy outputs matched native completely on 61 or 62 of 64 prompts, depending
+on the configuration. Full output equality is therefore not achieved.
 
 ## Conclusions
-Compare complete-workload throughput, emitted tokens per verification round,
-reached-position conditional acceptance, unconditional proposal survival and
-native greedy agreement. Block floating point differences remain a limitation;
-no exact native-output equivalence is assumed. Full evaluation workloads are
-warmed before timing to cover the tested block-size paths.
+Cheap proposals can outperform more accurate, expensive MTP proposals. History
+lookup benefits greatly from repeated greedy continuations, but barely helps
+sampling. Small AR has useful sampling acceptance, while serial proposal cost
+erases its advantage for longer blocks. Medusa heads have low acceptance but
+low proposal cost and show the strongest sampling speedup in this pilot.
+
+These are paired speedups from one timed workload per configuration, after
+warmup. Close differences do not establish a stable ranking without repeats.
+Absolute native throughput differs across jobs. Block floating point drift
+remains a limitation; sampling-law unit tests do not establish bitwise agreement
+with the original native generator. The heads are a chain Medusa-style baseline,
+not Medusa tree search. The AR model starts from scratch, while the other learned
+drafts inherit pretrained SPS representations, so total pretraining budgets differ.
 
 ## Changelog
 - 2026-10-27: Added history lookup, target-feature heads, small causal AR and
   rerun controls with matched anchors, counters and warmup policy.
+- 2026-10-28: Completed all comparisons; recorded acceptance, timing, provenance and numerical limitations.
