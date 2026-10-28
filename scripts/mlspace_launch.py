@@ -156,6 +156,8 @@ def payload(phase, name, staged, author, nick):
     command = [str(PYTHON), '-m', 'scripts.mtp_run' if SUITE in {'mtp', 'mtp-unfreeze'} else 'scripts.pilot_run', phase]
     if SUITE == 'spec-baselines':
         command = [str(PYTHON), '-m', 'scripts.spec_baseline_run', phase]
+    if SUITE == 'mtp-unified':
+        command = [str(PYTHON), '-m', 'scripts.mtp_unified_evaluate', phase]
     if SUITE == 'mtp-parallel':
         command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
     if phase != 'prepare':
@@ -193,7 +195,7 @@ def main(default_phase='train'):
 
 
 def submit(args):
-    if SUITE == 'mtp-parallel' and args.phase != 'eval':
+    if SUITE in {'mtp-parallel','mtp-unified'} and args.phase != 'eval':
         raise ValueError('mtp-parallel is evaluation-only')
     repo = Path(git('rev-parse', '--show-toplevel'))
     commit = git('rev-parse', 'HEAD')

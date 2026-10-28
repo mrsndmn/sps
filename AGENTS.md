@@ -85,3 +85,12 @@ Arkhip job_wait observation rather than polling shells.
   acceptance metrics. Existing independent MTP callback behavior stays available.
 - `tests/test_spec_baselines.py`: heads freeze/gradient, causal AR cache, proposal
   conditioning, sampling law, history lookup, piggybacked features and dry routing.
+
+- `SPS_EXPERIMENT_SUITE=mtp-unified`: evaluation-only self-speculation from the
+  completed full MTP continuations; the adapted P1 branch is its own target.
+- `src/modeling/models/sps/unified.py`: one backbone and real-only KV cache;
+  fused causal real/group states, all-prefix horizon logits, and rollback.
+- `scripts/mtp_unified_evaluate.py`: pending target anchors, P2..PN proposals,
+  same-checkpoint native P1 baselines, numerical audits and bounded four-GPU jobs.
+- `tests/test_mtp_unified.py`: fused/full-prefix causality, EOS, rejection rollback,
+  pass-count invariants, sampling-law oracle and evaluation-only routing.
