@@ -1,0 +1,381 @@
+{
+  "evaluation_gpus": 1,
+  "experiments": {
+    "mtp_n2_self": {
+      "name": "mtp_n2_self",
+      "design_signature": "387875f7be9c3e8eaf5b427962366d153e56846f8c74704b1e9fe88ef3c031ba",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unfreeze/runs/out/s_sps_mtp_n2_unfreeze_ce_50m/adaptation_final.pt",
+      "checkpoint_sha256": "335d339942ee76fa1bdd2583e09c5bc163b5059bd2ed56c5e82a45642dd79cb8",
+      "target": "P1 of the same adapted checkpoint",
+      "prediction_horizons": 2,
+      "proposal_horizons": [
+        2
+      ],
+      "numerical_audit": {
+        "max_probability_error": 0.001394033432006836,
+        "max_logit_error": 0.03137016296386719,
+        "argmax_mismatches": 0,
+        "audited_rows": 32,
+        "all_horizon_probability_error": 0.0014816224575042725,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "prompt_tokens": 128,
+        "new_tokens": 128,
+        "warmup_passes": 2,
+        "seed": 1337
+      },
+      "limitations": [
+        "Target differs from the original SPS-10B after full continuation.",
+        "Block and native floating point outputs need not match bitwise.",
+        "One measured workload per mode after full-workload warmup; repeatability interval not estimated."
+      ],
+      "results_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unified/runs/out/mtp_n2_self/evaluation.json",
+      "results_sha256": "e525abee035028fb379ef7bda4ff6819402d377220cfd227ebe7bc2a62683cc2",
+      "variants": {
+        "1": {
+          "greedy": {
+            "tokens_per_second": 133.4793971389259,
+            "baseline_tokens_per_second": 91.76566022676295,
+            "speedup": 1.4545680465773771,
+            "accepted_by_horizon": [
+              2729
+            ],
+            "proposed_by_horizon": [
+              5305
+            ],
+            "reached_by_horizon": [
+              5305
+            ],
+            "unconditional_acceptance": [
+              0.5144203581526862
+            ],
+            "conditional_acceptance": [
+              0.5144203581526862
+            ],
+            "accepted_draft_tokens_per_round": 0.5144203581526862,
+            "emitted_per_round": 1.5085768143261074,
+            "proposal_stream_seconds": 1.4053940160870555,
+            "verification_stream_seconds": 53.22765824604035,
+            "native_exact_prompts": 58,
+            "total_prompts": 64,
+            "total_seconds": 60.436293337494135,
+            "one_fused_pass_per_round": true
+          },
+          "sample": {
+            "tokens_per_second": 112.73992094141708,
+            "baseline_tokens_per_second": 89.66154911470711,
+            "speedup": 1.257394301733344,
+            "accepted_by_horizon": [
+              1848
+            ],
+            "proposed_by_horizon": [
+              5437
+            ],
+            "reached_by_horizon": [
+              5437
+            ],
+            "unconditional_acceptance": [
+              0.3398933235240022
+            ],
+            "conditional_acceptance": [
+              0.3398933235240022
+            ],
+            "accepted_draft_tokens_per_round": 0.3398933235240022,
+            "emitted_per_round": 1.3375022990619827,
+            "proposal_stream_seconds": 1.4732678077816965,
+            "verification_stream_seconds": 55.797460246086125,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 65.07011836394668,
+            "one_fused_pass_per_round": true
+          }
+        }
+      }
+    },
+    "mtp_n3_self": {
+      "name": "mtp_n3_self",
+      "design_signature": "387875f7be9c3e8eaf5b427962366d153e56846f8c74704b1e9fe88ef3c031ba",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unfreeze/runs/out/s_sps_mtp_n3_unfreeze_ce_50m/adaptation_final.pt",
+      "checkpoint_sha256": "8d524365d6516725c8ff52a32c3969493dbca34d01bb1647b014734380f55ccd",
+      "target": "P1 of the same adapted checkpoint",
+      "prediction_horizons": 3,
+      "proposal_horizons": [
+        2,
+        3
+      ],
+      "numerical_audit": {
+        "max_probability_error": 0.0026559829711914062,
+        "max_logit_error": 0.031119346618652344,
+        "argmax_mismatches": 0,
+        "audited_rows": 32,
+        "all_horizon_probability_error": 0.0026939064264297485,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "prompt_tokens": 128,
+        "new_tokens": 128,
+        "warmup_passes": 2,
+        "seed": 1337
+      },
+      "limitations": [
+        "Target differs from the original SPS-10B after full continuation.",
+        "Block and native floating point outputs need not match bitwise.",
+        "One measured workload per mode after full-workload warmup; repeatability interval not estimated."
+      ],
+      "results_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unified/runs/out/mtp_n3_self/evaluation.json",
+      "results_sha256": "50c700249b4750733c9f897788376be353345d48527f06e75de3d0fdfe594180",
+      "variants": {
+        "2": {
+          "greedy": {
+            "tokens_per_second": 138.4756732580805,
+            "baseline_tokens_per_second": 88.90010303175382,
+            "speedup": 1.557654811812974,
+            "accepted_by_horizon": [
+              2486,
+              640
+            ],
+            "proposed_by_horizon": [
+              4905,
+              4868
+            ],
+            "reached_by_horizon": [
+              4905,
+              2466
+            ],
+            "unconditional_acceptance": [
+              0.5068297655453619,
+              0.1314708299096138
+            ],
+            "conditional_acceptance": [
+              0.5068297655453619,
+              0.259529602595296
+            ],
+            "accepted_draft_tokens_per_round": 0.637308868501529,
+            "emitted_per_round": 1.6316004077471968,
+            "proposal_stream_seconds": 1.357226431667805,
+            "verification_stream_seconds": 51.32962002658843,
+            "native_exact_prompts": 60,
+            "total_prompts": 64,
+            "total_seconds": 58.25571965239942,
+            "one_fused_pass_per_round": true
+          },
+          "sample": {
+            "tokens_per_second": 118.15672254663087,
+            "baseline_tokens_per_second": 87.51390629862887,
+            "speedup": 1.3501479655523285,
+            "accepted_by_horizon": [
+              1774,
+              402
+            ],
+            "proposed_by_horizon": [
+              5271,
+              5234
+            ],
+            "reached_by_horizon": [
+              5271,
+              1761
+            ],
+            "unconditional_acceptance": [
+              0.3365585277935876,
+              0.07680550248376003
+            ],
+            "conditional_acceptance": [
+              0.3365585277935876,
+              0.2282793867120954
+            ],
+            "accepted_draft_tokens_per_round": 0.4128248909125403,
+            "emitted_per_round": 1.409599696452286,
+            "proposal_stream_seconds": 1.4554665926247838,
+            "verification_stream_seconds": 54.30334118175508,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 63.42423722054809,
+            "one_fused_pass_per_round": true
+          }
+        }
+      }
+    },
+    "mtp_n4_self": {
+      "name": "mtp_n4_self",
+      "design_signature": "387875f7be9c3e8eaf5b427962366d153e56846f8c74704b1e9fe88ef3c031ba",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unfreeze/runs/out/s_sps_mtp_n4_unfreeze_ce_50m/adaptation_final.pt",
+      "checkpoint_sha256": "5a980f2e0d3a5a328f1b2c0db145747c7cc302be81c6a6dd25102ef8f54f933a",
+      "target": "P1 of the same adapted checkpoint",
+      "prediction_horizons": 4,
+      "proposal_horizons": [
+        2,
+        3,
+        4
+      ],
+      "numerical_audit": {
+        "max_probability_error": 0.00246448814868927,
+        "max_logit_error": 0.038208961486816406,
+        "argmax_mismatches": 0,
+        "audited_rows": 32,
+        "all_horizon_probability_error": 0.0018368661403656006,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "prompt_tokens": 128,
+        "new_tokens": 128,
+        "warmup_passes": 2,
+        "seed": 1337
+      },
+      "limitations": [
+        "Target differs from the original SPS-10B after full continuation.",
+        "Block and native floating point outputs need not match bitwise.",
+        "One measured workload per mode after full-workload warmup; repeatability interval not estimated."
+      ],
+      "results_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unified/runs/out/mtp_n4_self/evaluation.json",
+      "results_sha256": "3271d25559206e49fd989fe8b9730bcfa6cb55a17be6dc564e0413d669365bab",
+      "variants": {
+        "3": {
+          "greedy": {
+            "tokens_per_second": 140.6144408561526,
+            "baseline_tokens_per_second": 88.8829152658018,
+            "speedup": 1.582018776450448,
+            "accepted_by_horizon": [
+              2298,
+              616,
+              105
+            ],
+            "proposed_by_horizon": [
+              4978,
+              4938,
+              4903
+            ],
+            "reached_by_horizon": [
+              4978,
+              2277,
+              610
+            ],
+            "unconditional_acceptance": [
+              0.4616311771795902,
+              0.12474686107735926,
+              0.02141545992249643
+            ],
+            "conditional_acceptance": [
+              0.4616311771795902,
+              0.27053140096618356,
+              0.1721311475409836
+            ],
+            "accepted_draft_tokens_per_round": 0.6064684612294095,
+            "emitted_per_round": 1.6008437123342707,
+            "proposal_stream_seconds": 1.350203456431627,
+            "verification_stream_seconds": 50.47510847568511,
+            "native_exact_prompts": 61,
+            "total_prompts": 64,
+            "total_seconds": 57.12784512806684,
+            "one_fused_pass_per_round": true
+          },
+          "sample": {
+            "tokens_per_second": 123.62707532008126,
+            "baseline_tokens_per_second": 90.02749458415778,
+            "speedup": 1.373214659489547,
+            "accepted_by_horizon": [
+              1744,
+              423,
+              94
+            ],
+            "proposed_by_horizon": [
+              5011,
+              4976,
+              4940
+            ],
+            "reached_by_horizon": [
+              5011,
+              1729,
+              420
+            ],
+            "unconditional_acceptance": [
+              0.34803432448613053,
+              0.085008038585209,
+              0.01902834008097166
+            ],
+            "conditional_acceptance": [
+              0.34803432448613053,
+              0.2446500867553499,
+              0.22380952380952382
+            ],
+            "accepted_draft_tokens_per_round": 0.4512073438435442,
+            "emitted_per_round": 1.447615246457793,
+            "proposal_stream_seconds": 1.3649394559115173,
+            "verification_stream_seconds": 50.74532295513153,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 59.19415290746838,
+            "one_fused_pass_per_round": true
+          }
+        }
+      }
+    }
+  },
+  "submissions": [
+    {
+      "phase": "eval",
+      "identity": "sps-mtp-unified eval mtp_n3_self",
+      "name": "mtp_n3_self",
+      "commit": "25ad932c7c96e9cb6e3dc5f2aa788bcaf13cb23b",
+      "attempted_at": 1793174580.9659717,
+      "job_name": "lm-mpi-job-030edd54-f17e-4dd3-a9b0-920a2fac62d7"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-mtp-unified eval mtp_n2_self",
+      "name": "mtp_n2_self",
+      "commit": "45067e8d26d26c2d02a3200e2c10df54cf6e105a",
+      "attempted_at": 1793175281.7769976,
+      "job_name": "lm-mpi-job-1500a005-819c-4f0b-a3d5-56620b52c01d"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-mtp-unified eval mtp_n4_self",
+      "name": "mtp_n4_self",
+      "commit": "25ad932c7c96e9cb6e3dc5f2aa788bcaf13cb23b",
+      "attempted_at": 1793174584.6491475,
+      "job_name": "lm-mpi-job-1d307f20-5465-4f6a-9d64-a05b990a1497"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-mtp-unified eval mtp_n3_self",
+      "name": "mtp_n3_self",
+      "commit": "45067e8d26d26c2d02a3200e2c10df54cf6e105a",
+      "attempted_at": 1793175287.9055526,
+      "job_name": "lm-mpi-job-4d0a1037-cab5-4541-b744-fc2900d64add"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-mtp-unified eval mtp_n2_self",
+      "name": "mtp_n2_self",
+      "commit": "25ad932c7c96e9cb6e3dc5f2aa788bcaf13cb23b",
+      "attempted_at": 1793174577.6816564,
+      "job_name": "lm-mpi-job-7953b9f5-239d-4796-ac01-9f50f1b97cff"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-mtp-unified eval mtp_n4_self",
+      "name": "mtp_n4_self",
+      "commit": "45067e8d26d26c2d02a3200e2c10df54cf6e105a",
+      "attempted_at": 1793175291.2045987,
+      "job_name": "lm-mpi-job-b0eab7b4-e4a2-4769-b32e-ced4241d41eb"
+    }
+  ],
+  "limitations": [
+    "Paired baseline is native P1 of each adapted checkpoint, not the original SPS-10B.",
+    "N includes target P1; N-1 additional proposals are P2..PN, with a pending target anchor.",
+    "Single timed workload per mode after full-workload warmup; no repeated-run uncertainty interval.",
+    "Full native greedy equality is 58/64, 60/64 and 61/64. Floating point drift remains.",
+    "Sampling acceptance tests preserve the computed verifier law; they do not establish bitwise native distribution equivalence.",
+    "Cancellation receipts for superseded four-GPU jobs are retained; successful replacements use commit45067e8 on one GPU."
+  ]
+}
