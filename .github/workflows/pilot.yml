@@ -23,6 +23,7 @@ jobs:
       - run: SPS_EXPERIMENT_SUITE=mtp-unfreeze python run_train_jobs.py --dry
       - run: SPS_EXPERIMENT_SUITE=mtp-unfreeze python run_eval.py --dry
       - run: SPS_EXPERIMENT_SUITE=mtp-parallel python run_eval.py --dry
+      - run: SPS_EXPERIMENT_SUITE=mtp-unified python run_eval.py --dry
       - run: SPS_EXPERIMENT_SUITE=spec-baselines python run_train_jobs.py --phase prepare --dry
       - run: SPS_EXPERIMENT_SUITE=spec-baselines python run_train_jobs.py --dry
       - run: SPS_EXPERIMENT_SUITE=spec-baselines python run_eval.py --dry
@@ -39,4 +40,4 @@ jobs:
           python-version: '3.10'
       - run: pip install pytest numpy requests
       - run: pip install torch==2.9.0 --index-url https://download.pytorch.org/whl/cpu
-      - run: PYTHONPATH=.:src python -m pytest -q tests/test_mtp_jobs.py tests/test_mtp_speculative.py tests/test_mtp_unfreeze_jobs.py tests/test_mtp_unfreeze_loading.py tests/test_mtp_parallel.py tests/test_spec_baselines.py
+      - run: PYTHONPATH=.:src python -m pytest -q tests/test_mtp_jobs.py tests/test_mtp_speculative.py tests/test_mtp_unfreeze_jobs.py tests/test_mtp_unfreeze_loading.py tests/test_mtp_parallel.py tests/test_spec_baselines.py tests/test_mtp_unified.py

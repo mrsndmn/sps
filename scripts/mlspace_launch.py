@@ -16,7 +16,7 @@ import time
 
 from experiments import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
-                        collect_experiments, output_dir, design_signature, SUITE, training_marker)
+                        collect_experiments, output_dir, design_signature, SUITE, training_marker, EVAL_NUM_GPUS)
 from scripts.pilot_headers import HEADER_ROOT
 
 
@@ -156,6 +156,8 @@ def payload(phase, name, staged, author, nick):
     command = [str(PYTHON), '-m', 'scripts.mtp_run' if SUITE in {'mtp', 'mtp-unfreeze'} else 'scripts.pilot_run', phase]
     if SUITE == 'spec-baselines':
         command = [str(PYTHON), '-m', 'scripts.spec_baseline_run', phase]
+    if SUITE == 'mtp-unified':
+        command = [str(PYTHON), '-m', 'scripts.mtp_unified_evaluate', phase]
     if SUITE == 'mtp-parallel':
         command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
     if phase != 'prepare':
@@ -172,7 +174,7 @@ def payload(phase, name, staged, author, nick):
                        'CPLUS_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
                        'C_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
                        'OMP_NUM_THREADS': '8', 'TOKENIZERS_PARALLELISM': 'false'},
-        instance_type=INSTANCE_TYPES_BY_NUM_GPUS[4], region='SR004',
+        instance_type=INSTANCE_TYPES_BY_NUM_GPUS[EVAL_NUM_GPUS if phase == 'eval' else 4], region='SR004',
         type='binary_exp', shm_size_class='large', base_image=BASE_IMAGE,
         n_workers=1, processes_per_worker=1)
 
@@ -193,7 +195,7 @@ def main(default_phase='train'):
 
 
 def submit(args):
-    if SUITE == 'mtp-parallel' and args.phase != 'eval':
+    if SUITE in {'mtp-parallel','mtp-unified'} and args.phase != 'eval':
         raise ValueError('mtp-parallel is evaluation-only')
     repo = Path(git('rev-parse', '--show-toplevel'))
     commit = git('rev-parse', 'HEAD')

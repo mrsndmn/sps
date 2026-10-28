@@ -6,7 +6,7 @@ import json
 import os
 
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines'}:
+if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified'}:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
@@ -15,7 +15,8 @@ SANITY_ROOT = ARTIFACTS_ROOT / 'sanity'
 STAGING_ROOT = COMMON_ROOT / 'code'
 HF_HOME = COMMON_ROOT / 'hf'
 PYTHON = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps/.venv/bin/python')
-INSTANCE_TYPES_BY_NUM_GPUS = {4: 'a100.4gpu'}
+INSTANCE_TYPES_BY_NUM_GPUS = {1: 'a100.1gpu', 4: 'a100.4gpu'}
+EVAL_NUM_GPUS = 1  # Project policy: evaluation workers always use one GPU.
 BASE_IMAGE = 'cr.ai.cloud.ru/aicloud-base-images/py3.12-torch2.7.0:0.0.41'
 DATASET_REPO = 'HuggingFaceFW/fineweb-edu'
 DATASET_REVISION = '87f09149ef4734204d70ed1d046ddc9ca3f2b8f9'
@@ -181,7 +182,7 @@ def design_signature():
     repo = Path(__file__).resolve().parent
     inputs = sorted([*repo.glob('conf/**/*.yaml'), *repo.glob('src/**/*.py'),
                      repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
-    if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines'}:
+    if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified'}:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py'), *repo.glob('scripts/spec_baseline*.py')]
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
@@ -195,7 +196,7 @@ def design_signature():
 
 def training_marker(exp):
     """Evaluation-only suites consume immutable completed runs."""
-    if SUITE == 'mtp-parallel' or (SUITE == 'spec-baselines' and exp.recipe == 'existing_mtp'):
+    if SUITE in {'mtp-parallel','mtp-unified'} or (SUITE == 'spec-baselines' and exp.recipe == 'existing_mtp'):
         return COMMON_ROOT / 'mtp-unfreeze/runs/out' / (exp.reference_name or exp.name) / 'trained.json'
     if not exp.trainable:
         return None
@@ -244,3 +245,13 @@ if SUITE == 'spec-baselines':
         *[ExperimentConfig(f'mtp_n{n}_control','existing_mtp',horizons=n,
             reference_name=f's_sps_mtp_n{n}_unfreeze_ce_50m',trainable=False) for n in (2,3,4)],
     ]
+
+# Unified self-speculation consumes full continuations; no additional training.
+UNIFIED_PROMPTS = 64
+UNIFIED_PROMPT_TOKENS = 128
+UNIFIED_NEW_TOKENS = 128
+UNIFIED_WARMUP_PASSES = 2
+UNIFIED_TIMEOUT = 4*3600
+if SUITE == 'mtp-unified':
+    experiment_configs = [ExperimentConfig(f'mtp_n{n}_self','existing_mtp',horizons=n,
+        reference_name=f's_sps_mtp_n{n}_unfreeze_ce_50m',trainable=False) for n in (2,3,4)]

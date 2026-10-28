@@ -131,7 +131,7 @@ def test_conditional_sampling_has_target_markov_law():
     torch.testing.assert_close(counts/2500,torch.tensor([.16,.24,.42,.18]),atol=.035,rtol=0)
 
 
-def test_baseline_registry_dry_and_training_budget():
+def test_baseline_registry_dry_and_training_budget(tmp_path):
     import subprocess,sys,os,json
     env=dict(os.environ,SPS_EXPERIMENT_SUITE='spec-baselines')
     code="import experiments as e,json;print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),training=[x.recipe for x in e.experiment_configs if x.trainable],budget=e.TRAIN_TOKENS,commands=[e.train_command(x) for x in e.experiment_configs if x.trainable])))"
@@ -140,7 +140,8 @@ def test_baseline_registry_dry_and_training_budget():
     assert a['budget']==1050017792
     assert all('scripts.spec_baseline_train' in row for row in a['commands'])
     for command in (['run_train_jobs.py','--phase','prepare','--dry'],['run_train_jobs.py','--dry'],['run_eval.py','--dry']):
-        r=subprocess.run([sys.executable,*command],env=env,capture_output=True,text=True)
+        isolated=f"import experiments as e;from pathlib import Path;import runpy,sys;e.ARTIFACTS_ROOT=Path({str(tmp_path)!r});e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs';sys.argv={command!r};runpy.run_path(sys.argv[0],run_name='__main__')"
+        r=subprocess.run([sys.executable,'-c',isolated],env=env,capture_output=True,text=True)
         assert r.returncode==0,r.stderr
         assert 'scripts.spec_baseline_run' in r.stdout
 

@@ -263,3 +263,16 @@ def test_submission_transport_never_retries_post():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+@pytest.mark.parametrize('suite',['1b','10b','mtp','mtp-unfreeze','mtp-parallel','spec-baselines','mtp-unified'])
+def test_all_evaluation_payloads_use_one_gpu_without_changing_training(suite):
+    import subprocess,json,os
+    code="""
+import json,experiments as e
+from scripts.mlspace_launch import payload
+x=e.collect_experiments()[0]
+print(json.dumps({phase:payload(phase,x.name,e.STAGING_ROOT,'a','b')['instance_type'] for phase in ['prepare','train','eval']}))
+"""
+    r=json.loads(subprocess.check_output([sys.executable,'-c',code],env=dict(os.environ,SPS_EXPERIMENT_SUITE=suite),text=True))
+    assert r=={'prepare':'a100.4gpu','train':'a100.4gpu','eval':'a100.1gpu'}
