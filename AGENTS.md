@@ -73,3 +73,15 @@ Arkhip job_wait observation rather than polling shells.
   greedy/sampling measurements; records full greedy mismatch counts explicitly.
 - `tests/test_mtp_parallel.py`: block causality, EOS, rejection/cache reuse, short
   budgets, CUDA native comparisons and evaluation-only submission routing.
+
+- `SPS_EXPERIMENT_SUITE=spec-baselines`: trainable Medusa-style heads and small AR,
+  evaluation-only history lookup and completed MTP controls, with isolated artifacts.
+- `src/modeling/spec_baselines.py`: residual heads, document-safe cached causal AR
+  and deterministic proposals using only supplied history.
+- `scripts/spec_baseline_train.py`/`spec_baseline_run.py`: four-rank CE training,
+  exact resume, input provenance, throughput preparation and bounded workers.
+- `scripts/spec_baseline_evaluate.py`: target-first anchors, reuse of verifier
+  features for heads, conditional AR drafts, full-workload warmup and reached-slot
+  acceptance metrics. Existing independent MTP callback behavior stays available.
+- `tests/test_spec_baselines.py`: heads freeze/gradient, causal AR cache, proposal
+  conditioning, sampling law, history lookup, piggybacked features and dry routing.

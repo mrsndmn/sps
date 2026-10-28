@@ -6,7 +6,7 @@ import json
 import os
 
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel'}:
+if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines'}:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
@@ -58,6 +58,7 @@ class ExperimentConfig:
     num_gpus: int = 4
     reference_name: str | None = None
     horizons: int = 1
+    trainable: bool = True
 
 
 experiment_configs = [
@@ -153,6 +154,11 @@ def overrides(exp, *, probe=False):
 
 
 def train_command(exp, *, probe=False):
+    if SUITE == 'spec-baselines':
+        if not exp.trainable: raise ValueError('This baseline does not require training')
+        return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
+                f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.spec_baseline_train',
+                '--filter', exp.name, *(['--probe'] if probe else [])]
     if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel'}:
         return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
                 f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.mtp_train',
@@ -175,22 +181,24 @@ def design_signature():
     repo = Path(__file__).resolve().parent
     inputs = sorted([*repo.glob('conf/**/*.yaml'), *repo.glob('src/**/*.py'),
                      repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
-    if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel'}:
-        inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py')]
+    if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines'}:
+        inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py'), *repo.glob('scripts/spec_baseline*.py')]
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
     design = dict(repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
                   val_fraction=VAL_FRACTION, val_seed=VAL_SEED,
-                  commands=[train_command(e) for e in experiment_configs],
-                  probes=[train_command(e, probe=True) for e in experiment_configs],
+                  commands=[train_command(e) for e in experiment_configs if e.trainable],
+                  probes=[train_command(e, probe=True) for e in experiment_configs if e.trainable],
                   tasks=TASKS, sources=sources)
     return hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
 
 
 def training_marker(exp):
     """Evaluation-only suites consume immutable completed runs."""
-    if SUITE == 'mtp-parallel':
-        return COMMON_ROOT / 'mtp-unfreeze/runs/out' / exp.name / 'trained.json'
+    if SUITE == 'mtp-parallel' or (SUITE == 'spec-baselines' and exp.recipe == 'existing_mtp'):
+        return COMMON_ROOT / 'mtp-unfreeze/runs/out' / (exp.reference_name or exp.name) / 'trained.json'
+    if not exp.trainable:
+        return None
     return output_dir(exp) / 'trained.json'
 
 
@@ -199,3 +207,40 @@ MTP_PARALLEL_PROB_ATOL = 0.005
 MTP_PARALLEL_AUDIT_PROMPTS = 8
 
 MTP_PARALLEL_TIMEOUT_SECONDS = 4 * 3600
+
+
+# Additional proposal baselines. Training budgets count input text tokens once.
+BASELINE_CONTEXT = 1024
+BASELINE_GLOBAL_BATCH = 64
+BASELINE_MICRO_BATCH = 2
+BASELINE_STEP_TOKENS = BASELINE_CONTEXT * BASELINE_GLOBAL_BATCH
+BASELINE_STEPS = 15259 + 763
+BASELINE_PROBE_STEPS = 16
+BASELINE_RESERVE_HORIZONS = 5
+BASELINE_MEDUSA_HEADS = 4
+BASELINE_LR = {'medusa': 1e-3, 'ar_tiny': 3e-4}
+BASELINE_WARMUP = 100
+BASELINE_WEIGHT_DECAY = .01
+BASELINE_BETAS = (.9, .95)
+BASELINE_CLIP = 1.
+BASELINE_EVAL_INTERVAL = 500
+BASELINE_VAL_TOKENS = 131072
+BASELINE_MAX_HOURS = 24
+BASELINE_AR_ARGS = dict(n_layer=4,n_head=4,hidden_size=256,intermediate_size=768)
+BASELINE_LOOKUP_MATCH = 8
+BASELINE_EVAL_HORIZONS = (2,3,4)
+BASELINE_EVAL_PROMPTS = 64
+BASELINE_PROMPT_TOKENS = 128
+BASELINE_NEW_TOKENS = 128
+BASELINE_WARMUP_PASSES = 2
+BASELINE_EVAL_TIMEOUT = 4*3600
+if SUITE == 'spec-baselines':
+    MAX_HOURS = BASELINE_MAX_HOURS
+    TRAIN_TOKENS = BASELINE_STEPS*BASELINE_STEP_TOKENS
+    experiment_configs = [
+        ExperimentConfig('medusa_heads_ce', 'medusa', horizons=4),
+        ExperimentConfig('tiny_ar_ce', 'ar_tiny', horizons=4),
+        ExperimentConfig('history_lookup', 'ngram', horizons=4,trainable=False),
+        *[ExperimentConfig(f'mtp_n{n}_control','existing_mtp',horizons=n,
+            reference_name=f's_sps_mtp_n{n}_unfreeze_ce_50m',trainable=False) for n in (2,3,4)],
+    ]

@@ -27,12 +27,15 @@ class SpeculativeResult:
     Proposed counts include every sampled/argmax draft row, including rows beyond
     a rejection or EOS. Accepted counts include only draft tokens actually emitted.
     Bonus and correction tokens contribute to neither accepted counter.
+    reached_by_horizon counts slots whose acceptance test actually ran; it excludes
+    slots discarded after an earlier rejection or EOS.
     """
 
     token_ids: Tensor
     accepted_by_horizon: tuple[int, ...]
     proposed_by_horizon: tuple[int, ...]
     rounds: int
+    reached_by_horizon: tuple[int, ...] = ()
 
 
 def _probabilities(value: Tensor, name: str, device: torch.device,
@@ -67,6 +70,7 @@ def speculative_generate(
     mode: Literal['greedy', 'sample'] = 'greedy',
     eos_token_id: int | None = None,
     generator: torch.Generator | None = None,
+    draft_proposal: Callable | None = None,
 ) -> SpeculativeResult:
     """Generate a single sequence, preserving the verifier's decoding law.
 
@@ -75,6 +79,13 @@ def speculative_generate(
     A prompt ending in EOS is allowed; only newly emitted EOS terminates output.
     The horizon count and vocabulary must remain constant across rounds.
     A zero output budget does not call either callback.
+
+    Optional draft_proposal(history, remaining, mode, generator) returns sampled
+    token IDs [N] and the actual proposal probabilities [N,V] conditioned on those
+    preceding draft IDs. It must use the supplied generator for stochastic draws.
+    Keep N fixed and fill unused rows with any valid dummy distribution when the
+    remaining budget is shorter; those rows are truncated before verification.
+    With no draft_proposal, independent fixed-prefix MTP sampling is unchanged.
     """
     if (not isinstance(prefix, Tensor) or prefix.ndim != 1 or prefix.numel() == 0
             or prefix.dtype not in (torch.int32, torch.int64)):
@@ -87,6 +98,7 @@ def speculative_generate(
     initial_length = history.numel()
     accepted: list[int] = []
     proposed: list[int] = []
+    reached: list[int] = []
     vocabulary = None
     rounds = 0
 
@@ -97,16 +109,31 @@ def speculative_generate(
                 or history.numel() - initial_length == max_new_tokens)
 
     while history.numel() - initial_length < max_new_tokens:
-        q = _probabilities(propose(history), 'proposal', history.device,
+        remaining = max_new_tokens - (history.numel() - initial_length)
+        prepared=None
+        if draft_proposal is None:
+            proposal=propose(history)
+        else:
+            prepared,proposal=draft_proposal(history,remaining,mode,generator)
+        q = _probabilities(proposal, 'proposal', history.device,
                            rows=len(accepted) or None, vocabulary=vocabulary)
         if not accepted:
             accepted = [0] * q.shape[0]
             proposed = [0] * q.shape[0]
+            reached = [0] * q.shape[0]
             vocabulary = q.shape[1]
-        remaining = max_new_tokens - (history.numel() - initial_length)
-        q = q[:remaining]
-        draft = (q.argmax(dim=-1) if mode == 'greedy'
-                 else torch.multinomial(q, 1, generator=generator).squeeze(-1))
+        if prepared is not None:
+            if (prepared.shape!=(q.shape[0],) or prepared.device!=q.device
+                    or prepared.dtype!=torch.long or bool(((prepared<0)|(prepared>=vocabulary)).any())):
+                raise ValueError('Invalid conditional draft tokens')
+            if bool((q.gather(1,prepared[:,None])<=0).any()):
+                raise ValueError('Conditional draft has zero proposal probability')
+            draft=prepared[:remaining]
+            q=q[:remaining]
+        else:
+            q=q[:remaining]
+            draft = (q.argmax(dim=-1) if mode == 'greedy'
+                     else torch.multinomial(q, 1, generator=generator).squeeze(-1))
         p = _probabilities(verify(history, draft), 'verification', history.device,
                            rows=len(draft) + 1, vocabulary=vocabulary)
         rounds += 1
@@ -114,6 +141,7 @@ def speculative_generate(
             proposed[j] += 1
         rejected = False
         for j, token in enumerate(draft):
+            reached[j] += 1
             if mode == 'greedy':
                 accept = bool(token == p[j].argmax())
             else:
@@ -124,7 +152,7 @@ def speculative_generate(
             if accept:
                 accepted[j] += 1
                 if emit(token):
-                    return SpeculativeResult(history[initial_length:], tuple(accepted), tuple(proposed), rounds)
+                    return SpeculativeResult(history[initial_length:], tuple(accepted), tuple(proposed), rounds, tuple(reached))
             else:
                 if mode == 'greedy':
                     correction = p[j].argmax()
@@ -137,7 +165,7 @@ def speculative_generate(
                         raise RuntimeError('rejection produced zero residual probability mass')
                     correction = torch.multinomial(residual / mass, 1, generator=generator).squeeze(0)
                 if emit(correction):
-                    return SpeculativeResult(history[initial_length:], tuple(accepted), tuple(proposed), rounds)
+                    return SpeculativeResult(history[initial_length:], tuple(accepted), tuple(proposed), rounds, tuple(reached))
                 rejected = True
                 break
         if not rejected:
@@ -145,4 +173,4 @@ def speculative_generate(
                      else torch.multinomial(p[-1], 1, generator=generator).squeeze(0))
             if emit(bonus):
                 break
-    return SpeculativeResult(history[initial_length:], tuple(accepted), tuple(proposed), rounds)
+    return SpeculativeResult(history[initial_length:], tuple(accepted), tuple(proposed), rounds, tuple(reached))

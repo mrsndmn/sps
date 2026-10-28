@@ -154,6 +154,8 @@ def submit_payload(client, body, phase, name, commit):
 
 def payload(phase, name, staged, author, nick):
     command = [str(PYTHON), '-m', 'scripts.mtp_run' if SUITE in {'mtp', 'mtp-unfreeze'} else 'scripts.pilot_run', phase]
+    if SUITE == 'spec-baselines':
+        command = [str(PYTHON), '-m', 'scripts.spec_baseline_run', phase]
     if SUITE == 'mtp-parallel':
         command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
     if phase != 'prepare':
@@ -197,7 +199,7 @@ def submit(args):
     commit = git('rev-parse', 'HEAD')
     candidates = [('data-and-probes', ARTIFACTS_ROOT / 'prepared.json')] if args.phase == 'prepare' else [
         (exp.name, output_dir(exp) / ('trained.json' if args.phase == 'train' else 'evaluated.json'))
-        for exp in collect_experiments(args.filter)]
+        for exp in collect_experiments(args.filter) if args.phase != 'train' or exp.trainable]
     if not candidates:
         raise ValueError('No matching experiments')
     if not args.dry:
@@ -224,8 +226,8 @@ def submit(args):
                 raise RuntimeError(f'Stale completion marker at {marker}; use a new artifact root/run name')
             print(f'Skip completed: {name}')
             continue
-        if args.phase == 'eval' and not training_marker(next(
-                e for e in collect_experiments() if e.name == name)).exists():
+        train_marker = training_marker(next(e for e in collect_experiments() if e.name == name)) if args.phase == 'eval' else None
+        if args.phase == 'eval' and train_marker is not None and not train_marker.exists():
             print(f'Skip evaluation without trained checkpoint: {name}')
             continue
         body = payload(args.phase, name, staged, args.author_name, args.telegram_nick)

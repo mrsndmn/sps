@@ -1,0 +1,1265 @@
+{
+  "design_signature": "9f027b5837eed0a5d00c6e106865459f798f34489123706ac92526e5c76a3603",
+  "experiments": {
+    "history_lookup": {
+      "name": "history_lookup",
+      "recipe": "ngram",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": null,
+      "checkpoint_sha256": null,
+      "numerical_audit": {
+        "max_probability_error": 0.0004371851682662964,
+        "max_logit_error": 0.009041309356689453,
+        "audited_rows": 80,
+        "argmax_mismatches": 0,
+        "probability_atol": 0.005,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "input_tokens": 128,
+        "new_tokens": 128,
+        "seed": 1337,
+        "temperature": 1.0,
+        "anchor_policy": "one initial original-target token; heads predict offsets 2..K+1",
+        "warmup_full_workload_passes": 2,
+        "precision": "FP32 weights; BF16 target attention; original native generator baseline"
+      },
+      "limitations": [
+        "Block/native floating point differences are audited; native greedy equality is reported, not assumed.",
+        "Conditional acceptance divides by actually reached slots. Emitted/round excludes initial target anchor.",
+        "Additional-input budget is matched; Medusa inherits pretrained frozen SPS features, AR is trained from scratch."
+      ],
+      "result_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/history_lookup/evaluation.json",
+      "result_sha256": "e818d495657f833033486c1e20b551ab47c1796abfcb9f8ea6acf619a3cfa2c9",
+      "variants": {
+        "2": {
+          "greedy": {
+            "tokens_per_second": 168.5347810004367,
+            "baseline_tokens_per_second": 88.8365791704657,
+            "speedup": 1.8971327191363443,
+            "accepted_by_horizon": [
+              2220,
+              1912
+            ],
+            "proposed_by_horizon": [
+              3909,
+              3894
+            ],
+            "reached_by_horizon": [
+              3909,
+              2206
+            ],
+            "unconditional_acceptance": [
+              0.56792018419033,
+              0.49101181304571134
+            ],
+            "conditional_acceptance": [
+              0.56792018419033,
+              0.8667271078875793
+            ],
+            "accepted_draft_tokens_per_round": 1.0570478383218214,
+            "emitted_per_round": 2.0473266820158607,
+            "proposal_stream_seconds": 0.9905071677267553,
+            "verification_stream_seconds": 41.89513805866242,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 47.865490743890405,
+            "warmup_seconds": 158.1405708026141
+          },
+          "sample": {
+            "tokens_per_second": 88.6662210185156,
+            "baseline_tokens_per_second": 89.75977285407672,
+            "speedup": 0.9878169050478892,
+            "accepted_by_horizon": [
+              547,
+              100
+            ],
+            "proposed_by_horizon": [
+              6828,
+              6776
+            ],
+            "reached_by_horizon": [
+              6828,
+              545
+            ],
+            "unconditional_acceptance": [
+              0.08011130638547159,
+              0.01475796930342385
+            ],
+            "conditional_acceptance": [
+              0.08011130638547159,
+              0.1834862385321101
+            ],
+            "accepted_draft_tokens_per_round": 0.09475688342120679,
+            "emitted_per_round": 1.094463971880492,
+            "proposal_stream_seconds": 2.2183739846199746,
+            "verification_stream_seconds": 72.73783696269989,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 85.00418663863093,
+            "warmup_seconds": 170.36131021846086
+          }
+        },
+        "3": {
+          "greedy": {
+            "tokens_per_second": 190.97989683005173,
+            "baseline_tokens_per_second": 88.8365791704657,
+            "speedup": 2.149788956456624,
+            "accepted_by_horizon": [
+              1772,
+              1484,
+              1374
+            ],
+            "proposed_by_horizon": [
+              3420,
+              3402,
+              3392
+            ],
+            "reached_by_horizon": [
+              3420,
+              1755,
+              1474
+            ],
+            "unconditional_acceptance": [
+              0.5181286549707602,
+              0.43621399176954734,
+              0.4050707547169811
+            ],
+            "conditional_acceptance": [
+              0.5181286549707602,
+              0.8455840455840455,
+              0.932157394843962
+            ],
+            "accepted_draft_tokens_per_round": 1.3538011695906433,
+            "emitted_per_round": 2.3400584795321637,
+            "proposal_stream_seconds": 0.886614528685808,
+            "verification_stream_seconds": 36.83541743564606,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 42.24004795216024,
+            "warmup_seconds": 85.81617646105587
+          },
+          "sample": {
+            "tokens_per_second": 88.90278706163163,
+            "baseline_tokens_per_second": 89.75977285407672,
+            "speedup": 0.9904524514134155,
+            "accepted_by_horizon": [
+              550,
+              115,
+              43
+            ],
+            "proposed_by_horizon": [
+              6834,
+              6787,
+              6739
+            ],
+            "reached_by_horizon": [
+              6834,
+              546,
+              114
+            ],
+            "unconditional_acceptance": [
+              0.08047995317529998,
+              0.016944157949020187,
+              0.006380768660038581
+            ],
+            "conditional_acceptance": [
+              0.08047995317529998,
+              0.21062271062271062,
+              0.37719298245614036
+            ],
+            "accepted_draft_tokens_per_round": 0.10359964881474978,
+            "emitted_per_round": 1.1028680128767925,
+            "proposal_stream_seconds": 2.221231744706632,
+            "verification_stream_seconds": 73.15277054119112,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 85.49788202624768,
+            "warmup_seconds": 169.45545500982553
+          }
+        },
+        "4": {
+          "greedy": {
+            "tokens_per_second": 212.81280972426242,
+            "baseline_tokens_per_second": 88.8365791704657,
+            "speedup": 2.3955538553088886,
+            "accepted_by_horizon": [
+              1507,
+              1229,
+              1123,
+              1052
+            ],
+            "proposed_by_horizon": [
+              3141,
+              3125,
+              3114,
+              3102
+            ],
+            "reached_by_horizon": [
+              3141,
+              1492,
+              1218,
+              1112
+            ],
+            "unconditional_acceptance": [
+              0.47978350843680356,
+              0.39328,
+              0.36062941554271033,
+              0.33913604126370084
+            ],
+            "conditional_acceptance": [
+              0.47978350843680356,
+              0.8237265415549598,
+              0.9220032840722496,
+              0.9460431654676259
+            ],
+            "accepted_draft_tokens_per_round": 1.5635148042024833,
+            "emitted_per_round": 2.547914676854505,
+            "proposal_stream_seconds": 0.8132303999215362,
+            "verification_stream_seconds": 32.91238020515442,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 37.906552760861814,
+            "warmup_seconds": 77.97606492508203
+          },
+          "sample": {
+            "tokens_per_second": 89.35980466695457,
+            "baseline_tokens_per_second": 89.75977285407672,
+            "speedup": 0.9955440151595262,
+            "accepted_by_horizon": [
+              515,
+              94,
+              37,
+              17
+            ],
+            "proposed_by_horizon": [
+              6857,
+              6808,
+              6757,
+              6707
+            ],
+            "reached_by_horizon": [
+              6857,
+              511,
+              94,
+              37
+            ],
+            "unconditional_acceptance": [
+              0.07510573136940353,
+              0.013807285546415981,
+              0.00547580287109664,
+              0.0025346652750857313
+            ],
+            "conditional_acceptance": [
+              0.07510573136940353,
+              0.18395303326810175,
+              0.39361702127659576,
+              0.4594594594594595
+            ],
+            "accepted_draft_tokens_per_round": 0.0966895143648826,
+            "emitted_per_round": 1.0961061688785183,
+            "proposal_stream_seconds": 2.217323103427886,
+            "verification_stream_seconds": 72.57961393928531,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 84.82561066746712,
+            "warmup_seconds": 169.27245379146188
+          }
+        }
+      }
+    },
+    "medusa_heads_ce": {
+      "name": "medusa_heads_ce",
+      "recipe": "medusa",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/medusa_heads_ce/draft_final.pt",
+      "checkpoint_sha256": "e951b2a62e061d831aa8e90af259506971ed097d6e2bee782feb7bcb6309bad2",
+      "numerical_audit": {
+        "max_probability_error": 0.0003977268934249878,
+        "max_logit_error": 0.007839679718017578,
+        "audited_rows": 80,
+        "argmax_mismatches": 0,
+        "probability_atol": 0.005,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "input_tokens": 128,
+        "new_tokens": 128,
+        "seed": 1337,
+        "temperature": 1.0,
+        "anchor_policy": "one initial original-target token; heads predict offsets 2..K+1",
+        "warmup_full_workload_passes": 2,
+        "precision": "FP32 weights; BF16 target attention; original native generator baseline"
+      },
+      "limitations": [
+        "Block/native floating point differences are audited; native greedy equality is reported, not assumed.",
+        "Conditional acceptance divides by actually reached slots. Emitted/round excludes initial target anchor.",
+        "Additional-input budget is matched; Medusa inherits pretrained frozen SPS features, AR is trained from scratch."
+      ],
+      "result_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/medusa_heads_ce/evaluation.json",
+      "result_sha256": "63002b407b4af178046074884730caf170a2b6adb73f7dd4bf9b65500e9ed4f6",
+      "variants": {
+        "2": {
+          "greedy": {
+            "tokens_per_second": 110.81446158967888,
+            "baseline_tokens_per_second": 94.83622756844558,
+            "speedup": 1.168482387278653,
+            "accepted_by_horizon": [
+              1585,
+              254
+            ],
+            "proposed_by_horizon": [
+              6180,
+              6133
+            ],
+            "reached_by_horizon": [
+              6180,
+              1571
+            ],
+            "unconditional_acceptance": [
+              0.2564724919093851,
+              0.04141529430947334
+            ],
+            "conditional_acceptance": [
+              0.2564724919093851,
+              0.16168045830681094
+            ],
+            "accepted_draft_tokens_per_round": 0.2975728155339806,
+            "emitted_per_round": 1.2949838187702265,
+            "proposal_stream_seconds": 3.606208512187004,
+            "verification_stream_seconds": 62.73164941310882,
+            "native_exact_prompts": 61,
+            "total_prompts": 64,
+            "total_seconds": 72.797357711941,
+            "warmup_seconds": 206.14610554091632
+          },
+          "sample": {
+            "tokens_per_second": 109.01089407177336,
+            "baseline_tokens_per_second": 93.8757362135221,
+            "speedup": 1.1612254504595956,
+            "accepted_by_horizon": [
+              1437,
+              261
+            ],
+            "proposed_by_horizon": [
+              5270,
+              5238
+            ],
+            "reached_by_horizon": [
+              5270,
+              1427
+            ],
+            "unconditional_acceptance": [
+              0.2726755218216319,
+              0.04982817869415808
+            ],
+            "conditional_acceptance": [
+              0.2726755218216319,
+              0.1829011913104415
+            ],
+            "accepted_draft_tokens_per_round": 0.3222011385199241,
+            "emitted_per_round": 1.3195445920303606,
+            "proposal_stream_seconds": 3.0796708784103384,
+            "verification_stream_seconds": 53.71096473693849,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 64.37888671364635,
+            "warmup_seconds": 126.35121135786176
+          }
+        },
+        "3": {
+          "greedy": {
+            "tokens_per_second": 108.37194124372203,
+            "baseline_tokens_per_second": 94.83622756844558,
+            "speedup": 1.1427272469848868,
+            "accepted_by_horizon": [
+              1580,
+              252,
+              12
+            ],
+            "proposed_by_horizon": [
+              6175,
+              6128,
+              6080
+            ],
+            "reached_by_horizon": [
+              6175,
+              1566,
+              250
+            ],
+            "unconditional_acceptance": [
+              0.25587044534412956,
+              0.041122715404699736,
+              0.001973684210526316
+            ],
+            "conditional_acceptance": [
+              0.25587044534412956,
+              0.16091954022988506,
+              0.048
+            ],
+            "accepted_draft_tokens_per_round": 0.29862348178137654,
+            "emitted_per_round": 1.2960323886639675,
+            "proposal_stream_seconds": 3.6555689913630482,
+            "verification_stream_seconds": 64.21521539306642,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 74.43808708619326,
+            "warmup_seconds": 148.76054043881595
+          },
+          "sample": {
+            "tokens_per_second": 107.70299564082441,
+            "baseline_tokens_per_second": 93.8757362135221,
+            "speedup": 1.1472932195796788,
+            "accepted_by_horizon": [
+              1469,
+              279,
+              45
+            ],
+            "proposed_by_horizon": [
+              5522,
+              5482,
+              5439
+            ],
+            "reached_by_horizon": [
+              5522,
+              1458,
+              277
+            ],
+            "unconditional_acceptance": [
+              0.2660268018833756,
+              0.05089383436701934,
+              0.00827357970215113
+            ],
+            "conditional_acceptance": [
+              0.2660268018833756,
+              0.19135802469135801,
+              0.1624548736462094
+            ],
+            "accepted_draft_tokens_per_round": 0.3247011952191235,
+            "emitted_per_round": 1.3223469757334299,
+            "proposal_stream_seconds": 3.261459680259228,
+            "verification_stream_seconds": 57.06513124275209,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 68.3917838698253,
+            "warmup_seconds": 133.684297259897
+          }
+        },
+        "4": {
+          "greedy": {
+            "tokens_per_second": 111.7181107524546,
+            "baseline_tokens_per_second": 94.83622756844558,
+            "speedup": 1.1780109101432252,
+            "accepted_by_horizon": [
+              1579,
+              252,
+              12,
+              4
+            ],
+            "proposed_by_horizon": [
+              6172,
+              6125,
+              6077,
+              6032
+            ],
+            "reached_by_horizon": [
+              6172,
+              1565,
+              250,
+              12
+            ],
+            "unconditional_acceptance": [
+              0.25583279325988334,
+              0.04114285714285714,
+              0.001974658548625967,
+              0.000663129973474801
+            ],
+            "conditional_acceptance": [
+              0.25583279325988334,
+              0.16102236421725238,
+              0.048,
+              0.3333333333333333
+            ],
+            "accepted_draft_tokens_per_round": 0.2992546986390149,
+            "emitted_per_round": 1.2966623460790667,
+            "proposal_stream_seconds": 3.5887534407973294,
+            "verification_stream_seconds": 62.27306250381469,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 72.20852506067604,
+            "warmup_seconds": 144.2976626548916
+          },
+          "sample": {
+            "tokens_per_second": 113.17018900984597,
+            "baseline_tokens_per_second": 93.8757362135221,
+            "speedup": 1.2055318400106954,
+            "accepted_by_horizon": [
+              1474,
+              285,
+              49,
+              11
+            ],
+            "proposed_by_horizon": [
+              5465,
+              5425,
+              5390,
+              5350
+            ],
+            "reached_by_horizon": [
+              5465,
+              1463,
+              284,
+              49
+            ],
+            "unconditional_acceptance": [
+              0.2697163769441903,
+              0.052534562211981564,
+              0.00909090909090909,
+              0.00205607476635514
+            ],
+            "conditional_acceptance": [
+              0.2697163769441903,
+              0.19480519480519481,
+              0.17253521126760563,
+              0.22448979591836735
+            ],
+            "accepted_draft_tokens_per_round": 0.3328453796889296,
+            "emitted_per_round": 1.3306495882891125,
+            "proposal_stream_seconds": 3.142050527453421,
+            "verification_stream_seconds": 54.03465840530395,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 64.82272464316338,
+            "warmup_seconds": 130.9725408507511
+          }
+        }
+      },
+      "training": {
+        "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/medusa_heads_ce/draft_final.pt",
+        "design_signature": "9f027b5837eed0a5d00c6e106865459f798f34489123706ac92526e5c76a3603",
+        "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+        "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+        "seconds": 6635.716384216212,
+        "estimate": {
+          "seconds_per_step": 0.3900262345559895,
+          "estimated_hours_range": [
+            2.409416767517131,
+            3.623083731220104
+          ],
+          "tokens": 1050017792,
+          "probe_steps": 16
+        }
+      }
+    },
+    "tiny_ar_ce": {
+      "name": "tiny_ar_ce",
+      "recipe": "ar_tiny",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/tiny_ar_ce/draft_final.pt",
+      "checkpoint_sha256": "d1ef94ae77849adb4e3470fe75110a5e8e443792bae21f10aa860421131a814a",
+      "numerical_audit": {
+        "max_probability_error": 0.0003977268934249878,
+        "max_logit_error": 0.007839679718017578,
+        "audited_rows": 80,
+        "argmax_mismatches": 0,
+        "probability_atol": 0.005,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "input_tokens": 128,
+        "new_tokens": 128,
+        "seed": 1337,
+        "temperature": 1.0,
+        "anchor_policy": "one initial original-target token; heads predict offsets 2..K+1",
+        "warmup_full_workload_passes": 2,
+        "precision": "FP32 weights; BF16 target attention; original native generator baseline"
+      },
+      "limitations": [
+        "Block/native floating point differences are audited; native greedy equality is reported, not assumed.",
+        "Conditional acceptance divides by actually reached slots. Emitted/round excludes initial target anchor.",
+        "Additional-input budget is matched; Medusa inherits pretrained frozen SPS features, AR is trained from scratch."
+      ],
+      "result_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/tiny_ar_ce/evaluation.json",
+      "result_sha256": "fc4adb3bde3c2ae2ffa4bc735cd5a685a4bbb96db594aabeec6e66c36247704c",
+      "variants": {
+        "2": {
+          "greedy": {
+            "tokens_per_second": 115.63192249547633,
+            "baseline_tokens_per_second": 85.5799944948156,
+            "speedup": 1.351155993618126,
+            "accepted_by_horizon": [
+              2560,
+              1943
+            ],
+            "proposed_by_horizon": [
+              3537,
+              3517
+            ],
+            "reached_by_horizon": [
+              3537,
+              2543
+            ],
+            "unconditional_acceptance": [
+              0.7237772123268307,
+              0.5524594825135059
+            ],
+            "conditional_acceptance": [
+              0.7237772123268307,
+              0.7640581989775855
+            ],
+            "accepted_draft_tokens_per_round": 1.2731128074639526,
+            "emitted_per_round": 2.2626519649420413,
+            "proposal_stream_seconds": 25.084982406616213,
+            "verification_stream_seconds": 39.17921587467194,
+            "native_exact_prompts": 61,
+            "total_prompts": 64,
+            "total_seconds": 69.76447183359414,
+            "warmup_seconds": 209.57235020957887
+          },
+          "sample": {
+            "tokens_per_second": 90.95000368622658,
+            "baseline_tokens_per_second": 83.48738343888044,
+            "speedup": 1.0893862035191149,
+            "accepted_by_horizon": [
+              2278,
+              1235
+            ],
+            "proposed_by_horizon": [
+              4265,
+              4227
+            ],
+            "reached_by_horizon": [
+              4265,
+              2254
+            ],
+            "unconditional_acceptance": [
+              0.5341148886283704,
+              0.29216938727229713
+            ],
+            "conditional_acceptance": [
+              0.5341148886283704,
+              0.5479148181011535
+            ],
+            "accepted_draft_tokens_per_round": 0.8236811254396249,
+            "emitted_per_round": 1.8161781946072684,
+            "proposal_stream_seconds": 31.168564819097515,
+            "verification_stream_seconds": 47.27685041713713,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 85.87135440856218,
+            "warmup_seconds": 171.84273465909064
+          }
+        },
+        "3": {
+          "greedy": {
+            "tokens_per_second": 114.98567942179822,
+            "baseline_tokens_per_second": 85.5799944948156,
+            "speedup": 1.3436046601845015,
+            "accepted_by_horizon": [
+              2191,
+              1634,
+              1262
+            ],
+            "proposed_by_horizon": [
+              2960,
+              2940,
+              2924
+            ],
+            "reached_by_horizon": [
+              2960,
+              2173,
+              1622
+            ],
+            "unconditional_acceptance": [
+              0.7402027027027027,
+              0.5557823129251701,
+              0.4316005471956224
+            ],
+            "conditional_acceptance": [
+              0.7402027027027027,
+              0.7519558214450069,
+              0.7780517879161529
+            ],
+            "accepted_draft_tokens_per_round": 1.718581081081081,
+            "emitted_per_round": 2.703716216216216,
+            "proposal_stream_seconds": 31.584688148498525,
+            "verification_stream_seconds": 33.57156445598602,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 70.15656245686114,
+            "warmup_seconds": 138.98916392587125
+          },
+          "sample": {
+            "tokens_per_second": 83.98517123964963,
+            "baseline_tokens_per_second": 83.48738343888044,
+            "speedup": 1.0059624314508984,
+            "accepted_by_horizon": [
+              2000,
+              1110,
+              591
+            ],
+            "proposed_by_horizon": [
+              3689,
+              3667,
+              3637
+            ],
+            "reached_by_horizon": [
+              3689,
+              1988,
+              1092
+            ],
+            "unconditional_acceptance": [
+              0.5421523448088913,
+              0.30269975456776654,
+              0.16249656310145724
+            ],
+            "conditional_acceptance": [
+              0.5421523448088913,
+              0.5583501006036218,
+              0.5412087912087912
+            ],
+            "accepted_draft_tokens_per_round": 1.0032529140688533,
+            "emitted_per_round": 1.9943074003795067,
+            "proposal_stream_seconds": 40.332405975818645,
+            "verification_stream_seconds": 41.2093671875,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 88.36083668656647,
+            "warmup_seconds": 175.90928259957582
+          }
+        },
+        "4": {
+          "greedy": {
+            "tokens_per_second": 111.33527748112625,
+            "baseline_tokens_per_second": 85.5799944948156,
+            "speedup": 1.3009498088700029,
+            "accepted_by_horizon": [
+              1979,
+              1458,
+              1119,
+              809
+            ],
+            "proposed_by_horizon": [
+              2690,
+              2677,
+              2658,
+              2636
+            ],
+            "reached_by_horizon": [
+              2690,
+              1967,
+              1443,
+              1103
+            ],
+            "unconditional_acceptance": [
+              0.7356877323420075,
+              0.5446395218528203,
+              0.42099322799097066,
+              0.30690440060698027
+            ],
+            "conditional_acceptance": [
+              0.7356877323420075,
+              0.7412302999491611,
+              0.7754677754677755,
+              0.7334542157751587
+            ],
+            "accepted_draft_tokens_per_round": 1.9944237918215613,
+            "emitted_per_round": 2.975092936802974,
+            "proposal_stream_seconds": 37.674559166908274,
+            "verification_stream_seconds": 30.137632023811335,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 72.45681856200099,
+            "warmup_seconds": 145.14490816369653
+          },
+          "sample": {
+            "tokens_per_second": 73.95523540796289,
+            "baseline_tokens_per_second": 83.48738343888044,
+            "speedup": 0.8858252871477778,
+            "accepted_by_horizon": [
+              1845,
+              998,
+              539,
+              308
+            ],
+            "proposed_by_horizon": [
+              3511,
+              3487,
+              3458,
+              3439
+            ],
+            "reached_by_horizon": [
+              3511,
+              1828,
+              990,
+              534
+            ],
+            "unconditional_acceptance": [
+              0.5254913130162346,
+              0.28620590765701176,
+              0.15587044534412955,
+              0.08956091887176505
+            ],
+            "conditional_acceptance": [
+              0.5254913130162346,
+              0.5459518599562363,
+              0.5444444444444444,
+              0.5767790262172284
+            ],
+            "accepted_draft_tokens_per_round": 1.0509826260324693,
+            "emitted_per_round": 2.0415835944175447,
+            "proposal_stream_seconds": 51.32121769332884,
+            "verification_stream_seconds": 39.79274381256104,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 97.7888848586008,
+            "warmup_seconds": 195.32138010300696
+          }
+        }
+      },
+      "training": {
+        "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/tiny_ar_ce/draft_final.pt",
+        "design_signature": "9f027b5837eed0a5d00c6e106865459f798f34489123706ac92526e5c76a3603",
+        "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+        "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+        "seconds": 1706.1828795736656,
+        "estimate": {
+          "seconds_per_step": 0.10906704375520349,
+          "estimated_hours_range": [
+            1.0339498312640159,
+            1.756289346103246
+          ],
+          "tokens": 1050017792,
+          "probe_steps": 16
+        }
+      }
+    },
+    "mtp_n2_control": {
+      "name": "mtp_n2_control",
+      "recipe": "existing_mtp",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unfreeze/runs/out/s_sps_mtp_n2_unfreeze_ce_50m/adaptation_final.pt",
+      "checkpoint_sha256": "335d339942ee76fa1bdd2583e09c5bc163b5059bd2ed56c5e82a45642dd79cb8",
+      "numerical_audit": {
+        "max_probability_error": 0.0004371851682662964,
+        "max_logit_error": 0.009041309356689453,
+        "audited_rows": 80,
+        "argmax_mismatches": 0,
+        "probability_atol": 0.005,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "input_tokens": 128,
+        "new_tokens": 128,
+        "seed": 1337,
+        "temperature": 1.0,
+        "anchor_policy": "one initial original-target token; heads predict offsets 2..K+1",
+        "warmup_full_workload_passes": 2,
+        "precision": "FP32 weights; BF16 target attention; original native generator baseline"
+      },
+      "limitations": [
+        "Block/native floating point differences are audited; native greedy equality is reported, not assumed.",
+        "Conditional acceptance divides by actually reached slots. Emitted/round excludes initial target anchor.",
+        "Additional-input budget is matched; Medusa inherits pretrained frozen SPS features, AR is trained from scratch."
+      ],
+      "result_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/mtp_n2_control/evaluation.json",
+      "result_sha256": "05cad382ccf1285f3c1cb0724d534bbe7c82f0c2283bfc663dab6fd99f503c2a",
+      "variants": {
+        "2": {
+          "greedy": {
+            "tokens_per_second": 79.14213745266359,
+            "baseline_tokens_per_second": 84.13897995740727,
+            "speedup": 0.9406120384716671,
+            "accepted_by_horizon": [
+              3082,
+              1769
+            ],
+            "proposed_by_horizon": [
+              3196,
+              3171
+            ],
+            "reached_by_horizon": [
+              3196,
+              3057
+            ],
+            "unconditional_acceptance": [
+              0.9643304130162703,
+              0.5578681803847366
+            ],
+            "conditional_acceptance": [
+              0.9643304130162703,
+              0.5786719005561007
+            ],
+            "accepted_draft_tokens_per_round": 1.5178347934918648,
+            "emitted_per_round": 2.504067584480601,
+            "proposal_stream_seconds": 59.96670322322844,
+            "verification_stream_seconds": 36.10741277217865,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 101.93052979931235,
+            "warmup_seconds": 274.2175658866763
+          },
+          "sample": {
+            "tokens_per_second": 78.6766650286343,
+            "baseline_tokens_per_second": 83.99782316410416,
+            "speedup": 0.9366512376746471,
+            "accepted_by_horizon": [
+              2945,
+              989
+            ],
+            "proposed_by_horizon": [
+              3243,
+              3217
+            ],
+            "reached_by_horizon": [
+              3243,
+              2914
+            ],
+            "unconditional_acceptance": [
+              0.9081097748997842,
+              0.3074292819396954
+            ],
+            "conditional_acceptance": [
+              0.9081097748997842,
+              0.33939601921757034
+            ],
+            "accepted_draft_tokens_per_round": 1.2130743139068763,
+            "emitted_per_round": 2.2007400555041627,
+            "proposal_stream_seconds": 53.14602258014678,
+            "verification_stream_seconds": 32.161246857643135,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 91.52650277409703,
+            "warmup_seconds": 192.98906874284148
+          }
+        }
+      }
+    },
+    "mtp_n3_control": {
+      "name": "mtp_n3_control",
+      "recipe": "existing_mtp",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unfreeze/runs/out/s_sps_mtp_n3_unfreeze_ce_50m/adaptation_final.pt",
+      "checkpoint_sha256": "8d524365d6516725c8ff52a32c3969493dbca34d01bb1647b014734380f55ccd",
+      "numerical_audit": {
+        "max_probability_error": 0.0003977268934249878,
+        "max_logit_error": 0.007839679718017578,
+        "audited_rows": 80,
+        "argmax_mismatches": 0,
+        "probability_atol": 0.005,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "input_tokens": 128,
+        "new_tokens": 128,
+        "seed": 1337,
+        "temperature": 1.0,
+        "anchor_policy": "one initial original-target token; heads predict offsets 2..K+1",
+        "warmup_full_workload_passes": 2,
+        "precision": "FP32 weights; BF16 target attention; original native generator baseline"
+      },
+      "limitations": [
+        "Block/native floating point differences are audited; native greedy equality is reported, not assumed.",
+        "Conditional acceptance divides by actually reached slots. Emitted/round excludes initial target anchor.",
+        "Additional-input budget is matched; Medusa inherits pretrained frozen SPS features, AR is trained from scratch."
+      ],
+      "result_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/mtp_n3_control/evaluation.json",
+      "result_sha256": "fd0423252977f6b74d15bec8fcc6cef83337fa7508e8a1c326da1b2c0002573f",
+      "variants": {
+        "3": {
+          "greedy": {
+            "tokens_per_second": 95.71907420661192,
+            "baseline_tokens_per_second": 98.69847102360822,
+            "speedup": 0.9698131411145807,
+            "accepted_by_horizon": [
+              2875,
+              1649,
+              500
+            ],
+            "proposed_by_horizon": [
+              3023,
+              3004,
+              2983
+            ],
+            "reached_by_horizon": [
+              3023,
+              2856,
+              1631
+            ],
+            "unconditional_acceptance": [
+              0.9510420112471055,
+              0.5489347536617842,
+              0.16761649346295676
+            ],
+            "conditional_acceptance": [
+              0.9510420112471055,
+              0.5773809523809523,
+              0.30656039239730226
+            ],
+            "accepted_draft_tokens_per_round": 1.6619252398279853,
+            "emitted_per_round": 2.6473701620906382,
+            "proposal_stream_seconds": 49.64603797149657,
+            "verification_stream_seconds": 29.699185629844653,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 84.2778732124716,
+            "warmup_seconds": 220.80260499101132
+          },
+          "sample": {
+            "tokens_per_second": 82.56758998486741,
+            "baseline_tokens_per_second": 97.56610013012089,
+            "speedup": 0.8462733457086997,
+            "accepted_by_horizon": [
+              2858,
+              908,
+              224
+            ],
+            "proposed_by_horizon": [
+              3160,
+              3135,
+              3115
+            ],
+            "reached_by_horizon": [
+              3160,
+              2834,
+              898
+            ],
+            "unconditional_acceptance": [
+              0.9044303797468355,
+              0.2896331738437002,
+              0.07191011235955057
+            ],
+            "conditional_acceptance": [
+              0.9044303797468355,
+              0.3203952011291461,
+              0.24944320712694878
+            ],
+            "accepted_draft_tokens_per_round": 1.2626582278481013,
+            "emitted_per_round": 2.25126582278481,
+            "proposal_stream_seconds": 50.54350068187715,
+            "verification_stream_seconds": 30.27117379665375,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 86.93483728077263,
+            "warmup_seconds": 174.29928267374635
+          }
+        }
+      }
+    },
+    "mtp_n4_control": {
+      "name": "mtp_n4_control",
+      "recipe": "existing_mtp",
+      "source_sha256": "aabffce09c9741dff258b27f1cd79165b1dde24fbec422665b4d6bd8da508cf2",
+      "data_manifest_sha256": "9938918986cb2d7042cd3e940234cada361687d5721f56afb686144bd8f3621f",
+      "checkpoint": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/mtp-unfreeze/runs/out/s_sps_mtp_n4_unfreeze_ce_50m/adaptation_final.pt",
+      "checkpoint_sha256": "5a980f2e0d3a5a328f1b2c0db145747c7cc302be81c6a6dd25102ef8f54f933a",
+      "numerical_audit": {
+        "max_probability_error": 0.0003977268934249878,
+        "max_logit_error": 0.007839679718017578,
+        "audited_rows": 80,
+        "argmax_mismatches": 0,
+        "probability_atol": 0.005,
+        "bitwise_native_equivalent": false
+      },
+      "settings": {
+        "prompts": 64,
+        "input_tokens": 128,
+        "new_tokens": 128,
+        "seed": 1337,
+        "temperature": 1.0,
+        "anchor_policy": "one initial original-target token; heads predict offsets 2..K+1",
+        "warmup_full_workload_passes": 2,
+        "precision": "FP32 weights; BF16 target attention; original native generator baseline"
+      },
+      "limitations": [
+        "Block/native floating point differences are audited; native greedy equality is reported, not assumed.",
+        "Conditional acceptance divides by actually reached slots. Emitted/round excludes initial target anchor.",
+        "Additional-input budget is matched; Medusa inherits pretrained frozen SPS features, AR is trained from scratch."
+      ],
+      "result_path": "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/spec-baselines/runs/out/mtp_n4_control/evaluation.json",
+      "result_sha256": "f337265e6f6ab84dda927fbfecadc78034bfa67912b472c9dbedea93721827a6",
+      "variants": {
+        "4": {
+          "greedy": {
+            "tokens_per_second": 96.8359183292238,
+            "baseline_tokens_per_second": 100.23545512820105,
+            "speedup": 0.9660844878229041,
+            "accepted_by_horizon": [
+              2883,
+              1607,
+              455,
+              63
+            ],
+            "proposed_by_horizon": [
+              3034,
+              3013,
+              2992,
+              2967
+            ],
+            "reached_by_horizon": [
+              3034,
+              2862,
+              1594,
+              450
+            ],
+            "unconditional_acceptance": [
+              0.9502307185234015,
+              0.5333554596747427,
+              0.15207219251336898,
+              0.021233569261880688
+            ],
+            "conditional_acceptance": [
+              0.9502307185234015,
+              0.5614954577218728,
+              0.28544542032622333,
+              0.14
+            ],
+            "accepted_draft_tokens_per_round": 1.6506262359920896,
+            "emitted_per_round": 2.6377719182597232,
+            "proposal_stream_seconds": 49.04016214084626,
+            "verification_stream_seconds": 29.333628558158864,
+            "native_exact_prompts": 62,
+            "total_prompts": 64,
+            "total_seconds": 83.30586562491953,
+            "warmup_seconds": 225.16481224633753
+          },
+          "sample": {
+            "tokens_per_second": 80.36414188898716,
+            "baseline_tokens_per_second": 96.98565736792536,
+            "speedup": 0.8286188295256616,
+            "accepted_by_horizon": [
+              2931,
+              954,
+              214,
+              50
+            ],
+            "proposed_by_horizon": [
+              3285,
+              3261,
+              3238,
+              3213
+            ],
+            "reached_by_horizon": [
+              3285,
+              2907,
+              942,
+              213
+            ],
+            "unconditional_acceptance": [
+              0.8922374429223744,
+              0.29254829806807725,
+              0.06609017912291539,
+              0.01556178026766262
+            ],
+            "conditional_acceptance": [
+              0.8922374429223744,
+              0.3281733746130031,
+              0.22717622080679406,
+              0.2347417840375587
+            ],
+            "accepted_draft_tokens_per_round": 1.263013698630137,
+            "emitted_per_round": 2.2517503805175036,
+            "proposal_stream_seconds": 54.065559398651104,
+            "verification_stream_seconds": 32.33289949321747,
+            "native_exact_prompts": null,
+            "total_prompts": 64,
+            "total_seconds": 92.83991373050958,
+            "warmup_seconds": 180.9767243694514
+          }
+        }
+      }
+    }
+  },
+  "submissions": [
+    {
+      "phase": "train",
+      "identity": "sps-spec-baselines train medusa_heads_ce",
+      "name": "medusa_heads_ce",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793140086.7721822,
+      "job_name": "lm-mpi-job-399af6df-23cd-48ac-927e-a3c1eceb43f7"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-spec-baselines eval mtp_n2_control",
+      "name": "mtp_n2_control",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793155011.4467623,
+      "job_name": "lm-mpi-job-77eb2e92-810e-4303-8aab-f748d2f1958a"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-spec-baselines eval history_lookup",
+      "name": "history_lookup",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793140117.1088412,
+      "job_name": "lm-mpi-job-8597dc0e-c75b-4743-a227-66f39afdb78f"
+    },
+    {
+      "phase": "train",
+      "identity": "sps-spec-baselines train tiny_ar_ce",
+      "name": "tiny_ar_ce",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793140090.482805,
+      "job_name": "lm-mpi-job-9c86a827-ae5f-45d6-be8f-060837725a38"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-spec-baselines eval mtp_n4_control",
+      "name": "mtp_n4_control",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793160080.1436572,
+      "job_name": "lm-mpi-job-a27f15f0-a1a0-4c66-8a48-ed6a616fc6e8"
+    },
+    {
+      "phase": "prepare",
+      "identity": "sps-spec-baselines prepare data-and-probes",
+      "name": "data-and-probes",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793131837.8789365,
+      "job_name": "lm-mpi-job-a5897c6b-fd63-4337-b8a6-cec39c81ca49"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-spec-baselines eval tiny_ar_ce",
+      "name": "tiny_ar_ce",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793154991.2858248,
+      "job_name": "lm-mpi-job-b7379273-c83a-4bad-949a-da12633f7d93"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-spec-baselines eval medusa_heads_ce",
+      "name": "medusa_heads_ce",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793156841.9727216,
+      "job_name": "lm-mpi-job-b7464b6a-493b-400e-af00-ca433db2529d"
+    },
+    {
+      "phase": "eval",
+      "identity": "sps-spec-baselines eval mtp_n3_control",
+      "name": "mtp_n3_control",
+      "commit": "bc0fcdfc0a6ba66be06b9bad825957507781f503",
+      "attempted_at": 1793158830.8598502,
+      "job_name": "lm-mpi-job-d6c04be2-d977-4134-beeb-309413cdb436"
+    }
+  ],
+  "interpretation": [
+    "Paired speedups use the native baseline measured in each job; absolute throughput differs between jobs.",
+    "One timed full workload per configuration after warmup; no repeated-run uncertainty interval.",
+    "Greedy/native equality is 61 or 62 of 64 prompts, not exact. Native sampling equivalence is not established by this experiment.",
+    "Conditional acceptance divides accepted counts by reached counts; later slots do not count after an earlier rejection.",
+    "This is a chain Medusa-style baseline, not a reproduction of Medusa tree search.",
+    "AR starts from scratch; Medusa and MTP inherit the pretrained SPS. Additional input tokens match, total pretraining compute does not."
+  ]
+}
