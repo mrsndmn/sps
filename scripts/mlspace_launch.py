@@ -207,8 +207,12 @@ def submit(args):
     if not candidates:
         raise ValueError('No matching experiments')
     if not args.dry:
-        if args.phase == 'train' and not (ARTIFACTS_ROOT / 'prepared.json').exists():
+        if (args.phase == 'train' or (SUITE == 'ar-sps' and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
             raise RuntimeError('Complete --phase prepare and inspect measured estimates first')
+        if SUITE == 'ar-sps' and args.phase in {'train', 'eval'}:
+            prepared = json.loads((ARTIFACTS_ROOT / 'prepared.json').read_text())
+            if prepared.get('design_signature') != design_signature():
+                raise RuntimeError('Stale AR-SPS preparation marker')
         # mls is an optional submission-host dependency; dry plans need neither
         # it, credentials nor an API connection.
         from mls.manager.job.utils import training_job_api_from_profile, get_in_progress_jobs
