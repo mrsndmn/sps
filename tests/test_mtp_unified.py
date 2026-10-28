@@ -62,7 +62,7 @@ def test_unified_suite_is_evaluation_only_and_uses_continuation_markers(tmp_path
     r=subprocess.run(['python','-c',isolated],env={**os.environ,'SPS_EXPERIMENT_SUITE':'mtp-unified'},capture_output=True,text=True)
     assert r.returncode==0,r.stderr
     assert r.stdout.count('scripts.mtp_unified_evaluate')==3
-    assert 'a100.4gpu' in r.stdout
+    assert 'a100.1gpu' in r.stdout
     r=subprocess.run(['python','run_train_jobs.py','--phase','train','--dry'],env={**os.environ,'SPS_EXPERIMENT_SUITE':'mtp-unified'},capture_output=True,text=True)
     assert r.returncode!=0 and 'evaluation-only' in r.stderr
 

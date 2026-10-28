@@ -4,7 +4,8 @@ Keep experiment definitions and numeric configuration in code. Experiment Markdo
 contains only Hypothesis, Setup (training function), Results, Conclusions and Changelog.
 Stage files explicitly and commit implementation changes with conventional prefixes.
 Do not modify the shared mls library. Use the existing project Python environment.
-Report complete MLSpace UUID job names. Long jobs belong in MLSpace, with durable
+All evaluation jobs must use exactly one GPU; training/probe allocations remain
+separate. Report complete MLSpace UUID job names. Long jobs belong in MLSpace, with durable
 Arkhip job_wait observation rather than polling shells.
 
 ## Usage arms
@@ -91,6 +92,6 @@ Arkhip job_wait observation rather than polling shells.
 - `src/modeling/models/sps/unified.py`: one backbone and real-only KV cache;
   fused causal real/group states, all-prefix horizon logits, and rollback.
 - `scripts/mtp_unified_evaluate.py`: pending target anchors, P2..PN proposals,
-  same-checkpoint native P1 baselines, numerical audits and bounded four-GPU jobs.
+  same-checkpoint native P1 baselines, numerical audits and bounded single-GPU jobs.
 - `tests/test_mtp_unified.py`: fused/full-prefix causality, EOS, rejection rollback,
   pass-count invariants, sampling-law oracle and evaluation-only routing.

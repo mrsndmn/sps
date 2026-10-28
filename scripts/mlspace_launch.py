@@ -16,7 +16,7 @@ import time
 
 from experiments import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
-                        collect_experiments, output_dir, design_signature, SUITE, training_marker)
+                        collect_experiments, output_dir, design_signature, SUITE, training_marker, EVAL_NUM_GPUS)
 from scripts.pilot_headers import HEADER_ROOT
 
 
@@ -174,7 +174,7 @@ def payload(phase, name, staged, author, nick):
                        'CPLUS_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
                        'C_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
                        'OMP_NUM_THREADS': '8', 'TOKENIZERS_PARALLELISM': 'false'},
-        instance_type=INSTANCE_TYPES_BY_NUM_GPUS[4], region='SR004',
+        instance_type=INSTANCE_TYPES_BY_NUM_GPUS[EVAL_NUM_GPUS if phase == 'eval' else 4], region='SR004',
         type='binary_exp', shm_size_class='large', base_image=BASE_IMAGE,
         n_workers=1, processes_per_worker=1)
 

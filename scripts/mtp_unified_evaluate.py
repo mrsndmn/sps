@@ -78,7 +78,7 @@ def audit(model,prompts):
 
 
 def evaluate(exp):
-    if torch.cuda.device_count()!=exp.num_gpus:raise RuntimeError('Expected four visible GPUs')
+    if torch.cuda.device_count()!=e.EVAL_NUM_GPUS:raise RuntimeError('Expected one visible evaluation GPU')
     trained,_=checked_state(exp);checkpoint=trained['checkpoint']
     model=load_mtp(exp.horizons,'cuda',checkpoint,backend='sdpa').eval()
     data=TokenSequences('val',e.UNIFIED_PROMPT_TOKENS,exp.horizons)

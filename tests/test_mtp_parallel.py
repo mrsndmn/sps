@@ -93,7 +93,7 @@ print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),models=[x.horizons for x in e.e
     assert a['root'].endswith('/mtp-parallel') and a['models']==[2,3,4]
     assert all('/mtp-unfreeze/' in x for x in a['parents'])
     assert 'scripts.mtp_parallel_evaluate eval' in a['payload']['script']
-    assert a['payload']['instance_type']=='a100.4gpu'
+    assert a['payload']['instance_type']=='a100.1gpu'
     r=subprocess.run([sys.executable,'run_train_jobs.py','--dry'],env=env,capture_output=True,text=True)
     assert r.returncode and 'evaluation-only' in r.stderr
 
