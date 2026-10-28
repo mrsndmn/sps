@@ -27,13 +27,13 @@ def samples(result, task, metric):
     return paired
 
 
-def compare(baseline, candidate):
+def compare(baseline, candidate, *, matched_exposure=False):
     if not (baseline/'complete.json').exists() or not (candidate/'complete.json').exists():
         raise RuntimeError('Evaluation incomplete; no retention verdict')
     for path in (baseline, candidate):
         if json.loads((path/'complete.json').read_text())['design_signature'] != e.design_signature():
             raise RuntimeError('Stale evaluation')
-    row = dict(variant=str(candidate), tasks={})
+    row = dict(baseline=str(baseline), variant=str(candidate), tasks={})
     passed = True
     for task, metric in c.PRIMARY_METRICS.items():
         left = json.loads((baseline/f'{task}.json').read_text())
@@ -49,19 +49,38 @@ def compare(baseline, candidate):
                                   paired_ci=paired_interval([a[k][1] for k in ids], [b[k][1] for k in ids]))
     a = json.loads((baseline/'heldout.json').read_text())
     b = json.loads((candidate/'heldout.json').read_text())
+    if matched_exposure and a['step'] != b['step']:
+        raise RuntimeError('Unequal exposure in endpoint control comparison')
+    row.update(baseline_step=a['step'], candidate_step=b['step'],
+               baseline_text_tokens=a['step']*c.GLOBAL_BATCH*c.CONTEXT,
+               candidate_text_tokens=b['step']*c.GLOBAL_BATCH*c.CONTEXT,
+               matched_exposure=a['step'] == b['step'],
+               checkpoint_selection='validation' if candidate.name in {'best', 'embedding_best'} else 'fixed_endpoint')
     passed &= b['nll'] <= a['nll']+c.NLL_ATOL
     row.update(source_nll=a['nll'], nll=b['nll'], nll_ci=paired_interval(a['per_sequence'], b['per_sequence']),
                observed_retention=bool(passed), interpretation='Point-estimate criterion; one seed; CIs are per-task, not simultaneous proof')
     return row
 
 
-def main():
+def build_report():
     baseline = e.RUN_ROOT/'out/smollm2_original_ar/eval/source'
     reports = []
     for exp in e.collect_experiments():
         for marker in sorted((e.output_dir(exp)/'eval').glob('*/complete.json')):
             reports.append(compare(baseline, marker.parent))
-    print(json.dumps(reports, indent=2))
+    controls = []
+    staged = e.RUN_ROOT/'out/smollm2_staged_sps/eval'
+    for label in ('stage_endpoint', 'final'):
+        for arm in ('smollm2_direct_sps', 'smollm2_continued_ar'):
+            control = e.RUN_ROOT/'out'/arm/'eval'/label
+            if (staged/label/'complete.json').exists() and (control/'complete.json').exists():
+                controls.append(compare(control, staged/label, matched_exposure=True))
+    return dict(against_original=reports, matched_endpoint_controls=controls,
+                selection_note='Validation-selected best checkpoints may have unequal exposure; use endpoint controls for warmup claims.')
+
+
+def main():
+    print(json.dumps(build_report(), indent=2))
 
 
 if __name__ == '__main__':

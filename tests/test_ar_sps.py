@@ -91,3 +91,29 @@ def test_content_split_and_paired_intervals():
     assert split_for('same document') == split_for('same document')
     assert paired_interval([0, 1], [0, 1]) == [0., 0.]
     with pytest.raises(ValueError): paired_interval([1], [])
+
+
+def test_report_exposure_and_per_task_retention(tmp_path, monkeypatch):
+    from scripts import ar_sps_report as report
+    monkeypatch.setattr(report.c, 'PRIMARY_METRICS', {'task_a': 'acc,none', 'task_b': 'acc,none'})
+    monkeypatch.setattr(report.e, 'design_signature', lambda: 'test')
+    def write(root, step, scores):
+        root.mkdir(parents=True, exist_ok=True)
+        (root/'complete.json').write_text(json.dumps({'design_signature': 'test'}))
+        (root/'heldout.json').write_text(json.dumps({'step': step, 'nll': 1., 'per_sequence': [1., 1.]}))
+        for task, score in zip(('task_a', 'task_b'), scores):
+            (root/f'{task}.json').write_text(json.dumps({
+                'results': {task: {'acc,none': score}},
+                'samples': {task: [{'doc_id': 0, 'doc_hash': 'same', 'acc': score}]}}))
+    base = tmp_path/'control/final'; candidate = tmp_path/'staged/final'
+    write(base, 10, [.5, .5]); write(candidate, 10, [.4, .6])
+    result = report.compare(base, candidate, matched_exposure=True)
+    assert not result['observed_retention']  # equal mean cannot hide a task drop
+    assert result['matched_exposure']
+    assert result['candidate_text_tokens'] == 10*c.GLOBAL_BATCH*c.CONTEXT
+    write(candidate, 9, [.5, .5])
+    with pytest.raises(RuntimeError, match='Unequal exposure'):
+        report.compare(base, candidate, matched_exposure=True)
+    result = report.compare(base, candidate)
+    assert not result['matched_exposure']
+    assert result['candidate_step'] == 9
