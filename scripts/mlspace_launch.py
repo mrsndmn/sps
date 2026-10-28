@@ -160,6 +160,8 @@ def payload(phase, name, staged, author, nick):
         command = [str(PYTHON), '-m', 'scripts.mtp_unified_evaluate', phase]
     if SUITE == 'mtp-parallel':
         command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
+    if SUITE == 'ar-sps':
+        command = [str(PYTHON), '-m', 'scripts.ar_sps_run', phase]
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
@@ -243,6 +245,9 @@ def submit(args):
             continue
         # Single submission attempt: never hold an ephemeral shell retrying a
         # quota failure. The caller may retry after the allocation changes.
+        if SUITE == 'ar-sps':
+            from scripts.ar_sps_run import reserve
+            reserve(args.phase, name)
         jobs.append(submit_payload(client, body, args.phase, name, commit))
         active_by_desc[identity] = jobs[-1]['job_name']
         print(json.dumps(jobs[-1]))

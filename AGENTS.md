@@ -95,3 +95,18 @@ Arkhip job_wait observation rather than polling shells.
   same-checkpoint native P1 baselines, numerical audits and bounded single-GPU jobs.
 - `tests/test_mtp_unified.py`: fused/full-prefix causality, EOS, rejection rollback,
   pass-count invariants, sampling-law oracle and evaluation-only routing.
+
+- `SPS_EXPERIMENT_SUITE=ar-sps`: pretrained AR-to-zero-window-SPS pilot registry in
+  `scripts/ar_sps_config.py`, imported by `experiments.py`, with isolated artifacts.
+- `src/modeling/models/sps/pretrained.py`: native Llama layers, isolated prediction
+  slots and preserved real-token positions; full-prefix likelihood scoring only.
+- `scripts/ar_sps_data.py`: pinned native tokenization and content-hash document
+  splits; full chunks never cross document boundaries.
+- `scripts/ar_sps_train.py`: matched-token DDP arms, embedding-only/full transition,
+  validation selection and provenance-checked resume.
+- `scripts/ar_sps_run.py`: preparation/probes, common-budget calibration, bounded
+  process groups and conservative aggregate GPU-hour submission reservations.
+- `scripts/ar_sps_evaluate.py`/`ar_sps_report.py`: matched lm-eval scoring, held-out
+  losses, per-example paired intervals and strict observed-retention verdicts.
+- `tests/test_ar_sps*.py`: native parity, causality, freeze/unfreeze, ties, budget
+  limits, intervals and dry submission routing.
