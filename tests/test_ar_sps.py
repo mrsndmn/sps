@@ -117,3 +117,42 @@ def test_report_exposure_and_per_task_retention(tmp_path, monkeypatch):
     result = report.compare(base, candidate)
     assert not result['matched_exposure']
     assert result['candidate_step'] == 9
+
+
+def test_audit_checks_reference_and_production_causality():
+    from scripts.ar_sps_evaluate import audit_model
+    result = audit_model(model(False), torch.tensor([[2, 4, 8, 6]]), 2)
+    assert result['native_max_abs'] == 0
+    assert result['float32']['causal_max_abs'] == 0
+    assert result['bfloat16']['causal_max_abs'] == 0
+    assert result['float64_reference']['cross_length_max_abs'] < c.PARITY_ATOL
+
+
+def test_audit_rejects_future_leakage(monkeypatch):
+    from scripts.ar_sps_evaluate import audit_model
+    m = model(False)
+    original = m.forward
+    def leaky(ids, **kwargs):
+        output = original(ids, **kwargs)
+        if m.sps:
+            output.logits = output.logits + ids[:, -1, None, None].float()
+        return output
+    monkeypatch.setattr(m, 'forward', leaky)
+    with pytest.raises(AssertionError):
+        audit_model(m, torch.tensor([[2, 4, 8, 6]]), 2)
+
+
+def test_audit_records_shape_drift_without_relaxing_reference(monkeypatch):
+    from scripts.ar_sps_evaluate import audit_model
+    m = model(False)
+    original = m.forward
+    def shape_dependent(ids, **kwargs):
+        output = original(ids, **kwargs)
+        if m.sps and ids.shape[1] == 2 and m.prediction.dtype == torch.float32:
+            output.logits = output.logits.float() + .001
+        return output
+    monkeypatch.setattr(m, 'forward', shape_dependent)
+    result = audit_model(m, torch.tensor([[2, 4, 8, 6]]), 2)
+    assert result['float32']['cross_length_max_abs'] > c.PARITY_ATOL
+    assert result['float32']['causal_max_abs'] == 0
+    assert result['float64_reference']['cross_length_max_abs'] < c.PARITY_ATOL
