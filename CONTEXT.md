@@ -23,3 +23,13 @@ _Avoid_: Ordinary zero-window SPS, teacher-forced future-token chain
 **Prediction horizon**:
 The offset of a future text token relative to the last visible text token of an MTP group.
 _Avoid_: Predict window, generated prefix length
+
+
+**AR-to-SPS adaptation**:
+Conversion of a pretrained autoregressive language model into zero-window SPS, with next-token predictions read from dedicated prediction slots. Quality retention refers to these SPS predictions relative to the original autoregressive model.
+_Avoid_: SPS-to-MTP adaptation, unchanged AR quality
+
+
+**Observed quality retention**:
+An adapted model has no decrease in any selected benchmark point estimate and no increase in held-out negative log-likelihood relative to its original model under matched evaluation. This is an empirical pilot outcome, not proof of population-level non-inferiority.
+_Avoid_: Proven quality equivalence, statistically guaranteed no degradation

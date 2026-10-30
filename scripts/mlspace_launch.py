@@ -160,6 +160,8 @@ def payload(phase, name, staged, author, nick):
         command = [str(PYTHON), '-m', 'scripts.mtp_unified_evaluate', phase]
     if SUITE == 'mtp-parallel':
         command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
+    if SUITE == 'ar-sps':
+        command = [str(PYTHON), '-m', 'scripts.ar_sps_run', phase]
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
@@ -205,8 +207,12 @@ def submit(args):
     if not candidates:
         raise ValueError('No matching experiments')
     if not args.dry:
-        if args.phase == 'train' and not (ARTIFACTS_ROOT / 'prepared.json').exists():
+        if (args.phase == 'train' or (SUITE == 'ar-sps' and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
             raise RuntimeError('Complete --phase prepare and inspect measured estimates first')
+        if SUITE == 'ar-sps' and args.phase in {'train', 'eval'}:
+            prepared = json.loads((ARTIFACTS_ROOT / 'prepared.json').read_text())
+            if prepared.get('design_signature') != design_signature():
+                raise RuntimeError('Stale AR-SPS preparation marker')
         # mls is an optional submission-host dependency; dry plans need neither
         # it, credentials nor an API connection.
         from mls.manager.job.utils import training_job_api_from_profile, get_in_progress_jobs
@@ -243,6 +249,9 @@ def submit(args):
             continue
         # Single submission attempt: never hold an ephemeral shell retrying a
         # quota failure. The caller may retry after the allocation changes.
+        if SUITE == 'ar-sps':
+            from scripts.ar_sps_run import reserve
+            reserve(args.phase, name)
         jobs.append(submit_payload(client, body, args.phase, name, commit))
         active_by_desc[identity] = jobs[-1]['job_name']
         print(json.dumps(jobs[-1]))
