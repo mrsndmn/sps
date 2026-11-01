@@ -1,5 +1,6 @@
 """Executable design for the bounded pretrained AR-to-SPS pilot."""
 from dataclasses import dataclass
+import os
 
 MODEL = 'HuggingFaceTB/SmolLM2-135M'
 REVISION = '93efa2f097d58c2a74874c7e644dbc9b0cee75a2'
@@ -49,6 +50,7 @@ class ARExperiment:
     recipe: str
     num_gpus: int = 4
     trainable: bool = True
+    distillation_weight: float = 0.0
 
 
 experiment_configs = [
@@ -59,3 +61,20 @@ experiment_configs = [
     ARExperiment('smollm2_continued_ar', 'continued_ar'),
 ]
 assert PREPARE_HOURS*4 + TRAIN_HOURS*4*3 + EVAL_HOURS*len(experiment_configs) <= GPU_HOURS
+
+
+# Follow-up: a fresh staged student, matched to the completed CE pilot.
+DISTILLATION = os.environ.get('SPS_EXPERIMENT_SUITE') == 'ar-sps-kd'
+DISTILLATION_TEMPERATURE = 1.0
+REFERENCE_SUITE = 'ar-sps'
+REFERENCE_SIGNATURE = 'e9ed3e07768d5fb918301f5f23af9aa3020740a9578cb18f19543365a228a04d'
+REFERENCE_DATA_SHA256 = {
+    'train': '9d5f3fe5b6c0d88436145c49d721e821771fc5ee3c64988504deeb911a54796a',
+    'val': 'ee655e136153ce56db65e06fbb41711ebcbdb85fca338026d7c80e39b4c9df23',
+    'test': 'b227f003d9811440cb039991223eecbc8d4e7a7ab03108d7a7d1adb83f7274df',
+}
+if DISTILLATION:
+    GPU_HOURS = 20
+    TRAIN_HOURS = 2
+    experiment_configs = [ARExperiment('smollm2_staged_sps_kd', 'staged_sps', distillation_weight=.5)]
+    assert PREPARE_HOURS*4 + TRAIN_HOURS*4 + EVAL_HOURS <= GPU_HOURS

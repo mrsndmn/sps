@@ -6,7 +6,7 @@ import json
 import os
 
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified', 'ar-sps'}:
+if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified', 'ar-sps', 'ar-sps-kd'}:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
@@ -155,7 +155,7 @@ def overrides(exp, *, probe=False):
 
 
 def train_command(exp, *, probe=False):
-    if SUITE == 'ar-sps':
+    if SUITE in {'ar-sps', 'ar-sps-kd'}:
         return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
                 f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.ar_sps_train',
                 '--filter', exp.name, *(['--probe'] if probe else [])]
@@ -188,7 +188,7 @@ def design_signature():
                      repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
     if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified'}:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py'), *repo.glob('scripts/spec_baseline*.py')]
-    if SUITE == 'ar-sps':
+    if SUITE in {'ar-sps', 'ar-sps-kd'}:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/ar_sps*.py')]
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
@@ -263,5 +263,5 @@ if SUITE == 'mtp-unified':
         reference_name=f's_sps_mtp_n{n}_unfreeze_ce_50m',trainable=False) for n in (2,3,4)]
 
 
-if SUITE == "ar-sps":
+if SUITE in {"ar-sps", "ar-sps-kd"}:
     from scripts.ar_sps_config import experiment_configs

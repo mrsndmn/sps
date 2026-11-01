@@ -27,11 +27,12 @@ def samples(result, task, metric):
     return paired
 
 
-def compare(baseline, candidate, *, matched_exposure=False):
+def compare(baseline, candidate, *, matched_exposure=False, baseline_signature=None):
     if not (baseline/'complete.json').exists() or not (candidate/'complete.json').exists():
         raise RuntimeError('Evaluation incomplete; no retention verdict')
-    for path in (baseline, candidate):
-        if json.loads((path/'complete.json').read_text())['design_signature'] != e.design_signature():
+    for path, signature in ((baseline, baseline_signature or e.design_signature()),
+                            (candidate, e.design_signature())):
+        if json.loads((path/'complete.json').read_text())['design_signature'] != signature:
             raise RuntimeError('Stale evaluation')
     row = dict(baseline=str(baseline), variant=str(candidate), tasks={})
     passed = True
@@ -63,6 +64,8 @@ def compare(baseline, candidate, *, matched_exposure=False):
 
 
 def build_report():
+    if c.DISTILLATION:
+        return distillation_report()
     baseline = e.RUN_ROOT/'out/smollm2_original_ar/eval/source'
     reports = []
     for exp in e.collect_experiments():
@@ -77,6 +80,27 @@ def build_report():
                 controls.append(compare(control, staged/label, matched_exposure=True))
     return dict(against_original=reports, matched_endpoint_controls=controls,
                 selection_note='Validation-selected best checkpoints may have unequal exposure; use endpoint controls for warmup claims.')
+
+
+def distillation_report():
+    # Only these pinned CE artifacts are allowed as external references.
+    from scripts.ar_sps_data import rows
+    rows('test')  # require the verified reference-data manifest
+    root = e.COMMON_ROOT/c.REFERENCE_SUITE/'runs/out'
+    baseline = root/'smollm2_original_ar/eval/source'
+    reports, controls = [], []
+    for exp in e.collect_experiments():
+        evaluation = e.output_dir(exp)/'eval'
+        for marker in sorted(evaluation.glob('*/complete.json')):
+            reports.append(compare(baseline, marker.parent, baseline_signature=c.REFERENCE_SIGNATURE))
+        for label in ('stage_endpoint', 'final'):
+            for arm in ('smollm2_staged_sps', 'smollm2_direct_sps', 'smollm2_continued_ar'):
+                control = root/arm/'eval'/label
+                if (evaluation/label/'complete.json').exists():
+                    controls.append(compare(control, evaluation/label, matched_exposure=True,
+                                            baseline_signature=c.REFERENCE_SIGNATURE))
+    return dict(against_original=reports, matched_endpoint_controls=controls,
+                selection_note='KD vs pinned CE controls uses identical text and endpoint exposure; best is validation-selected.')
 
 
 def main():

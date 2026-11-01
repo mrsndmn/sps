@@ -12,7 +12,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 import experiments as e
 from scripts import ar_sps_config as c
-from scripts.ar_sps_common import load_model, loss, nll, save, restore, read_plan
+from scripts.ar_sps_common import load_model, load_teacher, loss, nll, save, restore, read_plan
 from scripts.ar_sps_data import rows
 from scripts.mlspace_launch import store_json
 
@@ -45,6 +45,7 @@ def main():
     root = (e.SANITY_ROOT if args.probe else e.RUN_ROOT)/'out'/exp.name
     root.mkdir(parents=True, exist_ok=True)
     model = load_model(exp.recipe, device)
+    teacher = load_teacher(device) if exp.distillation_weight else None
     data = rows('train'); validation = rows('val')
     if len(data) < steps*c.GLOBAL_BATCH:
         raise RuntimeError('Insufficient unique training rows')
@@ -74,14 +75,20 @@ def main():
         torch.cuda.synchronize(); began = time.monotonic()
         optimizer.zero_grad(set_to_none=True)
         total = 0.
+        ce_total = 0.
+        kd_total = 0.
         for micro in range(accumulation):
             offset = step*c.GLOBAL_BATCH + (micro*world+rank)*c.MICRO_BATCH
             batch = torch.tensor(np.asarray(data[offset:offset+c.MICRO_BATCH], dtype='int64'), device=device)
             sync = contextlib.nullcontext() if micro == accumulation-1 else ddp.no_sync()
             with sync, torch.autocast('cuda', dtype=torch.bfloat16):
-                value = loss(ddp, batch)/accumulation
+                value, ce, kd = loss(ddp, batch, teacher=teacher, weight=exp.distillation_weight,
+                                     temperature=c.DISTILLATION_TEMPERATURE, components=True)
+                value = value/accumulation
                 value.backward()
             total += value.detach().item()
+            ce_total += ce.item()/accumulation
+            kd_total += kd.item()/accumulation
         norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], c.CLIP)
         if not torch.isfinite(norm):
             raise RuntimeError('Nonfinite gradient')
@@ -106,7 +113,9 @@ def main():
                     save(root/'final.pt', model, optimizer, step+1, best, frozen, plan)
                 with (root/'metrics.jsonl').open('a') as handle:
                     handle.write(json.dumps(dict(step=step+1, tokens=(step+1)*c.GLOBAL_BATCH*c.CONTEXT,
-                                                 val_nll=score, rank_zero_train_loss=total))+'\n')
+                                                 val_nll=score, rank_zero_train_loss=total,
+                                                 rank_zero_ce=ce_total, rank_zero_kd=kd_total,
+                                                 distillation_weight=exp.distillation_weight))+'\n')
             dist.barrier()
         model.train()
     if args.probe:
