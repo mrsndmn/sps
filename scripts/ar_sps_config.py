@@ -115,3 +115,28 @@ if os.environ.get('SPS_EXPERIMENT_SUITE') in LARGE_KD_REFERENCES:
     REFERENCE_CONTROLS = ('smollm2_staged_sps',)
     experiment_configs = [ARExperiment('smollm2_staged_sps_kd', 'staged_sps', distillation_weight=.5)]
     GPU_HOURS = PREPARE_HOURS*4 + TRAIN_HOURS*4 + EVAL_HOURS
+
+
+REPORT_BASELINE = 'smollm2_original_ar'
+ENDPOINT_COMPARISONS = (('smollm2_direct_sps', 'smollm2_staged_sps'),
+                        ('smollm2_continued_ar', 'smollm2_staged_sps'))
+QWEN_MODELS = {
+    'ar-sps-qwen3-0.6b': ('Qwen/Qwen3-0.6B-Base',
+                         'da87bfb608c14b7cf20ba1ce41287e8de496c0cd', 4, 4),
+    'ar-sps-qwen3-1.7b': ('Qwen/Qwen3-1.7B-Base',
+                         'ea980cb0a6c2ae4b936e82123acc929f1cec04c1', 6, 8),
+}
+QWEN = os.environ.get('SPS_EXPERIMENT_SUITE') in QWEN_MODELS
+if QWEN:
+    MODEL, REVISION, TRAIN_HOURS, EVAL_HOURS = QWEN_MODELS[os.environ['SPS_EXPERIMENT_SUITE']]
+    MICRO_BATCH = EVAL_BATCH = 1  # larger native vocabulary, including full KL logits
+    REPORT_BASELINE = 'qwen3_original_ar'
+    ENDPOINT_COMPARISONS = (('qwen3_staged_sps_ce', 'qwen3_staged_sps_kd'),)
+    # DISTILLATION selects historical-reference reuse, not the per-arm objective.
+    # Both fresh Qwen arms share a newly prepared native-tokenizer corpus.
+    experiment_configs = [
+        ARExperiment(REPORT_BASELINE, 'original_ar', trainable=False),
+        ARExperiment('qwen3_staged_sps_ce', 'staged_sps'),
+        ARExperiment('qwen3_staged_sps_kd', 'staged_sps', distillation_weight=.5),
+    ]
+    GPU_HOURS = PREPARE_HOURS*4 + TRAIN_HOURS*4*2 + EVAL_HOURS*3

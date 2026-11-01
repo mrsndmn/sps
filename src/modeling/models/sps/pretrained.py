@@ -1,4 +1,4 @@
-"""Native Llama backbone with isolated zero-window SPS prediction slots."""
+"""Native Llama/Qwen3 backbones with isolated zero-window SPS prediction slots."""
 from types import SimpleNamespace
 
 import torch
@@ -8,8 +8,11 @@ from torch import nn
 class PretrainedSPS(nn.Module):
     def __init__(self, backbone, *, sps=True):
         super().__init__()
-        if backbone.config.model_type != 'llama':
-            raise ValueError('Only the audited Llama architecture is supported')
+        if backbone.config.model_type not in {'llama', 'qwen3'}:
+            raise ValueError('Only audited Llama and Qwen3 architectures are supported')
+        if backbone.config.model_type == 'qwen3' and any(
+                kind != 'full_attention' for kind in backbone.config.layer_types):
+            raise ValueError('Only full-attention Qwen3 is supported')
         self.backbone = backbone
         self.config = backbone.config
         self.sps = sps

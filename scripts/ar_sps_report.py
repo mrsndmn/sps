@@ -66,16 +66,16 @@ def compare(baseline, candidate, *, matched_exposure=False, baseline_signature=N
 def build_report():
     if c.DISTILLATION:
         return distillation_report()
-    baseline = e.RUN_ROOT/'out/smollm2_original_ar/eval/source'
+    baseline = e.RUN_ROOT/'out'/c.REPORT_BASELINE/'eval/source'
     reports = []
     for exp in e.collect_experiments():
         for marker in sorted((e.output_dir(exp)/'eval').glob('*/complete.json')):
             reports.append(compare(baseline, marker.parent))
     controls = []
-    staged = e.RUN_ROOT/'out/smollm2_staged_sps/eval'
     for label in ('stage_endpoint', 'final'):
-        for arm in ('smollm2_direct_sps', 'smollm2_continued_ar'):
-            control = e.RUN_ROOT/'out'/arm/'eval'/label
+        for control_name, candidate_name in c.ENDPOINT_COMPARISONS:
+            staged = e.RUN_ROOT/'out'/candidate_name/'eval'
+            control = e.RUN_ROOT/'out'/control_name/'eval'/label
             if (staged/label/'complete.json').exists() and (control/'complete.json').exists():
                 controls.append(compare(control, staged/label, matched_exposure=True))
     return dict(against_original=reports, matched_endpoint_controls=controls,

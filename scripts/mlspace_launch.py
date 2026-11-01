@@ -160,7 +160,7 @@ def payload(phase, name, staged, author, nick):
         command = [str(PYTHON), '-m', 'scripts.mtp_unified_evaluate', phase]
     if SUITE == 'mtp-parallel':
         command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
-    if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd'}:
+    if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
         command = [str(PYTHON), '-m', 'scripts.ar_sps_run', phase]
     if phase != 'prepare':
         command += ['--filter', name]
@@ -207,9 +207,9 @@ def submit(args):
     if not candidates:
         raise ValueError('No matching experiments')
     if not args.dry:
-        if (args.phase == 'train' or (SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd'} and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
+        if (args.phase == 'train' or (SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'} and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
             raise RuntimeError('Complete --phase prepare and inspect measured estimates first')
-        if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd'} and args.phase in {'train', 'eval'}:
+        if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'} and args.phase in {'train', 'eval'}:
             prepared = json.loads((ARTIFACTS_ROOT / 'prepared.json').read_text())
             if prepared.get('design_signature') != design_signature():
                 raise RuntimeError('Stale AR-SPS preparation marker')
@@ -249,7 +249,7 @@ def submit(args):
             continue
         # Single submission attempt: never hold an ephemeral shell retrying a
         # quota failure. The caller may retry after the allocation changes.
-        if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd'}:
+        if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
             from scripts.ar_sps_run import reserve
             reserve(args.phase, name)
         jobs.append(submit_payload(client, body, args.phase, name, commit))
