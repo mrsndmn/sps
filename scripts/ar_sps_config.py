@@ -96,3 +96,22 @@ if LARGE_CE:
         ARExperiment('smollm2_staged_sps', 'staged_sps'),
     ]
     GPU_HOURS = PREPARE_HOURS*4 + TRAIN_HOURS*4 + EVAL_HOURS*len(experiment_configs)
+
+
+# Same-size frozen source teachers; fresh students matched to each completed CE run.
+REFERENCE_CONTROLS = ('smollm2_staged_sps', 'smollm2_direct_sps', 'smollm2_continued_ar')
+LARGE_KD_REFERENCES = {
+    'ar-sps-360m-kd': ('ar-sps-360m-ce',
+                       'a91952db7534868c2d23050e447080d6682191ddb1df4ddd398c1db9bcbf8657'),
+    'ar-sps-1.7b-kd': ('ar-sps-1.7b-ce',
+                       '555846063de2a68b13a7efa818d5330be55fbf90074453ee5736ba4ad11df82a'),
+}
+if os.environ.get('SPS_EXPERIMENT_SUITE') in LARGE_KD_REFERENCES:
+    DISTILLATION = True
+    REFERENCE_SUITE, REFERENCE_SIGNATURE = LARGE_KD_REFERENCES[os.environ['SPS_EXPERIMENT_SUITE']]
+    MODEL, REVISION, MICRO_BATCH, TRAIN_HOURS, EVAL_HOURS = LARGE_CE_MODELS[REFERENCE_SUITE]
+    EVAL_BATCH = MICRO_BATCH
+    # All three pinned CE tokenized corpora have identical verified split hashes.
+    REFERENCE_CONTROLS = ('smollm2_staged_sps',)
+    experiment_configs = [ARExperiment('smollm2_staged_sps_kd', 'staged_sps', distillation_weight=.5)]
+    GPU_HOURS = PREPARE_HOURS*4 + TRAIN_HOURS*4 + EVAL_HOURS

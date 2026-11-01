@@ -94,7 +94,7 @@ def main():
     parser.add_argument('--filter')
     parser.add_argument('--internal', action='store_true')
     args = parser.parse_args()
-    if e.SUITE not in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce'}:
+    if e.SUITE not in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd'}:
         raise RuntimeError('Select SPS_EXPERIMENT_SUITE=ar-sps')
     if args.internal:
         return internal(args.phase, args.filter)
