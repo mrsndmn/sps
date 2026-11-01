@@ -44,6 +44,15 @@ def calibrated_plan(probes):
             rates.append(probe['full'])
     available = c.TRAIN_HOURS*3600-c.STARTUP_SECONDS
     steps = min(c.MAX_STEPS, int(available/(max(rates)*c.SAFETY)))
+    if c.DISTILLATION:
+        parent = json.loads((e.COMMON_ROOT/c.REFERENCE_SUITE/'prepared.json').read_text())
+        if (parent.get('design_signature') != c.REFERENCE_SIGNATURE
+                or parent.get('steps') != c.MAX_STEPS
+                or parent.get('stage_steps') != int(c.MAX_STEPS*c.STAGE_FRACTION)
+                or parent.get('text_tokens') != c.MAX_STEPS*c.GLOBAL_BATCH*c.CONTEXT):
+            raise RuntimeError('Reference training plan mismatch')
+        if steps != parent['steps']:
+            raise RuntimeError('Distillation cannot fit matched exposure within the time cap')
     if steps < c.MIN_STEPS:
         raise RuntimeError('No meaningful common training budget fits the cap')
     return dict(steps=steps, stage_steps=max(1, int(steps*c.STAGE_FRACTION)),
@@ -83,7 +92,7 @@ def main():
     parser.add_argument('--filter')
     parser.add_argument('--internal', action='store_true')
     args = parser.parse_args()
-    if e.SUITE != 'ar-sps':
+    if e.SUITE not in {'ar-sps', 'ar-sps-kd'}:
         raise RuntimeError('Select SPS_EXPERIMENT_SUITE=ar-sps')
     if args.internal:
         return internal(args.phase, args.filter)

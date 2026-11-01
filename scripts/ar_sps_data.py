@@ -15,7 +15,41 @@ def split_for(text):
     return ('train' if value < c.TRAIN_FRACTION else 'val' if value < c.VAL_BOUNDARY else 'test'), digest
 
 
+def reference_root():
+    return e.COMMON_ROOT / c.REFERENCE_SUITE / 'runs/data'
+
+
+def prepare_reference():
+    """Read completed CE data without changing its artifacts or ordering."""
+    root = reference_root()
+    manifest = json.loads((root/'manifest.json').read_text())
+    if (manifest.get('design_signature') != c.REFERENCE_SIGNATURE
+            or manifest.get('model') != c.MODEL or manifest.get('revision') != c.REVISION
+            or manifest.get('dataset') != e.DATASET_REPO
+            or manifest.get('dataset_revision') != e.DATASET_REVISION
+            or manifest.get('row_length') != c.CONTEXT+1 or manifest.get('dtype') != 'uint32'):
+        raise RuntimeError('Reference data provenance mismatch')
+    for split, expected in c.REFERENCE_DATA_SHA256.items():
+        path = root/f'{split}.bin'
+        if path.stat().st_size != manifest['rows'][split]*(c.CONTEXT+1)*4:
+            raise RuntimeError('Reference data size mismatch')
+        digest = hashlib.sha256()
+        with path.open('rb') as handle:
+            for chunk in iter(lambda: handle.read(1024*1024), b''):
+                digest.update(chunk)
+        if digest.hexdigest() != expected:
+            raise RuntimeError(f'Reference data checksum mismatch: {split}')
+    result = dict(manifest, design_signature=e.design_signature(),
+                  reference_signature=c.REFERENCE_SIGNATURE, reference_root=str(root),
+                  sha256=c.REFERENCE_DATA_SHA256)
+    from scripts.mlspace_launch import store_json
+    store_json(e.RUN_ROOT/'data/manifest.json', result)
+    return result
+
+
 def prepare():
+    if c.DISTILLATION:
+        return prepare_reference()
     from huggingface_hub import hf_hub_download, try_to_load_from_cache
     from transformers import AutoTokenizer
     import pyarrow.parquet as pq
@@ -91,4 +125,13 @@ def rows(split):
     manifest = json.loads((root/'manifest.json').read_text())
     if manifest['design_signature'] != e.design_signature():
         raise RuntimeError('Stale data')
-    return np.memmap(root/f'{split}.bin', mode='r', dtype=np.uint32).reshape(-1, c.CONTEXT+1)
+    if c.DISTILLATION:
+        if (manifest.get('reference_signature') != c.REFERENCE_SIGNATURE
+                or manifest.get('reference_root') != str(reference_root())
+                or manifest.get('sha256') != c.REFERENCE_DATA_SHA256):
+            raise RuntimeError('Invalid reference data link')
+        root = reference_root()
+    path = root/f'{split}.bin'
+    if path.stat().st_size != manifest['rows'][split]*(c.CONTEXT+1)*4:
+        raise RuntimeError('Incomplete data')
+    return np.memmap(path, mode='r', dtype=np.uint32).reshape(-1, c.CONTEXT+1)
