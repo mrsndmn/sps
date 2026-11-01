@@ -53,6 +53,8 @@ def calibrated_plan(probes):
             raise RuntimeError('Reference training plan mismatch')
         if steps != parent['steps']:
             raise RuntimeError('Distillation cannot fit matched exposure within the time cap')
+    if c.LARGE_CE and steps != c.MAX_STEPS:
+        raise RuntimeError('Large CE run cannot fit matched exposure within the time cap')
     if steps < c.MIN_STEPS:
         raise RuntimeError('No meaningful common training budget fits the cap')
     return dict(steps=steps, stage_steps=max(1, int(steps*c.STAGE_FRACTION)),
@@ -92,7 +94,7 @@ def main():
     parser.add_argument('--filter')
     parser.add_argument('--internal', action='store_true')
     args = parser.parse_args()
-    if e.SUITE not in {'ar-sps', 'ar-sps-kd'}:
+    if e.SUITE not in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce'}:
         raise RuntimeError('Select SPS_EXPERIMENT_SUITE=ar-sps')
     if args.internal:
         return internal(args.phase, args.filter)

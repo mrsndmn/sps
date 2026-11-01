@@ -32,3 +32,5 @@ Arkhip job_wait observation rather than polling shells.
 - `scripts/ar_sps_evaluate.py --filter` → checkpoint quality evaluation; `tests/test_ar_sps_jobs.py`.
 - `scripts/ar_sps_report.py` → paired baseline/control reports; `tests/test_ar_sps_distillation.py`.
 - `.github/workflows/pilot.yml` → CPU orchestration/model tests; `tests/`, `src/modeling/tests/`.
+
+- `SPS_EXPERIMENT_SUITE=ar-sps-360m-ce` / `ar-sps-1.7b-ce`: `scripts/ar_sps_config.py` → existing AR/SPS prepare, staged CE training, baseline evaluation and report routes.
