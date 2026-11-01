@@ -94,7 +94,7 @@ def distillation_report():
         for marker in sorted(evaluation.glob('*/complete.json')):
             reports.append(compare(baseline, marker.parent, baseline_signature=c.REFERENCE_SIGNATURE))
         for label in ('stage_endpoint', 'final'):
-            for arm in ('smollm2_staged_sps', 'smollm2_direct_sps', 'smollm2_continued_ar'):
+            for arm in c.REFERENCE_CONTROLS:
                 control = root/arm/'eval'/label
                 if (evaluation/label/'complete.json').exists():
                     controls.append(compare(control, evaluation/label, matched_exposure=True,

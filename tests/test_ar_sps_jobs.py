@@ -6,7 +6,7 @@ import sys
 import pytest
 
 
-@pytest.mark.parametrize('suite', ['ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce'])
+@pytest.mark.parametrize('suite', ['ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd'])
 def test_dry_routing(suite, tmp_path):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE=suite)
     for entry, args in [('run_train_jobs.py', ['--phase', 'prepare']),
@@ -19,7 +19,7 @@ def test_dry_routing(suite, tmp_path):
         result = subprocess.run([sys.executable, '-c', code, str(tmp_path/suite),
                                  'eval' if entry == 'run_eval.py' else 'train', *args], env=env,
                                 capture_output=True, text=True, check=True)
-        if suite == 'ar-sps-kd' and entry == 'run_eval.py':
+        if suite.endswith('-kd') and entry == 'run_eval.py':
             assert 'Skip evaluation without trained checkpoint' in result.stdout
             continue
         assert 'scripts.ar_sps_run' in result.stdout
@@ -71,4 +71,37 @@ else:
 assert e.SUITE in str(e.ARTIFACTS_ROOT)
 '''
     subprocess.run([sys.executable, '-c', code, model, str(micro)],
+                   env=dict(os.environ, SPS_EXPERIMENT_SUITE=suite), check=True)
+
+
+@pytest.mark.parametrize('suite,reference,model,micro', [
+    ('ar-sps-360m-kd', 'ar-sps-360m-ce', 'HuggingFaceTB/SmolLM2-360M', 2),
+    ('ar-sps-1.7b-kd', 'ar-sps-1.7b-ce', 'HuggingFaceTB/SmolLM2-1.7B', 1),
+])
+def test_large_kd_registry(suite, reference, model, micro, tmp_path):
+    code = '''
+import sys,json
+from pathlib import Path
+from scripts import ar_sps_config as c
+from scripts.ar_sps_run import calibrated_plan
+import experiments as e
+assert c.DISTILLATION and not c.LARGE_CE
+assert (c.REFERENCE_SUITE,c.MODEL,c.MICRO_BATCH)==(sys.argv[1],sys.argv[2],int(sys.argv[3]))
+assert c.REFERENCE_CONTROLS == ('smollm2_staged_sps',)
+assert c.GPU_HOURS == c.PREPARE_HOURS*4+c.TRAIN_HOURS*4+c.EVAL_HOURS
+assert len(e.collect_experiments())==1
+exp=e.collect_experiments()[0]
+assert exp.trainable and exp.recipe=='staged_sps' and exp.distillation_weight==.5
+before=e.design_signature();c.MODEL='different';assert e.design_signature()!=before;c.MODEL=sys.argv[2]
+e.COMMON_ROOT=Path(sys.argv[4]);p=e.COMMON_ROOT/c.REFERENCE_SUITE;p.mkdir()
+(p/'prepared.json').write_text(json.dumps(dict(design_signature=c.REFERENCE_SIGNATURE,steps=c.MAX_STEPS,stage_steps=int(c.MAX_STEPS*c.STAGE_FRACTION),text_tokens=c.MAX_STEPS*c.GLOBAL_BATCH*c.CONTEXT)))
+assert calibrated_plan({'staged':{'embedding':.5,'full':1.5}})['steps']==4096
+try:
+    calibrated_plan({'staged':{'embedding':100.,'full':100.}})
+except RuntimeError as exc:
+    assert 'matched exposure' in str(exc)
+else:
+    raise AssertionError('KD exposure shrank')
+'''
+    subprocess.run([sys.executable, '-c', code, reference, model, str(micro), str(tmp_path)],
                    env=dict(os.environ, SPS_EXPERIMENT_SUITE=suite), check=True)

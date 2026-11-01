@@ -131,3 +131,24 @@ def test_external_control_signature_is_explicit(tmp_path, monkeypatch):
     (candidate/'complete.json').write_text(json.dumps(dict(design_signature=c.REFERENCE_SIGNATURE)))
     with pytest.raises(RuntimeError, match='Stale'):
         report.compare(baseline, candidate, baseline_signature=c.REFERENCE_SIGNATURE)
+
+
+def test_distillation_report_uses_only_declared_controls(tmp_path, monkeypatch):
+    from scripts import ar_sps_report as report
+    from types import SimpleNamespace
+    monkeypatch.setattr(c, 'REFERENCE_CONTROLS', ('smollm2_staged_sps',))
+    monkeypatch.setattr(report.e, 'COMMON_ROOT', tmp_path)
+    monkeypatch.setattr(data, 'rows', lambda _: None)
+    monkeypatch.setattr(report.e, 'collect_experiments', lambda: [SimpleNamespace(name='kd')])
+    monkeypatch.setattr(report.e, 'output_dir', lambda _: tmp_path/'kd')
+    for label in ('stage_endpoint','final'):
+        p=tmp_path/'kd/eval'/label;p.mkdir(parents=True);(p/'complete.json').write_text('{}')
+    calls=[]
+    def compare(baseline,candidate,**kwargs):
+        calls.append((baseline,candidate,kwargs));return {}
+    monkeypatch.setattr(report,'compare',compare)
+    result=report.distillation_report()
+    assert len(result['against_original'])==2
+    assert len(result['matched_endpoint_controls'])==2
+    assert all('smollm2_staged_sps' in str(b) for b,_,kw in calls if kw.get('matched_exposure'))
+    assert all(kw['baseline_signature']==c.REFERENCE_SIGNATURE for _,_,kw in calls)
