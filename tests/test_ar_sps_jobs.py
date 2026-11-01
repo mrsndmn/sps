@@ -6,7 +6,7 @@ import sys
 import pytest
 
 
-@pytest.mark.parametrize('suite', ['ar-sps', 'ar-sps-kd'])
+@pytest.mark.parametrize('suite', ['ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce'])
 def test_dry_routing(suite, tmp_path):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE=suite)
     for entry, args in [('run_train_jobs.py', ['--phase', 'prepare']),
@@ -42,3 +42,33 @@ def test_real_static_evaluation_requires_preparation(tmp_path, monkeypatch):
     monkeypatch.setattr(launch, 'design_signature', lambda: 'current')
     with pytest.raises(RuntimeError, match='Stale'):
         launch.submit(args)
+
+
+@pytest.mark.parametrize('suite,model,micro', [
+    ('ar-sps-360m-ce', 'HuggingFaceTB/SmolLM2-360M', 2),
+    ('ar-sps-1.7b-ce', 'HuggingFaceTB/SmolLM2-1.7B', 1),
+])
+def test_large_ce_matched_exposure(suite, model, micro):
+    code = '''
+import sys
+from scripts import ar_sps_config as c
+from scripts.ar_sps_run import calibrated_plan
+import experiments as e
+assert c.MODEL == sys.argv[1] and c.MICRO_BATCH == int(sys.argv[2])
+assert not c.DISTILLATION and c.LARGE_CE
+assert c.GLOBAL_BATCH % (4*c.MICRO_BATCH) == 0
+assert all(x.distillation_weight == 0 for x in e.collect_experiments())
+assert [(x.recipe, x.trainable) for x in e.collect_experiments()] == [('original_ar', False), ('staged_sps', True)]
+assert c.GPU_HOURS == c.PREPARE_HOURS*4+c.TRAIN_HOURS*4+c.EVAL_HOURS*2
+p = calibrated_plan({'smollm2_staged_sps': {'embedding': .1, 'full': .2}})
+assert p['steps'] == 4096 and p['stage_steps'] == 819 and p['text_tokens'] == 67108864
+try:
+    calibrated_plan({'smollm2_staged_sps': {'embedding': 100., 'full': 100.}})
+except RuntimeError as exc:
+    assert 'matched exposure' in str(exc)
+else:
+    raise AssertionError('Slow run silently reduced token exposure')
+assert e.SUITE in str(e.ARTIFACTS_ROOT)
+'''
+    subprocess.run([sys.executable, '-c', code, model, str(micro)],
+                   env=dict(os.environ, SPS_EXPERIMENT_SUITE=suite), check=True)

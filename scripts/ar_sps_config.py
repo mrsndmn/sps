@@ -78,3 +78,21 @@ if DISTILLATION:
     TRAIN_HOURS = 2
     experiment_configs = [ARExperiment('smollm2_staged_sps_kd', 'staged_sps', distillation_weight=.5)]
     assert PREPARE_HOURS*4 + TRAIN_HOURS*4 + EVAL_HOURS <= GPU_HOURS
+
+
+# Larger-model CE runs: separate data, artifacts, baselines and reservations.
+LARGE_CE_MODELS = {
+    'ar-sps-360m-ce': ('HuggingFaceTB/SmolLM2-360M',
+                      'f8027fd0eaeea54caa13c31d31b9fdc459c38b49', 2, 4, 4),
+    'ar-sps-1.7b-ce': ('HuggingFaceTB/SmolLM2-1.7B',
+                      'effd688a12921b4cc83e3312b6feb579f70f9c71', 1, 12, 12),
+}
+LARGE_CE = os.environ.get('SPS_EXPERIMENT_SUITE') in LARGE_CE_MODELS
+if LARGE_CE:
+    MODEL, REVISION, MICRO_BATCH, TRAIN_HOURS, EVAL_HOURS = LARGE_CE_MODELS[os.environ['SPS_EXPERIMENT_SUITE']]
+    EVAL_BATCH = MICRO_BATCH
+    experiment_configs = [
+        ARExperiment('smollm2_original_ar', 'original_ar', trainable=False),
+        ARExperiment('smollm2_staged_sps', 'staged_sps'),
+    ]
+    GPU_HOURS = PREPARE_HOURS*4 + TRAIN_HOURS*4 + EVAL_HOURS*len(experiment_configs)
