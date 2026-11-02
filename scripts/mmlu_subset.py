@@ -2,7 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
-from scripts.report_mmlu_stem import STEM_SUBJECTS, SOURCE_SIGNATURE, read_samples, summarize
+from scripts.report_mmlu_stem import STEM_SUBJECTS, SOURCE_SIGNATURE, STEM_SIGNATURE, read_samples, summarize
 
 GENERATION_SHA256 = '11504a2e36a7bfb43d6cadccfa46d6d6f785cae4f9e9f5a200be277affae88a8'
 
@@ -49,7 +49,6 @@ def validate_saved(samples, rows, indices):
     return seen
 
 
-STEM_SIGNATURE = '1e42f6ab6d346a07097daca5b12f7f484c41bb1775c15c7f1271b6af7b04ab4e'
 
 
 def reuse_full_and_stem(common_root, exp, rows, indices):

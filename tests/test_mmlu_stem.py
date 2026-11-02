@@ -71,3 +71,30 @@ def test_merge_full_stem_deduplicates_and_rejects_conflicts(tmp_path):
     (folder/'samples.jsonl').write_text(''.join(json.dumps(x)+'\n' for x in rows[1:]))
     with pytest.raises(ValueError, match='Conflicting'):
         reuse_full_and_stem(tmp_path, exp, data, [0, 1, 2])
+
+
+def test_historical_stem_report_ignores_current_evaluator_signature(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    import experiments as e
+    from scripts import report_mmlu_stem as report
+    from scripts.mmlu_config import experiment_configs
+    data = [dict(subject='astronomy', answer=0)]
+    exp = experiment_configs[0]
+    folder = tmp_path/'mmlu-stem-generation/runs/out'/exp.name/'full'
+    folder.mkdir(parents=True)
+    meta = dict(design_signature=report.STEM_SIGNATURE, limit=None, experiment=exp.__dict__)
+    (folder/'manifest.json').write_text(json.dumps(meta))
+    (folder/'samples.jsonl').write_text(json.dumps(sample(0, data[0], 'A'))+'\n')
+    monkeypatch.setattr(e, 'COMMON_ROOT', tmp_path)
+    monkeypatch.setattr(e, 'design_signature', lambda: 'changed-evaluator')
+    monkeypatch.setitem(sys.modules, 'datasets', SimpleNamespace(load_dataset=lambda *a, **kw: data))
+    monkeypatch.setattr(sys, 'argv', ['report', '--suite', 'mmlu-stem-generation'])
+    monkeypatch.setenv('SPS_EXPERIMENT_SUITE', 'mmlu-stem-generation')
+    report.main()
+    output = json.loads((tmp_path/'mmlu-stem-generation/reports/mmlu_stem.json').read_text())
+    assert output['results'][exp.name]['accuracy'] == 1.
+    meta['design_signature'] = 'unexpected-source'
+    (folder/'manifest.json').write_text(json.dumps(meta))
+    with pytest.raises(ValueError, match='Unexpected source'):
+        report.main()

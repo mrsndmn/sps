@@ -10,6 +10,7 @@ conceptual_physics electrical_engineering elementary_mathematics high_school_bio
 high_school_chemistry high_school_computer_science high_school_mathematics
 high_school_physics high_school_statistics machine_learning'''.split())
 SOURCE_SIGNATURE = '78399971569afb2da34334515f2a4943e4429212c3a8077a82fd059e7045bf58'
+STEM_SIGNATURE = '1e42f6ab6d346a07097daca5b12f7f484c41bb1775c15c7f1271b6af7b04ab4e'
 
 
 def read_samples(path):
@@ -64,11 +65,11 @@ def main():
     args = parser.parse_args()
     os.environ['SPS_EXPERIMENT_SUITE'] = args.suite
     from datasets import load_dataset
-    from experiments import COMMON_ROOT, design_signature
+    from experiments import COMMON_ROOT
     from scripts.mmlu_config import DATASET, REVISION, experiment_configs
     dataset = list(load_dataset(DATASET, 'all', revision=REVISION, split='test'))
     root = COMMON_ROOT / args.suite
-    signature = SOURCE_SIGNATURE if args.suite == 'mmlu-generation' else design_signature()
+    signature = SOURCE_SIGNATURE if args.suite == 'mmlu-generation' else STEM_SIGNATURE
     results = {}
     for exp in experiment_configs:
         folder = root / 'runs/out' / exp.name / 'full'
