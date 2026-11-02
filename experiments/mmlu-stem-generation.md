@@ -8,14 +8,23 @@ STEM-specific accuracy can reveal differences between the source model and CE/KD
 
 # Results
 
-Pending. The report exposes coverage while evaluation is running and publishes accuracy only when every STEM question has an answer record.
+SmolLM2-1.7B completed all STEM questions for source AR, final CE and final CE+KD.
+Accuracy is 44.37%, 43.24% and 43.34%, respectively. Invalid-answer rates are
+6.79%, 8.32% and 7.09%; generation-limit rates are 5.80%, 7.85% and 6.39%.
+No context overflows occurred. All three runs cover identical document IDs and
+hashes. CE loses 1.13 percentage points versus source, and CE+KD loses 1.03.
+CE+KD exceeds CE by only three correct answers (0.10 points).
+The shared artifact report is `mmlu-stem-generation/reports/mmlu_stem.json`.
+Other model groups are tracked independently; partial groups have no final score.
 
 # Conclusions
 
-Compare source, CE and CE+KD within each model. Answer-format failures remain errors under the original generative protocol.
+SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final checkpoints. KD reduces format failures relative to CE but has nearly identical accuracy. This is one seed and no statistical superiority claim is made. Answer-format failures remain errors under the original generative protocol.
 
 # Changelog
 
 - 2026-11-02: Added a separate STEM report reusing existing generated answers.
 
 - 2026-11-02: Added STEM-only generation to replace full-MMLU jobs while retaining existing STEM answers.
+
+- 2026-11-02: Recorded completed SmolLM2-1.7B STEM results and validated paired document coverage.
