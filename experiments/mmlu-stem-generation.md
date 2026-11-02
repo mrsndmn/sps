@@ -32,9 +32,17 @@ overflows occurred. CE loses 3.05 percentage points versus source and CE+KD
 loses 2.12. KD exceeds CE by 28 correct answers (0.93 points), despite a higher
 invalid-answer rate.
 
+Qwen3-1.7B completed all STEM questions with paired document IDs and hashes.
+Source AR, final CE and final CE+KD accuracy is 61.23%, 57.46% and 61.07%
+(1848, 1734 and 1843 correct answers). Invalid-answer rates are 3.11%, 9.77%
+and 5.43%; generation-limit rates are 2.45%, 8.35% and 5.07%. No context
+overflows occurred. CE loses 3.78 percentage points versus source; KD loses
+0.17 points, or five correct answers. KD exceeds CE by 109 correct answers
+(3.61 points).
+
 # Conclusions
 
-SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final checkpoints. KD reduces format failures relative to CE but has nearly identical accuracy. SmolLM2-360M meets the no-degradation criterion for this benchmark’s measured overall accuracy with both adaptations; this does not imply retention across other benchmarks. SmolLM2-135M fails observed retention for both adaptations; KD recovers some accuracy relative to CE but increases invalid answers. This is one seed and no statistical superiority claim is made. Answer-format failures remain errors under the original generative protocol.
+SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final checkpoints. KD reduces format failures relative to CE but has nearly identical accuracy. SmolLM2-360M meets the no-degradation criterion for this benchmark’s measured overall accuracy with both adaptations; this does not imply retention across other benchmarks. SmolLM2-135M fails observed retention for both adaptations; KD recovers some accuracy relative to CE but increases invalid answers. Qwen3-1.7B KD nearly restores source accuracy and substantially exceeds CE in measured accuracy, but still fails the strict observed no-degradation criterion by five answers. This is one seed and no statistical superiority claim is made. Answer-format failures remain errors under the original generative protocol.
 
 # Changelog
 
@@ -47,3 +55,5 @@ SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final 
 - 2026-11-02: Recorded completed SmolLM2-360M STEM results and paired coverage checks.
 
 - 2026-11-02: Recorded completed SmolLM2-135M STEM results and paired coverage checks.
+
+- 2026-11-02: Recorded completed Qwen3-1.7B STEM results and paired coverage checks.
