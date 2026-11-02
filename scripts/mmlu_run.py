@@ -12,7 +12,7 @@ import experiments as e
 from modeling.models.sps.pretrained import PretrainedSPS
 from scripts import mmlu_config as c
 from scripts.mmlu_results import recover_samples
-from scripts.mmlu_subset import selected_indices, reuse_samples, validate_saved
+from scripts.mmlu_subset import selected_indices, reuse_samples, validate_saved, reuse_full_and_stem
 from scripts.mmlu_generation import generate, prompt, parse_answer
 
 
@@ -38,7 +38,7 @@ def load_model(exp, device):
 
 
 def evaluate(exp, limit=None):
-    if e.SUITE not in {'mmlu-generation', 'mmlu-stem-generation'}:
+    if e.SUITE not in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'}:
         raise ValueError('Set SPS_EXPERIMENT_SUITE=mmlu-generation')
     torch.manual_seed(c.SEED)
     started = time.monotonic()
@@ -57,11 +57,15 @@ def evaluate(exp, limit=None):
     path = root / 'samples.jsonl'
     saved = recover_samples(path)
     seen = validate_saved(saved, rows, indices)
-    if stem:
+    if stem or e.SUITE == 'mmlu-full-resume':
         source = e.COMMON_ROOT / 'mmlu-generation/runs/out' / exp.name / 'full'
-        reused = reuse_samples(source, exp, rows, indices)
+        reused = (reuse_full_and_stem(e.COMMON_ROOT, exp, rows, indices)
+                  if e.SUITE == 'mmlu-full-resume' else reuse_samples(source, exp, rows, indices))
+        saved_by_id = {item['index']: item for item in saved}
         with path.open('a') as stream:
             for item in reused:
+                if item['index'] in saved_by_id and saved_by_id[item['index']] != item:
+                    raise ValueError('Conflicting resumed and source answers')
                 if item['index'] not in seen:
                     stream.write(json.dumps(item) + '\n')
                     saved.append(item); seen.add(item['index'])

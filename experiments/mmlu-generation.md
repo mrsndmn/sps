@@ -17,3 +17,5 @@ Compare paired samples within each source model; inspect invalid answers and out
 # Changelog
 
 - 2026-11-02: Added resumable reasoning-generation evaluation for source and adapted final checkpoints.
+
+- 2026-11-02: Added full-MMLU continuation with validated reuse of full and STEM answers and an explicitly excluded slow arm in the code registry.

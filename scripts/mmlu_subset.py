@@ -12,12 +12,12 @@ def selected_indices(rows, stem=False, limit=None):
     return indices[:limit] if limit else indices
 
 
-def reuse_samples(folder, exp, rows, indices):
+def reuse_samples(folder, exp, rows, indices, *, signature=SOURCE_SIGNATURE):
     meta = folder / 'manifest.json'
     if not meta.exists():
         return []
     manifest = json.loads(meta.read_text())
-    if (manifest.get('design_signature') != SOURCE_SIGNATURE or manifest.get('limit') is not None
+    if (manifest.get('design_signature') != signature or manifest.get('limit') is not None
             or manifest.get('experiment') != exp.__dict__):
         raise ValueError('Unexpected full-MMLU source manifest')
     from scripts import mmlu_config as c
@@ -47,3 +47,21 @@ def validate_saved(samples, rows, indices):
                 item['correct'] != (item['answer'] == item['target'])):
             raise ValueError('Resume sample provenance mismatch')
     return seen
+
+
+STEM_SIGNATURE = '1e42f6ab6d346a07097daca5b12f7f484c41bb1775c15c7f1271b6af7b04ab4e'
+
+
+def reuse_full_and_stem(common_root, exp, rows, indices):
+    merged = {}
+    for suite, signature in [('mmlu-generation', SOURCE_SIGNATURE),
+                             ('mmlu-stem-generation', STEM_SIGNATURE)]:
+        folder = common_root / suite / 'runs/out' / exp.name / 'full'
+        for item in reuse_samples(folder, exp, rows, indices, signature=signature):
+            index = item['index']
+            if index in merged and merged[index] != item:
+                raise ValueError('Conflicting answers across source evaluations')
+            merged[index] = item
+    result = list(merged.values())
+    validate_saved(result, rows, indices)
+    return result

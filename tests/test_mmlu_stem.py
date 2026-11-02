@@ -52,3 +52,22 @@ def test_subset_reuse_noncontiguous_ids(tmp_path):
     (tmp_path/'manifest.json').write_text('{}')
     with pytest.raises(ValueError, match='manifest'):
         reuse_samples(tmp_path, exp, data, indices)
+
+
+def test_merge_full_stem_deduplicates_and_rejects_conflicts(tmp_path):
+    from types import SimpleNamespace
+    from scripts.mmlu_subset import reuse_full_and_stem, SOURCE_SIGNATURE, STEM_SIGNATURE
+    data = [dict(subject=s, answer=0) for s in ['anatomy', 'astronomy', 'machine_learning']]
+    exp = SimpleNamespace(name='fixture')
+    rows = [sample(i, row, 'A') | {'correct': True} for i, row in enumerate(data)]
+    for suite, signature, selected in [('mmlu-generation', SOURCE_SIGNATURE, rows[:2]),
+                                       ('mmlu-stem-generation', STEM_SIGNATURE, rows[1:])]:
+        folder = tmp_path/suite/'runs/out'/exp.name/'full'
+        folder.mkdir(parents=True)
+        (folder/'manifest.json').write_text(json.dumps(dict(design_signature=signature, limit=None, experiment=exp.__dict__)))
+        (folder/'samples.jsonl').write_text(''.join(json.dumps(x)+'\n' for x in selected))
+    assert reuse_full_and_stem(tmp_path, exp, data, [0, 1, 2]) == rows
+    rows[1]['answer'] = 'B'; rows[1]['correct'] = False
+    (folder/'samples.jsonl').write_text(''.join(json.dumps(x)+'\n' for x in rows[1:]))
+    with pytest.raises(ValueError, match='Conflicting'):
+        reuse_full_and_stem(tmp_path, exp, data, [0, 1, 2])

@@ -35,3 +35,9 @@ for name, model, revision, ce_suite, ce_sig, kd_suite, kd_sig in SOURCES:
         ('kd', kd_suite, kd_sig, prefix + '_staged_sps_kd'),
     ]:
         experiment_configs.append(Evaluation(f'{name}_{variant}', model, revision, suite, arm, signature, variant))
+
+# Full-MMLU continuation excludes the slow CE arm explicitly requested by the user.
+FULL_RESUME_EXCLUDED = frozenset({'qwen0.6_ce'})
+import os
+if os.environ.get('SPS_EXPERIMENT_SUITE') == 'mmlu-full-resume':
+    experiment_configs = [exp for exp in experiment_configs if exp.name not in FULL_RESUME_EXCLUDED]

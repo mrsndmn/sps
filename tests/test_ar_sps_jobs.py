@@ -132,7 +132,7 @@ sig=e.design_signature();c.MODEL='other';assert e.design_signature()!=sig
     subprocess.run([sys.executable,'-c',code],env=dict(os.environ,SPS_EXPERIMENT_SUITE=suite),check=True)
 
 
-@pytest.mark.parametrize('suite', ['mmlu-generation', 'mmlu-stem-generation'])
+@pytest.mark.parametrize('suite', ['mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'])
 def test_mmlu_generation_dry_registry(tmp_path, suite):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE=suite)
     code = """
@@ -152,11 +152,13 @@ from scripts.mlspace_launch import main
 sys.argv = ['launcher', '--dry']
 main('eval')
 """
-    for mode, count in [('missing', 5), ('with-markers', 15)]:
+    for mode, count in [('missing', 5), ('with-markers', 14 if suite == 'mmlu-full-resume' else 15)]:
         result = subprocess.run([sys.executable, '-c', code, str(tmp_path), mode], env=env,
                                 capture_output=True, text=True, check=True)
         assert result.stdout.count('"instance_type": "a100.1gpu"') == count
         assert result.stdout.count('scripts.mmlu_run eval') == count
+        if suite == 'mmlu-full-resume':
+            assert 'qwen0.6_ce' not in result.stdout
     rejected = subprocess.run([sys.executable, 'run_train_jobs.py', '--dry'], env=env,
                               capture_output=True, text=True)
     assert rejected.returncode != 0
