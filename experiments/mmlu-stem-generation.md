@@ -4,7 +4,7 @@ STEM-specific accuracy can reveal differences between the source model and CE/KD
 
 # Setup
 
-`scripts.report_mmlu_stem.main` aggregates the existing generative evaluation using the official MMLU category mapping. Its source protocol is defined in `scripts/mmlu_config.py` and `scripts/mmlu_generation.py`.
+`scripts.mmlu_run.evaluate` runs the STEM-only suite with validated reuse of previous answers. `scripts.report_mmlu_stem.main` aggregates the existing generative evaluation using the official MMLU category mapping. Its source protocol is defined in `scripts/mmlu_config.py` and `scripts/mmlu_generation.py`.
 
 # Results
 
@@ -17,3 +17,5 @@ Compare source, CE and CE+KD within each model. Answer-format failures remain er
 # Changelog
 
 - 2026-11-02: Added a separate STEM report reusing existing generated answers.
+
+- 2026-11-02: Added STEM-only generation to replace full-MMLU jobs while retaining existing STEM answers.

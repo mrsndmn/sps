@@ -12,6 +12,7 @@ import experiments as e
 from modeling.models.sps.pretrained import PretrainedSPS
 from scripts import mmlu_config as c
 from scripts.mmlu_results import recover_samples
+from scripts.mmlu_subset import selected_indices, reuse_samples, validate_saved
 from scripts.mmlu_generation import generate, prompt, parse_answer
 
 
@@ -37,7 +38,7 @@ def load_model(exp, device):
 
 
 def evaluate(exp, limit=None):
-    if e.SUITE != 'mmlu-generation':
+    if e.SUITE not in {'mmlu-generation', 'mmlu-stem-generation'}:
         raise ValueError('Set SPS_EXPERIMENT_SUITE=mmlu-generation')
     torch.manual_seed(c.SEED)
     started = time.monotonic()
@@ -50,17 +51,29 @@ def evaluate(exp, limit=None):
         raise ValueError('Resume manifest mismatch')
     write_json(meta, manifest)
     dataset = load_dataset(c.DATASET, 'all', revision=c.REVISION, split='test')
-    rows = list(dataset.select(range(min(limit, len(dataset))))) if limit else list(dataset)
+    rows = list(dataset)
+    stem = e.SUITE == 'mmlu-stem-generation'
+    indices = selected_indices(rows, stem=stem, limit=limit)
     path = root / 'samples.jsonl'
     saved = recover_samples(path)
-    for index, item in enumerate(saved):
-        digest = hashlib.sha256(json.dumps(rows[index], sort_keys=True).encode()).hexdigest()
-        if item['index'] != index or item['doc_hash'] != digest:
-            raise ValueError('Resume dataset/order mismatch')
+    seen = validate_saved(saved, rows, indices)
+    if stem:
+        source = e.COMMON_ROOT / 'mmlu-generation/runs/out' / exp.name / 'full'
+        reused = reuse_samples(source, exp, rows, indices)
+        with path.open('a') as stream:
+            for item in reused:
+                if item['index'] not in seen:
+                    stream.write(json.dumps(item) + '\n')
+                    saved.append(item); seen.add(item['index'])
+            stream.flush(); os.fsync(stream.fileno())
+        validate_saved(saved, rows, indices)
+        print(json.dumps(dict(reused_or_resumed=len(saved), total=len(indices))), flush=True)
     model = load_model(exp, 'cuda')
     tokenizer = AutoTokenizer.from_pretrained(exp.model, revision=exp.revision)
     with path.open('a') as stream, torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
-        for index in range(len(saved), len(rows)):
+        for index in indices:
+            if index in seen:
+                continue
             if time.monotonic() - started > c.MAX_HOURS * 3600:
                 raise TimeoutError('Evaluation deadline reached; resume the same experiment')
             row = rows[index]
@@ -76,8 +89,8 @@ def evaluate(exp, limit=None):
                         correct=answer == 'ABCD'[row['answer']], generation=text, tokens=tokens, stop=stop)
             stream.write(json.dumps(item) + '\n'); stream.flush(); os.fsync(stream.fileno())
             saved.append(item)
-            if (index + 1) % 10 == 0:
-                print(json.dumps(dict(completed=index+1, total=len(rows), seconds=time.monotonic()-started)), flush=True)
+            if len(saved) % 10 == 0:
+                print(json.dumps(dict(completed=len(saved), total=len(indices), seconds=time.monotonic()-started)), flush=True)
     subjects = sorted({item['subject'] for item in saved})
     per_subject = {subject: sum(x['correct'] for x in saved if x['subject'] == subject) /
                    sum(x['subject'] == subject for x in saved) for subject in subjects}

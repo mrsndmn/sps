@@ -132,8 +132,9 @@ sig=e.design_signature();c.MODEL='other';assert e.design_signature()!=sig
     subprocess.run([sys.executable,'-c',code],env=dict(os.environ,SPS_EXPERIMENT_SUITE=suite),check=True)
 
 
-def test_mmlu_generation_dry_registry(tmp_path):
-    env = dict(os.environ, SPS_EXPERIMENT_SUITE='mmlu-generation')
+@pytest.mark.parametrize('suite', ['mmlu-generation', 'mmlu-stem-generation'])
+def test_mmlu_generation_dry_registry(tmp_path, suite):
+    env = dict(os.environ, SPS_EXPERIMENT_SUITE=suite)
     code = """
 import sys
 from pathlib import Path

@@ -57,11 +57,18 @@ def summarize(samples, dataset):
 
 
 def main():
+    import argparse
+    import os
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--suite', choices=['mmlu-generation', 'mmlu-stem-generation'], default='mmlu-generation')
+    args = parser.parse_args()
+    os.environ['SPS_EXPERIMENT_SUITE'] = args.suite
     from datasets import load_dataset
-    from experiments import COMMON_ROOT
+    from experiments import COMMON_ROOT, design_signature
     from scripts.mmlu_config import DATASET, REVISION, experiment_configs
     dataset = list(load_dataset(DATASET, 'all', revision=REVISION, split='test'))
-    root = COMMON_ROOT / 'mmlu-generation'
+    root = COMMON_ROOT / args.suite
+    signature = SOURCE_SIGNATURE if args.suite == 'mmlu-generation' else design_signature()
     results = {}
     for exp in experiment_configs:
         folder = root / 'runs/out' / exp.name / 'full'
@@ -70,13 +77,13 @@ def main():
             samples = []
         else:
             manifest = json.loads(meta.read_text())
-            if (manifest['design_signature'] != SOURCE_SIGNATURE or manifest['limit'] is not None
+            if (manifest['design_signature'] != signature or manifest['limit'] is not None
                     or manifest['experiment'] != exp.__dict__):
                 raise ValueError(f'Unexpected source evaluation: {exp.name}')
             samples = read_samples(folder / 'samples.jsonl')
         results[exp.name] = summarize(samples, dataset)
     report = dict(benchmark='mmlu_stem_generation', dataset=DATASET, revision=REVISION,
-                  source_signature=SOURCE_SIGNATURE, subjects=sorted(STEM_SUBJECTS), results=results)
+                  source_signature=signature, subjects=sorted(STEM_SUBJECTS), results=results)
     output = root / 'reports/mmlu_stem.json'
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix('.tmp')

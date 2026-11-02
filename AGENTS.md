@@ -40,3 +40,5 @@ Arkhip job_wait observation rather than polling shells.
 - `SPS_EXPERIMENT_SUITE=mmlu-generation run_eval.py` → `scripts/mmlu_run.py`, `scripts/mmlu_generation.py`, `scripts/mmlu_config.py`; `tests/test_mmlu_generation.py`.
 
 - `python -m scripts.report_mmlu_stem` → read-only STEM aggregation; `tests/test_mmlu_stem.py`.
+
+- `SPS_EXPERIMENT_SUITE=mmlu-stem-generation run_eval.py` → `scripts/mmlu_run.py`, `scripts/mmlu_subset.py`; STEM-only evaluation with answer reuse.
