@@ -28,7 +28,15 @@ LAMBADA 54.61%, declining to 51.99% after full unfreezing.
 Complete size-specific results: `ar-sps-qwen3-0.6b/final-report.json` and
 `final-metrics.csv` under the shared artifact root.
 
-Both sizes have completed CE/KD training. Qwen3-1.7B evaluations remain pending.
+Qwen3-1.7B CE evaluation completed. Final SPS versus original AR accuracy percentages:
+ARC-Easy 73.57 vs 68.52; HellaSwag 64.67 vs 66.37; PIQA 74.81 vs 75.84;
+SciQ 93.60 vs 94.90; LAMBADA 61.69 vs 63.09. Held-out NLL rises from
+2.513415 to 2.531043. All evaluated CE checkpoints fail strict observed retention;
+best equals final. Individual paired 95% intervals exclude zero for the ARC gain,
+HellaSwag/SciQ/LAMBADA losses and NLL increase; PIQA includes zero. Artifacts:
+`ar-sps-qwen3-1.7b/ce-report.json` and `ce-metrics.csv` in the shared artifact root.
+
+Both sizes have completed CE/KD training. Qwen3-1.7B KD evaluation remains pending.
 
 # Conclusions
 
@@ -41,3 +49,5 @@ The completed 0.6B CE run shows mixed benchmark changes and fails retention, des
 - 2026-11-02: Recorded Qwen3-0.6B CE results; strict retention failed.
 
 - 2026-11-02: Recorded Qwen3-0.6B KD and paired CE comparisons; strict retention failed.
+
+- 2026-11-02: Recorded Qwen3-1.7B CE evaluation; strict retention failed.
