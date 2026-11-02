@@ -24,9 +24,17 @@ Source AR, final CE and final CE+KD accuracy is 22.03%, 22.86% and 22.53%
 occurred. CE gains 0.83 percentage points versus source and CE+KD gains 0.50;
 KD trails CE by ten correct answers (0.33 points).
 
+SmolLM2-135M completed all STEM questions with paired document IDs and hashes.
+Source AR, final CE and final CE+KD accuracy is 22.70%, 19.65% and 20.58%
+(685, 593 and 621 correct answers). Invalid-answer rates are 17.13%, 23.89%
+and 25.15%; generation-limit rates are 6.53%, 17.66% and 13.19%. No context
+overflows occurred. CE loses 3.05 percentage points versus source and CE+KD
+loses 2.12. KD exceeds CE by 28 correct answers (0.93 points), despite a higher
+invalid-answer rate.
+
 # Conclusions
 
-SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final checkpoints. KD reduces format failures relative to CE but has nearly identical accuracy. SmolLM2-360M meets the no-degradation criterion for this benchmark’s measured overall accuracy with both adaptations; this does not imply retention across other benchmarks. This is one seed and no statistical superiority claim is made. Answer-format failures remain errors under the original generative protocol.
+SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final checkpoints. KD reduces format failures relative to CE but has nearly identical accuracy. SmolLM2-360M meets the no-degradation criterion for this benchmark’s measured overall accuracy with both adaptations; this does not imply retention across other benchmarks. SmolLM2-135M fails observed retention for both adaptations; KD recovers some accuracy relative to CE but increases invalid answers. This is one seed and no statistical superiority claim is made. Answer-format failures remain errors under the original generative protocol.
 
 # Changelog
 
@@ -37,3 +45,5 @@ SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final 
 - 2026-11-02: Recorded completed SmolLM2-1.7B STEM results and validated paired document coverage.
 
 - 2026-11-02: Recorded completed SmolLM2-360M STEM results and paired coverage checks.
+
+- 2026-11-02: Recorded completed SmolLM2-135M STEM results and paired coverage checks.
