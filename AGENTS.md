@@ -36,3 +36,5 @@ Arkhip job_wait observation rather than polling shells.
 - `SPS_EXPERIMENT_SUITE=ar-sps-{360m,1.7b}-{ce,kd}`: `scripts/ar_sps_config.py` → existing AR/SPS prepare, staged CE training, baseline evaluation and report routes.
 
 - `SPS_EXPERIMENT_SUITE=ar-sps-qwen3-{0.6b,1.7b}` → `scripts/ar_sps_config.py`, shared CE/KD preparation, training and evaluation; `src/modeling/models/sps/pretrained.py`.
+
+- `SPS_EXPERIMENT_SUITE=mmlu-generation run_eval.py` → `scripts/mmlu_run.py`, `scripts/mmlu_generation.py`, `scripts/mmlu_config.py`; `tests/test_mmlu_generation.py`.

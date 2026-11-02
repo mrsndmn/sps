@@ -130,3 +130,17 @@ else: raise AssertionError('Slow KD arm reduced exposure')
 sig=e.design_signature();c.MODEL='other';assert e.design_signature()!=sig
 '''
     subprocess.run([sys.executable,'-c',code],env=dict(os.environ,SPS_EXPERIMENT_SUITE=suite),check=True)
+
+
+def test_mmlu_generation_dry_registry():
+    import os
+    import subprocess
+    import sys
+    env = dict(os.environ, SPS_EXPERIMENT_SUITE='mmlu-generation')
+    result = subprocess.run([sys.executable, 'run_eval.py', '--dry'], env=env,
+                            capture_output=True, text=True, check=True)
+    assert result.stdout.count('"instance_type": "a100.1gpu"') == 15
+    assert result.stdout.count('scripts.mmlu_run eval') == 15
+    rejected = subprocess.run([sys.executable, 'run_train_jobs.py', '--dry'], env=env,
+                              capture_output=True, text=True)
+    assert rejected.returncode != 0

@@ -162,6 +162,8 @@ def payload(phase, name, staged, author, nick):
         command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
     if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
         command = [str(PYTHON), '-m', 'scripts.ar_sps_run', phase]
+    if SUITE == 'mmlu-generation':
+        command = [str(PYTHON), '-m', 'scripts.mmlu_run', phase]
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
@@ -197,7 +199,7 @@ def main(default_phase='train'):
 
 
 def submit(args):
-    if SUITE in {'mtp-parallel','mtp-unified'} and args.phase != 'eval':
+    if SUITE in {'mtp-parallel','mtp-unified','mmlu-generation'} and args.phase != 'eval':
         raise ValueError('mtp-parallel is evaluation-only')
     repo = Path(git('rev-parse', '--show-toplevel'))
     commit = git('rev-parse', 'HEAD')

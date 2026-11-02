@@ -6,7 +6,7 @@ import json
 import os
 
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
+if SUITE not in {'mmlu-generation', '1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
@@ -190,6 +190,8 @@ def design_signature():
         inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py'), *repo.glob('scripts/spec_baseline*.py')]
     if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/ar_sps*.py')]
+    if SUITE == 'mmlu-generation':
+        inputs += [repo / 'experiments.py', *repo.glob('scripts/mmlu*.py')]
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
     design = dict(repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
@@ -208,6 +210,8 @@ def training_marker(exp):
     """Evaluation-only suites consume immutable completed runs."""
     if SUITE in {'mtp-parallel','mtp-unified'} or (SUITE == 'spec-baselines' and exp.recipe == 'existing_mtp'):
         return COMMON_ROOT / 'mtp-unfreeze/runs/out' / (exp.reference_name or exp.name) / 'trained.json'
+    if SUITE == 'mmlu-generation' and exp.variant != 'base':
+        return COMMON_ROOT / exp.suite / 'runs/out' / exp.arm / 'trained.json'
     if not exp.trainable:
         return None
     return output_dir(exp) / 'trained.json'
@@ -269,3 +273,7 @@ if SUITE == 'mtp-unified':
 
 if SUITE in {"ar-sps", "ar-sps-kd", "ar-sps-360m-ce", "ar-sps-1.7b-ce", "ar-sps-360m-kd", "ar-sps-1.7b-kd", "ar-sps-qwen3-0.6b", "ar-sps-qwen3-1.7b"}:
     from scripts.ar_sps_config import experiment_configs
+
+if SUITE == 'mmlu-generation':
+    from scripts.mmlu_config import experiment_configs
+    TASKS = ('mmlu_generation',)
