@@ -6,7 +6,7 @@ import sys
 import pytest
 
 
-@pytest.mark.parametrize('suite', ['ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd'])
+@pytest.mark.parametrize('suite', ['ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'])
 def test_dry_routing(suite, tmp_path):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE=suite)
     for entry, args in [('run_train_jobs.py', ['--phase', 'prepare']),
@@ -105,3 +105,28 @@ else:
 '''
     subprocess.run([sys.executable, '-c', code, reference, model, str(micro), str(tmp_path)],
                    env=dict(os.environ, SPS_EXPERIMENT_SUITE=suite), check=True)
+
+
+@pytest.mark.parametrize('suite', ['ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'])
+def test_qwen_paired_registry(suite):
+    code = '''
+from scripts import ar_sps_config as c
+from scripts.ar_sps_run import calibrated_plan
+import experiments as e
+assert c.QWEN and not c.DISTILLATION
+assert c.MODEL.startswith('Qwen/Qwen3-') and c.MODEL.endswith('-Base')
+assert c.MICRO_BATCH==c.EVAL_BATCH==1
+arms=e.collect_experiments();assert len(arms)==3
+assert not arms[0].trainable and arms[0].name==c.REPORT_BASELINE
+assert [(x.recipe,x.distillation_weight) for x in arms[1:]]==[('staged_sps',0),('staged_sps',.5)]
+assert c.ENDPOINT_COMPARISONS==((arms[1].name,arms[2].name),)
+assert c.GPU_HOURS==4*c.PREPARE_HOURS+8*c.TRAIN_HOURS+3*c.EVAL_HOURS
+probes={x.name:dict(embedding=.5,full=1.) for x in arms[1:]}
+p=calibrated_plan(probes);assert p['steps']==4096 and p['stage_steps']==819
+probes[arms[2].name]['full']=100.
+try: calibrated_plan(probes)
+except RuntimeError as exc: assert 'matched exposure' in str(exc)
+else: raise AssertionError('Slow KD arm reduced exposure')
+sig=e.design_signature();c.MODEL='other';assert e.design_signature()!=sig
+'''
+    subprocess.run([sys.executable,'-c',code],env=dict(os.environ,SPS_EXPERIMENT_SUITE=suite),check=True)

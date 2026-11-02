@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from transformers import LlamaConfig, LlamaForCausalLM
+from transformers import LlamaConfig, LlamaForCausalLM, Qwen3Config, Qwen3ForCausalLM
 
 from modeling.models.sps.pretrained import PretrainedSPS
 from scripts.ar_sps_train import optimizer_for
@@ -14,17 +14,24 @@ from scripts.ar_sps_run import calibrated_plan, reserve
 from scripts import ar_sps_config as c
 
 
-def model(sps=True):
+def make_model(sps=True, family="llama"):
+    config_cls, model_cls = ((LlamaConfig, LlamaForCausalLM) if family == "llama"
+                             else (Qwen3Config, Qwen3ForCausalLM))
     torch.manual_seed(13)
-    config = LlamaConfig(vocab_size=31, hidden_size=24, intermediate_size=48,
+    config = config_cls(vocab_size=31, hidden_size=24, intermediate_size=48,
                          num_hidden_layers=2, num_attention_heads=6, num_key_value_heads=2,
                          max_position_embeddings=128, tie_word_embeddings=True,
-                         attention_dropout=0., rope_theta=100000.)
+                         attention_dropout=0., rope_theta=100000., head_dim=8)
     config._attn_implementation = 'sdpa'
-    return PretrainedSPS(LlamaForCausalLM(config), sps=sps).eval()
+    return PretrainedSPS(model_cls(config), sps=sps).eval()
 
 
-def test_native_parity_and_real_state_isolation():
+@pytest.fixture(params=['llama', 'qwen3'])
+def model(request):
+    return lambda sps=True: make_model(sps, request.param)
+
+
+def test_native_parity_and_real_state_isolation(model):
     m = model(False)
     ids = torch.tensor([[2, 4, 8, 6]])
     expected = m.backbone(ids, output_hidden_states=True, use_cache=False)
@@ -37,7 +44,7 @@ def test_native_parity_and_real_state_isolation():
     torch.testing.assert_close(captured[0][:, ::2], expected.hidden_states[-1], atol=1e-6, rtol=1e-5)
 
 
-def test_future_causality_and_prefix_equivalence():
+def test_future_causality_and_prefix_equivalence(model):
     m = model()
     ids = torch.tensor([[2, 4, 8, 6]])
     before = m(ids).logits
@@ -49,7 +56,7 @@ def test_future_causality_and_prefix_equivalence():
         m(ids, past_key_values=object())
 
 
-def test_freeze_then_unfreeze_ties_and_restore():
+def test_freeze_then_unfreeze_ties_and_restore(model):
     m = model(); ids = torch.tensor([[2, 4, 8, 6]])
     initial = {k: v.clone() for k, v in m.backbone.state_dict().items()}
     prediction = m.prediction.clone()
@@ -119,7 +126,7 @@ def test_report_exposure_and_per_task_retention(tmp_path, monkeypatch):
     assert result['candidate_step'] == 9
 
 
-def test_audit_checks_reference_and_production_causality():
+def test_audit_checks_reference_and_production_causality(model):
     from scripts.ar_sps_evaluate import audit_model
     result = audit_model(model(False), torch.tensor([[2, 4, 8, 6]]), 2)
     assert result['native_max_abs'] == 0
@@ -128,7 +135,7 @@ def test_audit_checks_reference_and_production_causality():
     assert result['float64_reference']['cross_length_max_abs'] < c.PARITY_ATOL
 
 
-def test_audit_rejects_future_leakage(monkeypatch):
+def test_audit_rejects_future_leakage(monkeypatch, model):
     from scripts.ar_sps_evaluate import audit_model
     m = model(False)
     original = m.forward
@@ -142,7 +149,7 @@ def test_audit_rejects_future_leakage(monkeypatch):
         audit_model(m, torch.tensor([[2, 4, 8, 6]]), 2)
 
 
-def test_audit_records_shape_drift_without_relaxing_reference(monkeypatch):
+def test_audit_records_shape_drift_without_relaxing_reference(monkeypatch, model):
     from scripts.ar_sps_evaluate import audit_model
     m = model(False)
     original = m.forward
@@ -156,3 +163,52 @@ def test_audit_records_shape_drift_without_relaxing_reference(monkeypatch):
     assert result['float32']['cross_length_max_abs'] > c.PARITY_ATOL
     assert result['float32']['causal_max_abs'] == 0
     assert result['float64_reference']['cross_length_max_abs'] < c.PARITY_ATOL
+
+
+def test_qwen_rejects_sliding_layers():
+    config = Qwen3Config(vocab_size=31, hidden_size=24, intermediate_size=48,
+                        num_hidden_layers=1, num_attention_heads=3, num_key_value_heads=1,
+                        head_dim=8, layer_types=['sliding_attention'], sliding_window=16)
+    with pytest.raises(ValueError, match='full-attention'):
+        PretrainedSPS(Qwen3ForCausalLM(config))
+
+
+def test_native_kd_teacher_freeze_and_student_update(model):
+    student=model(); teacher=model(False).requires_grad_(False).eval()
+    before={k:v.clone() for k,v in teacher.state_dict().items()}
+    ids=torch.tensor([[2,4,8,6]])
+    for frozen in (True,False):
+        opt=optimizer_for(student,frozen)
+        value=loss(student,ids,teacher=teacher,weight=.5)
+        assert torch.isfinite(value)
+        value.backward()
+        assert student.prediction.grad is not None
+        assert all(p.grad is None for p in teacher.parameters())
+        if not frozen:
+            assert student.backbone.model.layers[0].self_attn.q_proj.weight.grad is not None
+        opt.step();opt.zero_grad()
+    assert all(torch.equal(before[k],v) for k,v in teacher.state_dict().items())
+
+
+def test_same_suite_report_control_routing(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from scripts import ar_sps_report as report
+    monkeypatch.setattr(c,'DISTILLATION',False)
+    monkeypatch.setattr(c,'REPORT_BASELINE','qwen_ar')
+    monkeypatch.setattr(c,'ENDPOINT_COMPARISONS',(('qwen_ce','qwen_kd'),))
+    monkeypatch.setattr(report.e,'RUN_ROOT',tmp_path)
+    monkeypatch.setattr(report.e,'collect_experiments',lambda:[SimpleNamespace(name='qwen_ce'),SimpleNamespace(name='qwen_kd')])
+    monkeypatch.setattr(report.e,'output_dir',lambda x:tmp_path/'out'/x.name)
+    for arm in ('qwen_ce','qwen_kd'):
+        for label in ('stage_endpoint','final'):
+            p=tmp_path/'out'/arm/'eval'/label;p.mkdir(parents=True);(p/'complete.json').write_text('{}')
+    calls=[]
+    def compare(left,right,**kw):calls.append((left,right,kw));return {}
+    monkeypatch.setattr(report,'compare',compare)
+    result=report.build_report()
+    assert len(result['against_original'])==4 and len(result['matched_endpoint_controls'])==2
+    for left,right,kw in calls:
+        if kw.get('matched_exposure'):
+            assert left.parts[-3]=='qwen_ce' and right.parts[-3]=='qwen_kd'
+            assert left.name==right.name
+        else: assert left==tmp_path/'out/qwen_ar/eval/source'

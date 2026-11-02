@@ -34,3 +34,5 @@ Arkhip job_wait observation rather than polling shells.
 - `.github/workflows/pilot.yml` → CPU orchestration/model tests; `tests/`, `src/modeling/tests/`.
 
 - `SPS_EXPERIMENT_SUITE=ar-sps-{360m,1.7b}-{ce,kd}`: `scripts/ar_sps_config.py` → existing AR/SPS prepare, staged CE training, baseline evaluation and report routes.
+
+- `SPS_EXPERIMENT_SUITE=ar-sps-qwen3-{0.6b,1.7b}` → `scripts/ar_sps_config.py`, shared CE/KD preparation, training and evaluation; `src/modeling/models/sps/pretrained.py`.
