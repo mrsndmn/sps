@@ -11,6 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import experiments as e
 from modeling.models.sps.pretrained import PretrainedSPS
 from scripts import mmlu_config as c
+from scripts.mmlu_results import recover_samples
 from scripts.mmlu_generation import generate, prompt, parse_answer
 
 
@@ -51,18 +52,7 @@ def evaluate(exp, limit=None):
     dataset = load_dataset(c.DATASET, 'all', revision=c.REVISION, split='test')
     rows = list(dataset.select(range(min(limit, len(dataset))))) if limit else list(dataset)
     path = root / 'samples.jsonl'
-    saved = []
-    if path.exists():
-        # An interrupted final write may be incomplete; never discard completed rows.
-        with path.open('rb+') as stream:
-            while line := stream.readline():
-                try:
-                    saved.append(json.loads(line))
-                except json.JSONDecodeError:
-                    if stream.read():
-                        raise ValueError('Corrupt non-final sample row')
-                    stream.truncate(stream.tell() - len(line))
-                    break
+    saved = recover_samples(path)
     for index, item in enumerate(saved):
         digest = hashlib.sha256(json.dumps(rows[index], sort_keys=True).encode()).hexdigest()
         if item['index'] != index or item['doc_hash'] != digest:

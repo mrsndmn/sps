@@ -132,15 +132,51 @@ sig=e.design_signature();c.MODEL='other';assert e.design_signature()!=sig
     subprocess.run([sys.executable,'-c',code],env=dict(os.environ,SPS_EXPERIMENT_SUITE=suite),check=True)
 
 
-def test_mmlu_generation_dry_registry():
-    import os
-    import subprocess
-    import sys
+def test_mmlu_generation_dry_registry(tmp_path):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE='mmlu-generation')
-    result = subprocess.run([sys.executable, 'run_eval.py', '--dry'], env=env,
-                            capture_output=True, text=True, check=True)
-    assert result.stdout.count('"instance_type": "a100.1gpu"') == 15
-    assert result.stdout.count('scripts.mmlu_run eval') == 15
+    code = """
+import sys
+from pathlib import Path
+import experiments as e
+e.COMMON_ROOT = Path(sys.argv[1])
+e.ARTIFACTS_ROOT = e.COMMON_ROOT / 'mmlu-generation'
+e.RUN_ROOT = e.ARTIFACTS_ROOT / 'runs'
+if sys.argv[2] == 'with-markers':
+    for exp in e.experiment_configs:
+        marker = e.training_marker(exp)
+        if marker:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text('{}')
+from scripts.mlspace_launch import main
+sys.argv = ['launcher', '--dry']
+main('eval')
+"""
+    for mode, count in [('missing', 5), ('with-markers', 15)]:
+        result = subprocess.run([sys.executable, '-c', code, str(tmp_path), mode], env=env,
+                                capture_output=True, text=True, check=True)
+        assert result.stdout.count('"instance_type": "a100.1gpu"') == count
+        assert result.stdout.count('scripts.mmlu_run eval') == count
     rejected = subprocess.run([sys.executable, 'run_train_jobs.py', '--dry'], env=env,
                               capture_output=True, text=True)
     assert rejected.returncode != 0
+
+
+@pytest.mark.parametrize('tail', [b'{"index":1}', b'{"index":'])
+def test_mmlu_resume_uncommitted_final_row(tmp_path, tail):
+    from scripts.mmlu_results import recover_samples
+    path = tmp_path / 'samples.jsonl'
+    first = b'{"index":0}\n'
+    path.write_bytes(first + tail)
+    assert recover_samples(path) == [{'index': 0}]
+    assert path.read_bytes() == first
+    with path.open('ab') as stream:
+        stream.write(b'{"index":1}\n')
+    assert recover_samples(path) == [{'index': 0}, {'index': 1}]
+
+
+def test_mmlu_resume_rejects_corrupt_committed_rows(tmp_path):
+    from scripts.mmlu_results import recover_samples
+    path = tmp_path / 'samples.jsonl'
+    path.write_bytes(b'{broken}\n{"index":1}\n')
+    with pytest.raises(ValueError, match='Corrupt'):
+        recover_samples(path)
