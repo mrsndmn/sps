@@ -90,6 +90,8 @@ def internal(phase, name):
         if not exp.trainable:
             raise ValueError('Source model is not a training arm')
         subprocess.run(e.train_command(exp), check=True)
+        from scripts.instruct_common import validate_final
+        validate_final(e.output_dir(exp)/'final.pt', prepared)
         store_json(e.output_dir(exp)/'trained.json', dict(design_signature=e.design_signature(),
                                                         plan=prepared, checkpoint='final.pt'))
     else:

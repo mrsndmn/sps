@@ -129,6 +129,10 @@ def test_checkpoint_provenance_and_stage_metadata(tmp_path, monkeypatch):
     assert state['plan'] == plan and state['stage'] is True and state['step'] == 2
     for name, value in model.state_dict().items():
         torch.testing.assert_close(restored.state_dict()[name], value)
+    with pytest.raises(RuntimeError, match='final training'):
+        common.validate_final(path, plan)
+    common.save(path, model, optimizer, 8, 3.5, False, plan)
+    common.validate_final(path, plan)
     monkeypatch.setattr(e, 'design_signature', lambda: 'different')
     with pytest.raises(RuntimeError, match='provenance'):
         common.restore(path, restored, torch.device('cpu'))
@@ -154,3 +158,20 @@ def test_optimizer_transition_unfreezes_backbone_and_checkpointed_gradients(fami
     assert all(p.grad is not None for p in model.parameters() if p.requires_grad)
     full_optimizer.step()
     assert any(not torch.equal(value, initial[name]) for name, value in model.backbone.state_dict().items())
+
+
+def test_final_checkpoint_failure_does_not_advance_resume_cursor(tmp_path, monkeypatch):
+    from scripts import instruct_train as train
+    names = []
+    def interrupted(path, *args):
+        names.append(path.name)
+        if path.name == 'final.pt':
+            raise OSError('simulated interruption')
+    monkeypatch.setattr(train, 'save', interrupted)
+    with pytest.raises(OSError):
+        train.save_progress(tmp_path, None, None, 4, 1., False, {'steps': 4, 'stage_steps': 1})
+    assert names == ['final.pt']
+    names.clear()
+    monkeypatch.setattr(train, 'save', lambda path, *args: names.append(path.name))
+    train.save_progress(tmp_path, None, None, 4, 1., False, {'steps': 4, 'stage_steps': 1})
+    assert names == ['final.pt', 'latest.pt']

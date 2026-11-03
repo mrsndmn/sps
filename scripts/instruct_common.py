@@ -136,3 +136,14 @@ def read_plan():
     if plan['design_signature'] != e.design_signature():
         raise RuntimeError('Stale preparation plan')
     return plan
+
+
+def validate_final(path, plan):
+    """Validate terminal metadata without allocating the model/optimizer tensors."""
+    import experiments as e
+    c = configuration()
+    state = torch.load(path, map_location='meta', mmap=True, weights_only=False)
+    if (state['design_signature'] != e.design_signature() or state['source'] != c.MODEL
+            or state['revision'] != c.REVISION or state['plan'] != plan
+            or state['step'] != plan['steps'] or state['stage'] is not False):
+        raise RuntimeError('Missing or mismatched final training checkpoint')

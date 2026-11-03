@@ -25,6 +25,16 @@ def optimizer_for(model, embedding_only):
                             betas=c.BETAS, weight_decay=0. if embedding_only else c.WEIGHT_DECAY)
 
 
+def save_progress(root, model, optimizer, step, best, frozen, plan):
+    # Publish the resumable progress cursor only after its milestone artifacts.
+    # A failed final save must leave latest at the previous completed interval.
+    if step == plan['stage_steps']:
+        save(root/'stage_endpoint.pt', model, optimizer, step, best, frozen, plan)
+    if step == plan['steps']:
+        save(root/'final.pt', model, optimizer, step, best, frozen, plan)
+    save(root/'latest.pt', model, optimizer, step, best, frozen, plan)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filter', required=True)
@@ -120,11 +130,7 @@ def main():
                 if score < best:
                     best = score
                     save(root/('embedding_best.pt' if frozen else 'best.pt'), model, optimizer, step+1, best, frozen, plan)
-                save(root/'latest.pt', model, optimizer, step+1, best, frozen, plan)
-                if step+1 == transition:
-                    save(root/'stage_endpoint.pt', model, optimizer, step+1, best, frozen, plan)
-                if step+1 == steps:
-                    save(root/'final.pt', model, optimizer, step+1, best, frozen, plan)
+                save_progress(root, model, optimizer, step+1, best, frozen, plan)
                 with (root/'metrics.jsonl').open('a') as handle:
                     handle.write(json.dumps(dict(step=step+1, examples=(step+1)*c.GLOBAL_BATCH,
                                                  val_nll=score, val_by_mode=validation_result['by_mode'],
