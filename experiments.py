@@ -6,7 +6,7 @@ import json
 import os
 
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'mmlu-full-resume', 'mmlu-stem-generation', 'mmlu-generation', '1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
+if SUITE not in {'ar-sps-qwen3-1.7b-instruct', 'mmlu-full-resume', 'mmlu-stem-generation', 'mmlu-generation', '1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
@@ -155,6 +155,12 @@ def overrides(exp, *, probe=False):
 
 
 def train_command(exp, *, probe=False):
+    if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+        if not exp.trainable:
+            raise ValueError('The original instruct model does not require training')
+        return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
+                f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.instruct_train',
+                '--filter', exp.name, *(['--probe'] if probe else [])]
     if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
         return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
                 f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.ar_sps_train',
@@ -192,6 +198,11 @@ def design_signature():
         inputs += [repo / 'experiments.py', *repo.glob('scripts/ar_sps*.py')]
     if SUITE in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'}:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/mmlu*.py'), repo / 'scripts/report_mmlu_stem.py']
+    if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+        inputs += [repo / 'experiments.py', *repo.glob('scripts/instruct*.py'),
+                   *repo.glob('scripts/mmlu*.py'), repo / 'scripts/report_mmlu_stem.py',
+                   repo / 'scripts/mlspace_launch.py', repo / 'pyproject.toml', repo / 'uv.lock',
+                   repo / 'requirements-instruct.txt']
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
     design = dict(repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
@@ -203,6 +214,9 @@ def design_signature():
         from scripts import ar_sps_config as c
         design['large_ce'] = dict(suite=SUITE, model=c.MODEL, revision=c.REVISION,
                                   micro_batch=c.MICRO_BATCH, eval_batch=c.EVAL_BATCH)
+    if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+        from scripts import instruct_config as c
+        design['instruct'] = dict(suite=SUITE, model=c.MODEL, revision=c.REVISION)
     return hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
 
 
@@ -277,3 +291,6 @@ if SUITE in {"ar-sps", "ar-sps-kd", "ar-sps-360m-ce", "ar-sps-1.7b-ce", "ar-sps-
 if SUITE in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'}:
     from scripts.mmlu_config import experiment_configs
     TASKS = (SUITE.replace('-', '_'),)
+
+if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+    from scripts.instruct_config import experiment_configs

@@ -44,3 +44,6 @@ Arkhip job_wait observation rather than polling shells.
 - `SPS_EXPERIMENT_SUITE=mmlu-stem-generation run_eval.py` → `scripts/mmlu_run.py`, `scripts/mmlu_subset.py`; STEM-only evaluation with answer reuse.
 
 - `SPS_EXPERIMENT_SUITE=mmlu-full-resume run_eval.py` → `scripts/mmlu_run.py`, `scripts/mmlu_subset.py`; full-MMLU continuation reusing full/STEM answers.
+
+- `SPS_EXPERIMENT_SUITE=ar-sps-qwen3-1.7b-instruct run_train_jobs.py` → `scripts/instruct_run.py`, `scripts/instruct_config.py`, `scripts/instruct_data.py`, `scripts/instruct_train.py`; `tests/test_instruct_jobs.py`.
+- `SPS_EXPERIMENT_SUITE=ar-sps-qwen3-1.7b-instruct run_eval.py` → `scripts/instruct_evaluate.py`, `scripts/instruct_generation.py`; `tests/test_instruct_eval.py`.
