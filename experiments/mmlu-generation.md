@@ -18,13 +18,22 @@ Summary artifacts: `mmlu-full-resume/reports/smol1.7.json` and `smol1.7.csv`.
 This custom generative protocol measures both question answering and adherence
 to the requested answer format. It is not the likelihood-based MMLU score.
 
+SmolLM2-360M completed the full test set. Source AR, final CE and final CE+KD
+accuracy is 22.96%, 23.34% and 22.70% (3224, 3278 and 3187 correct answers).
+Invalid-answer rates are 8.04%, 6.27% and 8.13%; generation-limit rates are
+5.70%, 5.93% and 6.45%. No context overflows occurred. All runs cover the same
+14042 unique document IDs; hashes, subjects and targets match the pinned dataset.
+CE gains 54 correct answers versus source (0.38 percentage points); KD loses
+37 (0.26 points) and trails CE by 91 answers (0.65 points).
+Summary artifacts: `mmlu-full-resume/reports/smol360.json` and `smol360.csv`.
+
 # Conclusions
 
 SmolLM2-1.7B meets the observed no-degradation criterion for full-MMLU overall
 accuracy with both adaptations, by just two additional correct answers for CE
 and six for CE+KD. This does not establish statistical superiority or retention
 on every subject; the previously completed STEM subset declines for both arms.
-The experiment uses one seed. Inspect invalid answers and truncation alongside
+SmolLM2-360M meets observed full-MMLU accuracy retention with CE but not CE+KD, although both had exceeded source accuracy on STEM alone. The experiment uses one seed. Inspect invalid answers and truncation alongside
 accuracy when interpreting reasoning quality.
 
 # Changelog
@@ -34,3 +43,5 @@ accuracy when interpreting reasoning quality.
 - 2026-11-02: Added full-MMLU continuation with validated reuse of full and STEM answers and an explicitly excluded slow arm in the code registry.
 
 - 2026-11-03: Recorded completed SmolLM2-1.7B full-MMLU results and validated complete dataset coverage.
+
+- 2026-11-03: Recorded completed SmolLM2-360M full-MMLU results and validated complete dataset coverage.
