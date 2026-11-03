@@ -36,11 +36,19 @@ best equals final. Individual paired 95% intervals exclude zero for the ARC gain
 HellaSwag/SciQ/LAMBADA losses and NLL increase; PIQA includes zero. Artifacts:
 `ar-sps-qwen3-1.7b/ce-report.json` and `ce-metrics.csv` in the shared artifact root.
 
-Both sizes have completed CE/KD training. Qwen3-1.7B KD evaluation remains pending.
+Qwen3-1.7B KD evaluation completed. Final accuracy percentages: ARC-Easy 72.98,
+HellaSwag 65.59, PIQA 75.30, SciQ 94.50, LAMBADA 62.25; held-out NLL 2.519932.
+Compared with final CE, KD improves HellaSwag by 0.93 percentage points and SciQ
+by 0.90; their individual paired 95% intervals exclude zero. NLL improves by
+0.011112, also with an interval excluding zero. PIQA improves by 0.49 points,
+LAMBADA by 0.56, and ARC falls by 0.59; those intervals include zero.
+Strict observed retention versus original AR still fails for the final KD model.
+Complete size-specific artifacts: `ar-sps-qwen3-1.7b/final-report.json` and
+`final-metrics.csv`. Both sizes have completed CE/KD training and evaluation.
 
 # Conclusions
 
-The completed 0.6B CE run shows mixed benchmark changes and fails retention, despite a substantial ARC-Easy gain. At matched final exposure, KD recovers part of the CE degradation in several tasks and held-out NLL, but still does not preserve original-model quality. Results use one seed and per-task intervals without simultaneous correction. This matrix does not separate continued-training effects from SPS adaptation; no AR-continuation arm is included in the requested scope. Cross-family per-token losses are not directly comparable across tokenizers.
+Both sizes show mixed benchmark changes and fail final-checkpoint retention, despite substantial ARC-Easy gains. At matched final exposure, KD recovers part of the CE degradation in several tasks and held-out NLL, but still does not preserve original-model quality. Results use one seed and per-task intervals without simultaneous correction. This matrix does not separate continued-training effects from SPS adaptation; no AR-continuation arm is included in the requested scope. Cross-family per-token losses are not directly comparable across tokenizers.
 
 # Changelog
 
@@ -51,3 +59,5 @@ The completed 0.6B CE run shows mixed benchmark changes and fails retention, des
 - 2026-11-02: Recorded Qwen3-0.6B KD and paired CE comparisons; strict retention failed.
 
 - 2026-11-02: Recorded Qwen3-1.7B CE evaluation; strict retention failed.
+
+- 2026-11-02: Recorded Qwen3-1.7B KD results and paired CE comparisons; final strict retention failed.
