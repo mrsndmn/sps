@@ -45,13 +45,27 @@ CE loses 576 correct answers versus source (4.10 percentage points); KD loses
 246 (1.75 points). KD recovers 330 answers over CE (2.35 points).
 Summary artifacts: `mmlu-full-resume/reports/qwen1.7.json` and `qwen1.7.csv`.
 
+SmolLM2-135M completed the full test set. Source AR, final CE and final CE+KD
+accuracy is 19.69%, 18.56% and 17.97% (2765, 2606 and 2524 correct answers).
+Invalid-answer rates are 23.71%, 27.18% and 29.60%; generation-limit rates are
+6.71%, 21.59% and 13.86%. No context overflows occurred. CE loses 159 correct
+answers versus source (1.13 percentage points); KD loses 241 (1.72 points),
+and trails CE by 82 answers (0.58 points).
+Summary artifacts: `mmlu-full-resume/reports/smol135.json` and `smol135.csv`.
+
+All requested full-MMLU continuation runs are now complete. Every run was
+validated against the pinned dataset: complete unique document coverage,
+matching hashes, subjects and targets, and consistent correctness aggregates.
+Consolidated artifacts: `mmlu-full-resume/reports/mmlu_full.json` and
+`mmlu_full.csv`. Qwen3-0.6B plain CE remains intentionally excluded.
+
 # Conclusions
 
 SmolLM2-1.7B meets the observed no-degradation criterion for full-MMLU overall
 accuracy with both adaptations, by just two additional correct answers for CE
 and six for CE+KD. This does not establish statistical superiority or retention
 on every subject; the previously completed STEM subset declines for both arms.
-SmolLM2-360M meets observed full-MMLU accuracy retention with CE but not CE+KD, although both had exceeded source accuracy on STEM alone. Qwen3-0.6B CE+KD fails observed full-MMLU retention, with a 1.03-point accuracy drop relative to source. Qwen3-1.7B KD recovers part of the CE degradation and reduces invalid answers, but both adaptations fail observed full-MMLU accuracy retention. Its near-restoration on STEM does not extend to the full benchmark. The experiment uses one seed. Inspect invalid answers and truncation alongside
+SmolLM2-360M meets observed full-MMLU accuracy retention with CE but not CE+KD, although both had exceeded source accuracy on STEM alone. Qwen3-0.6B CE+KD fails observed full-MMLU retention, with a 1.03-point accuracy drop relative to source. Qwen3-1.7B KD recovers part of the CE degradation and reduces invalid answers, but both adaptations fail observed full-MMLU accuracy retention. Its near-restoration on STEM does not extend to the full benchmark. SmolLM2-135M fails observed retention for both adaptations, with KD below CE on full MMLU despite its advantage on STEM. Across the full-MMLU matrix, measured no-degradation holds only for SmolLM2-360M CE and both SmolLM2-1.7B adaptations. The experiment uses one seed. Inspect invalid answers and truncation alongside
 accuracy when interpreting reasoning quality.
 
 # Changelog
@@ -67,3 +81,5 @@ accuracy when interpreting reasoning quality.
 - 2026-11-03: Recorded completed Qwen3-0.6B base/KD full-MMLU results and validated complete dataset coverage.
 
 - 2026-11-03: Recorded completed Qwen3-1.7B full-MMLU results and validated complete dataset coverage.
+
+- 2026-11-03: Recorded SmolLM2-135M results and finalized the full-MMLU continuation matrix with dataset-level validation.
