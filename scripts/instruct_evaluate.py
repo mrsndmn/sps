@@ -25,7 +25,7 @@ def ensure_ifeval_resources():
     except LookupError:
         nltk.download('punkt_tab', download_dir=str(root), quiet=True, raise_on_error=True)
     from lm_eval.tasks.ifeval.utils import process_results
-    process_results(dict(prompt='Say hello', instruction_id_list=['keywords:existence'],
+    process_results(dict(key=0, prompt='Say hello', instruction_id_list=['keywords:existence'],
                          kwargs=[{'keywords': ['hello']}]), ['hello'])
 
 
