@@ -15,7 +15,7 @@ No context overflows occurred. All three runs cover identical document IDs and
 hashes. CE loses 1.13 percentage points versus source, and CE+KD loses 1.03.
 CE+KD exceeds CE by only three correct answers (0.10 points).
 The shared artifact report is `mmlu-stem-generation/reports/mmlu_stem.json`.
-Other model groups are tracked independently; partial groups have no final score.
+All model groups have now completed; the consolidated report contains all final scores.
 
 SmolLM2-360M completed all STEM questions with paired document IDs and hashes.
 Source AR, final CE and final CE+KD accuracy is 22.03%, 22.86% and 22.53%
@@ -40,9 +40,19 @@ overflows occurred. CE loses 3.78 percentage points versus source; KD loses
 0.17 points, or five correct answers. KD exceeds CE by 109 correct answers
 (3.61 points).
 
+Qwen3-0.6B completed all STEM questions with paired document IDs and hashes.
+Source AR, final CE and final CE+KD accuracy is 50.43%, 5.47% and 49.04%
+(1522, 165 and 1480 correct answers). Invalid-answer rates are 4.84%, 88.24%
+and 4.94%; generation-limit rates are 3.02%, 89.40% and 3.88%. No context
+overflows occurred. CE loses 44.96 percentage points versus source, and KD
+loses 1.39 points (42 answers). The very low CE score coincides with pervasive
+format failures and generation-limit stops; it cannot be interpreted as a
+measurement of knowledge alone. The pinned-dataset report validated all final
+STEM runs; consolidated CSV: `mmlu-stem-generation/reports/mmlu_stem.csv`.
+
 # Conclusions
 
-SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final checkpoints. KD reduces format failures relative to CE but has nearly identical accuracy. SmolLM2-360M meets the no-degradation criterion for this benchmark’s measured overall accuracy with both adaptations; this does not imply retention across other benchmarks. SmolLM2-135M fails observed retention for both adaptations; KD recovers some accuracy relative to CE but increases invalid answers. Qwen3-1.7B KD nearly restores source accuracy and substantially exceeds CE in measured accuracy, but still fails the strict observed no-degradation criterion by five answers. This is one seed and no statistical superiority claim is made. Answer-format failures remain errors under the original generative protocol.
+SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final checkpoints. KD reduces format failures relative to CE but has nearly identical accuracy. SmolLM2-360M meets the no-degradation criterion for this benchmark’s measured overall accuracy with both adaptations; this does not imply retention across other benchmarks. SmolLM2-135M fails observed retention for both adaptations; KD recovers some accuracy relative to CE but increases invalid answers. Qwen3-1.7B KD nearly restores source accuracy and substantially exceeds CE in measured accuracy, but still fails the strict observed no-degradation criterion by five answers. Qwen3-0.6B CE has severe answer-format failures under this protocol; KD largely avoids these failures but still falls below source accuracy. All requested STEM evaluations are complete. This is one seed and no statistical superiority claim is made. Answer-format failures remain errors under the original generative protocol.
 
 # Changelog
 
@@ -57,3 +67,5 @@ SmolLM2-1.7B fails the observed no-degradation criterion for both adapted final 
 - 2026-11-02: Recorded completed SmolLM2-135M STEM results and paired coverage checks.
 
 - 2026-11-02: Recorded completed Qwen3-1.7B STEM results and paired coverage checks.
+
+- 2026-11-03: Recorded completed Qwen3-0.6B STEM results and finalized the consolidated report for every model.
