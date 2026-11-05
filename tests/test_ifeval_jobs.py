@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 
-def test_separate_ifeval_dry_plan_keeps_original_signature():
+def test_separate_ifeval_dry_plan_keeps_original_signature(tmp_path):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE='ar-sps-qwen3-1.7b-instruct')
-    result = subprocess.run([sys.executable, '-m', 'scripts.ifeval_run', '--dry'], env=env,
+    result = subprocess.run([sys.executable, '-c', 'from pathlib import Path; import sys; from scripts import ifeval_run as r; r.RUN_ROOT=Path(sys.argv[1]); sys.argv=["ifeval","--dry"]; r.main()', str(tmp_path)], env=env,
                             capture_output=True, text=True, check=True)
     assert result.stdout.count('"instance_type": "a100.1gpu"') == 10
     assert result.stdout.count('scripts.ifeval_run --worker --filter') == 10
