@@ -9,7 +9,7 @@ jobs:
         with:
           python-version: '3.10'
       - run: pip install pytest requests
-      - run: python -m pytest -q tests/test_pilot.py tests/test_ar_sps_jobs.py tests/test_mmlu_stem.py tests/test_instruct_jobs.py tests/test_ifeval_jobs.py tests/test_sched_jobs.py
+      - run: python -m pytest -q tests/test_pilot.py tests/test_ar_sps_jobs.py tests/test_mmlu_stem.py tests/test_instruct_jobs.py tests/test_ifeval_jobs.py tests/test_sched_jobs.py tests/test_base50.py
       - run: python run_train_jobs.py --dry
       - run: python run_train_jobs.py --dry --phase prepare
       - run: python run_eval.py --dry

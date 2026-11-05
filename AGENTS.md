@@ -50,3 +50,4 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.ifeval_run` → per-mode one-GPU IFEval submission/worker (--mode); `scripts/ifeval_config.py`, `tests/test_ifeval_jobs.py`, `tests/test_ifeval_worker.py`.
 - `python -m scripts.sched_run --variant step384 --phase eval` → checkpoint-scoped one-GPU evaluation; `scripts/sched_eval.py`, `tests/test_sched_eval.py`.
 - `python -m scripts.sched_run --variant cosine --phase train|eval` → scheduled instruct reruns; `scripts/sched_train.py`, `scripts/sched_common.py`, `tests/test_sched_jobs.py`.
+- `python -m scripts.base50_run` → isolated long base preparation/training; `scripts/base50_config.py`, `scripts/base50_train.py`, `tests/test_base50.py`.
