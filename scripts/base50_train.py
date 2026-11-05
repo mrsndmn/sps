@@ -24,10 +24,19 @@ def optimizer_for(model, embedding_only):
                             betas=c.BETAS, weight_decay=0. if embedding_only else c.WEIGHT_DECAY)
 
 
+def finalize(root, model, optimizer, step, best, frozen, plan):
+    # A resume at the last step skips the loop: always reconstruct final.pt before
+    # the terminal marker, including interruption after the last latest.pt save.
+    if step != plan['steps'] or frozen:
+        raise RuntimeError('Cannot complete unfinished training')
+    save(root/'final.pt', model, optimizer, step, best, frozen, plan)
+    store_json(root/'trained.json', dict(design_signature=e.design_signature(), step=step,
+                                       checkpoint=str(root/'final.pt'), reminder=config.REMINDER))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filter', required=True)
-    parser.add_argument('--probe', action='store_true')
     args = parser.parse_args()
     matches = e.collect_experiments(args.filter)
     if len(matches) != 1 or not matches[0].trainable:
@@ -40,9 +49,9 @@ def main():
     torch.cuda.set_device(local)
     device = torch.device('cuda', local)
     dist.init_process_group('nccl')
-    plan = dict(steps=c.PROBE_STEPS, stage_steps=c.PROBE_STEPS//2) if args.probe else read_plan()
+    plan = read_plan()
     steps = plan['steps']; transition = plan['stage_steps']
-    root = (e.SANITY_ROOT if args.probe else e.RUN_ROOT)/'out'/exp.name
+    root = e.RUN_ROOT/'out'/exp.name
     root.mkdir(parents=True, exist_ok=True)
     model = load_model(exp.recipe, device)
     teacher = load_teacher(device) if exp.distillation_weight else None
@@ -50,7 +59,7 @@ def main():
     if len(data) < steps*c.GLOBAL_BATCH:
         raise RuntimeError('Insufficient unique training rows')
     start = 0; best = float('inf'); state = None
-    if not args.probe and (root/'latest.pt').exists():
+    if (root/'latest.pt').exists():
         state = restore(root/'latest.pt', model, device)
         if state['plan'] != plan:
             raise RuntimeError('Resume plan mismatch')
@@ -63,7 +72,6 @@ def main():
     accumulation = c.GLOBAL_BATCH//(world*c.MICRO_BATCH)
     if accumulation*world*c.MICRO_BATCH != c.GLOBAL_BATCH:
         raise ValueError('Invalid global batch')
-    times = {'embedding': [], 'full': []}
     interval = config.CHECKPOINT_INTERVAL
     for step in range(start, steps):
         if exp.recipe == 'staged_sps' and step == transition:
@@ -100,11 +108,8 @@ def main():
         elapsed = time.monotonic()-began
         if rank == 0 and (step+1) % config.LOG_INTERVAL == 0:
             print(json.dumps(dict(step=step+1, lr=lr, loss=total, seconds_per_step=elapsed)), flush=True)
-        phase = 'embedding' if frozen else 'full'
-        if step >= c.WARMUP_PROBE and step != transition:
-            times[phase].append(elapsed)
         milestone = step+1 == transition or (step+1) % interval == 0 or step+1 == steps
-        if not args.probe and milestone:
+        if milestone:
             dist.barrier()
             if rank == 0:
                 score = float(np.mean(nll(model, validation, device)))
@@ -114,8 +119,6 @@ def main():
                 save(root/'latest.pt', model, optimizer, step+1, best, frozen, plan)
                 if step+1 == transition:
                     save(root/'stage_endpoint.pt', model, optimizer, step+1, best, frozen, plan)
-                if step+1 == steps:
-                    save(root/'final.pt', model, optimizer, step+1, best, frozen, plan)
                 with (root/'metrics.jsonl').open('a') as handle:
                     handle.write(json.dumps(dict(step=step+1, tokens=(step+1)*c.GLOBAL_BATCH*c.CONTEXT,
                                                  val_nll=score, lr=lr, rank_zero_train_loss=total,
@@ -123,16 +126,8 @@ def main():
                                                  distillation_weight=exp.distillation_weight))+'\n')
             dist.barrier()
         model.train()
-    if args.probe:
-        # Max rank duration, not rank-zero optimism.
-        values = torch.tensor([max(times[k], default=0.) for k in ('embedding', 'full')], device=device)
-        dist.all_reduce(values, op=dist.ReduceOp.MAX)
-        if rank == 0:
-            store_json(root/'probe.json', dict(embedding=values[0].item(), full=values[1].item(),
-                                              design_signature=e.design_signature()))
-    if rank == 0 and not args.probe:
-        store_json(root/'trained.json', dict(design_signature=e.design_signature(), step=steps,
-                                           checkpoint=str(root/'final.pt'), reminder=config.REMINDER))
+    if rank == 0:
+        finalize(root, model, optimizer, steps, best, frozen, plan)
     dist.barrier(); dist.destroy_process_group()
 
 

@@ -42,4 +42,4 @@ jobs:
       - run: pip install torch==2.9.0 --index-url https://download.pytorch.org/whl/cpu
       - run: PYTHONPATH=.:src python -m pytest -q tests/test_mtp_jobs.py tests/test_mtp_speculative.py tests/test_mtp_unfreeze_jobs.py tests/test_mtp_unfreeze_loading.py tests/test_mtp_parallel.py tests/test_spec_baselines.py tests/test_mtp_unified.py
 
-      - run: PYTHONPATH=.:src python -m pytest -q tests/test_ar_sps.py tests/test_ar_sps_distillation.py tests/test_mmlu_generation.py tests/test_instruct_eval.py tests/test_instruct_train.py tests/test_instruct_data.py tests/test_ifeval_worker.py tests/test_sched_eval.py
+      - run: PYTHONPATH=.:src python -m pytest -q tests/test_ar_sps.py tests/test_ar_sps_distillation.py tests/test_mmlu_generation.py tests/test_instruct_eval.py tests/test_instruct_train.py tests/test_instruct_data.py tests/test_ifeval_worker.py tests/test_sched_eval.py tests/test_base50_finalize.py
