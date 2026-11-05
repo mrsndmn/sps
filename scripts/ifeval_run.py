@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import signal
 import subprocess
 import time
@@ -41,15 +42,21 @@ def signature():
     return hashlib.sha256(json.dumps(dict(source=e.design_signature(), files=sources), sort_keys=True).encode()).hexdigest()
 
 
-def output_dir(exp):
-    return RUN_ROOT / 'out' / exp.name
+def arm_name(exp, mode=None):
+    return exp.name if mode is None else f'{exp.name}--{mode}'
 
 
-def payload(exp, staged, author, nick):
+def output_dir(exp, mode=None):
+    return RUN_ROOT / 'out' / arm_name(exp, mode)
+
+
+def payload(exp, staged, author, nick, mode=None):
     body = launch.payload('eval', exp.name, staged, author, nick)
     command = [str(e.PYTHON), '-m', 'scripts.ifeval_run', '--worker', '--filter', exp.name]
+    if mode:
+        command += ['--mode', mode]
     body['script'] = f'cd {shlex.quote(str(staged))} && ' + shlex.join(command)
-    body['job_desc'] = f'sps-{c.ARTIFACT_NAME} eval {exp.name} #{author} @{nick}'
+    body['job_desc'] = f'sps-{c.ARTIFACT_NAME} eval {arm_name(exp, mode)} #{author} @{nick}'
     return body
 
 
@@ -79,33 +86,54 @@ def submit(args):
                   for x in get_in_progress_jobs(client_profile=args.profile)}
         launch.reconcile_receipts(client, active)
         launch.reconcile_intents(active)
+        for exp in experiments:
+            old_identity = launch.normalize(payload(exp, staged, args.author_name, args.telegram_nick)['job_desc'])
+            if old_identity in active:
+                raise RuntimeError('Stop the legacy sequential IFEval job before splitting modes: ' + active[old_identity])
         staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
     jobs = []
-    for exp in experiments:
-        marker = output_dir(exp)/'evaluated.json'
+    for exp, mode in ((x, m) for x in experiments for m in ([args.mode] if args.mode else c.MODES)):
+        marker = output_dir(exp, mode)/'evaluated.json'
         if marker.exists():
             if json.loads(marker.read_text())['design_signature'] != signature():
                 raise RuntimeError('Stale IFEval completion marker')
             print('Skip completed:', exp.name)
             continue
-        body = payload(exp, staged, args.author_name, args.telegram_nick)
+        body = payload(exp, staged, args.author_name, args.telegram_nick, mode)
         identity = launch.normalize(body['job_desc'])
         if identity in active:
-            jobs.append(dict(name=exp.name, job_name=active[identity], reused=True))
+            jobs.append(dict(name=arm_name(exp, mode), job_name=active[identity], reused=True))
             continue
         if args.dry:
             print(json.dumps(body, indent=2))
             continue
         body['region'] = extra['region']
-        reserve(exp.name)
-        job = launch.submit_payload(client, body, 'eval', exp.name, commit)
+        reserve(arm_name(exp, mode))
+        job = launch.submit_payload(client, body, 'eval', arm_name(exp, mode), commit)
         jobs.append(job); active[identity] = job['job_name']
         print(json.dumps(job), flush=True)
     print('__MLS_JOBS_JSON__')
     print(json.dumps(dict(phase='ifeval', jobs=jobs)), flush=True)
 
 
-def evaluate(exp, limit=None):
+def reuse_legacy(exp, mode, root, manifest):
+    """Import immutable legacy answers only with an exact protocol/checkpoint match."""
+    legacy = output_dir(exp) / 'eval'
+    meta = legacy / 'manifest.json'
+    if not meta.exists():
+        return
+    expected = dict(manifest, design_signature=c.LEGACY_SIGNATURE, modes=list(c.MODES))
+    if json.loads(meta.read_text()) != expected:
+        raise RuntimeError('Legacy IFEval resume provenance mismatch')
+    src = legacy / f'ifeval-{mode}.jsonl'
+    dest = root / src.name
+    if src.exists() and not dest.exists():
+        temporary = dest.with_suffix('.importing')
+        shutil.copyfile(src, temporary)
+        temporary.replace(dest)
+
+
+def evaluate(exp, limit=None, mode=None):
     import torch
     from datasets import load_dataset
     from transformers import AutoTokenizer
@@ -127,10 +155,10 @@ def evaluate(exp, limit=None):
             or original['ifeval_code'] != evaluator_code
             or original['lm_eval_version'] != importlib.metadata.version('lm_eval')):
         raise RuntimeError('IFEval scoring implementation differs from original evaluation')
-    root = output_dir(exp) / ('smoke' if limit else 'eval')
+    root = output_dir(exp, mode) / ('smoke' if limit else 'eval')
     root.mkdir(parents=True, exist_ok=True)
     manifest = dict(design_signature=signature(), source_signature=c.SOURCE_SIGNATURE,
-                    experiment=exp.__dict__, generation=source.GENERATION, modes=c.MODES,
+                    experiment=exp.__dict__, generation=source.GENERATION, modes=(mode,) if mode else c.MODES,
                     dataset=source.IFEVAL_DATASET, revision=source.IFEVAL_REVISION,
                     evaluator_code=evaluator_code, limit=limit)
     # JSON round-trip normalizes tuples for exact resume comparison.
@@ -142,6 +170,8 @@ def evaluate(exp, limit=None):
     if meta.exists() and json.loads(meta.read_text()) != manifest:
         raise RuntimeError('Parallel IFEval resume provenance mismatch')
     launch.store_json(meta, manifest)
+    if mode and not limit:
+        reuse_legacy(exp, mode, root, manifest)
     model = load_model(exp.recipe, 'cuda').eval().requires_grad_(False)
     if exp.trainable:
         restore(e.output_dir(exp)/'final.pt', model, 'cuda')
@@ -151,15 +181,16 @@ def evaluate(exp, limit=None):
         rows = rows[:limit]
     results = dict(design_signature=signature(), source_signature=c.SOURCE_SIGNATURE,
                    experiment=exp.name, tasks={})
+    selected_mode = mode
     started = time.monotonic()
     with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
-        for mode in c.MODES:
+        for mode in ((mode,) if mode else c.MODES):
             results['tasks'][mode] = evaluate_generation(model, tokenizer, rows, 'ifeval', mode,
                 source.GENERATION[mode], root, signature(), source.SEED, started,
                 c.EVAL_HOURS - c.STARTUP_SECONDS/3600)
     launch.store_json(root/'results.json', results)
     if not limit:
-        launch.store_json(output_dir(exp)/'evaluated.json', results)
+        launch.store_json(output_dir(exp, selected_mode)/'evaluated.json', results)
     print(json.dumps(results), flush=True)
 
 
@@ -168,8 +199,10 @@ def worker(args):
     if len(matches) != 1:
         raise ValueError('Select exactly one IFEval arm')
     if args.internal:
-        return evaluate(matches[0], args.limit)
+        return evaluate(matches[0], args.limit, args.mode)
     command = [str(e.PYTHON), '-m', 'scripts.ifeval_run', '--worker', '--internal', '--filter', args.filter]
+    if args.mode:
+        command += ['--mode', args.mode]
     if args.limit:
         command += ['--limit', str(args.limit)]
     process = subprocess.Popen(command, start_new_session=True)
@@ -189,6 +222,7 @@ def worker(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filter')
+    parser.add_argument('--mode', choices=c.MODES)
     parser.add_argument('--dry', action='store_true')
     parser.add_argument('--worker', action='store_true')
     parser.add_argument('--internal', action='store_true')
@@ -202,6 +236,8 @@ def main():
     if e.SUITE != c.SOURCE_SUITE:
         parser.error('Select the instruct source suite')
     if args.worker:
+        if not args.mode:
+            parser.error('Workers require --mode to prevent duplicate sequential evaluation')
         return worker(args)
     if args.internal or args.limit:
         parser.error('--internal/--limit require --worker')

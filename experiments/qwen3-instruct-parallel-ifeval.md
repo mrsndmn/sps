@@ -17,3 +17,5 @@ Compare official prompt-level and instruction-level strict/loose metrics separat
 # Changelog
 
 - 2026-11-05: Added independent IFEval workers with durable answer reuse and isolated job submission.
+
+- 2026-11-05: Split thinking and non-thinking into independent workers; resume legacy answers after verifying protocol and checkpoint provenance.

@@ -47,4 +47,4 @@ Arkhip job_wait observation rather than polling shells.
 
 - `SPS_EXPERIMENT_SUITE=ar-sps-qwen3-1.7b-instruct run_train_jobs.py` → `scripts/instruct_run.py`, `scripts/instruct_config.py`, `scripts/instruct_data.py`, `scripts/instruct_train.py`; `tests/test_instruct_jobs.py`.
 - `SPS_EXPERIMENT_SUITE=ar-sps-qwen3-1.7b-instruct run_eval.py` → `scripts/instruct_evaluate.py`, `scripts/instruct_generation.py`; `tests/test_instruct_eval.py`.
-- `python -m scripts.ifeval_run` → separate one-GPU IFEval submission/worker; `scripts/ifeval_config.py`, `tests/test_ifeval_jobs.py`, `tests/test_ifeval_worker.py`.
+- `python -m scripts.ifeval_run` → per-mode one-GPU IFEval submission/worker (--mode); `scripts/ifeval_config.py`, `tests/test_ifeval_jobs.py`, `tests/test_ifeval_worker.py`.

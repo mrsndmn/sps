@@ -7,8 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 
+@pytest.mark.parametrize('mode', [None, 'thinking', 'nonthinking'])
 @pytest.mark.parametrize('trainable', [False, True])
-def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch, trainable):
+def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch, trainable, mode):
     import torch
     from scripts import ifeval_run as r, instruct_common, instruct_evaluate, instruct_config
     source = tmp_path/'source'; source.mkdir()
@@ -58,14 +59,34 @@ def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch
         return {'count':len(rows)}
     monkeypatch.setattr(instruct_evaluate,'evaluate_generation',generate)
     exp=SimpleNamespace(name='example',trainable=trainable,recipe='staged_sps' if trainable else 'original_ar')
-    r.evaluate(exp)
-    assert calls==[('ifeval',m,2,instruct_config.SEED) for m in r.c.MODES]
+    r.evaluate(exp, mode=mode)
+    assert calls==[('ifeval',m,2,instruct_config.SEED) for m in ([mode] if mode else r.c.MODES)]
     assert bool(restored)==trainable
-    assert (r.output_dir(exp)/'evaluated.json').exists()
+    assert (r.output_dir(exp, mode)/'evaluated.json').exists()
     assert not (source/'evaluated.json').exists()
-    r.evaluate(exp)  # same manifest must permit resuming
-    manifest=r.output_dir(exp)/'eval/manifest.json'
+    r.evaluate(exp, mode=mode)  # same manifest must permit resuming
+    manifest=r.output_dir(exp, mode)/'eval/manifest.json'
     data=json.loads(manifest.read_text());data['source_signature']='wrong'
     manifest.write_text(json.dumps(data))
     with pytest.raises(RuntimeError,match='resume provenance'):
-        r.evaluate(exp)
+        r.evaluate(exp, mode=mode)
+
+
+def test_legacy_import_preserves_answers_and_rejects_protocol_changes(tmp_path, monkeypatch):
+    from scripts import ifeval_run as r
+    monkeypatch.setattr(r, 'RUN_ROOT', tmp_path)
+    exp = SimpleNamespace(name='example')
+    legacy = r.output_dir(exp)/'eval'; legacy.mkdir(parents=True)
+    dest = r.output_dir(exp, 'nonthinking')/'eval'; dest.mkdir(parents=True)
+    current = dict(design_signature='new', modes=['nonthinking'], checkpoint={'mtime':1})
+    old = dict(current, design_signature=r.c.LEGACY_SIGNATURE, modes=list(r.c.MODES))
+    (legacy/'manifest.json').write_text(json.dumps(old))
+    samples = b'{"index": 0}\n{"partial":'
+    (legacy/'ifeval-nonthinking.jsonl').write_bytes(samples)
+    r.reuse_legacy(exp, 'nonthinking', dest, current)
+    assert (dest/'ifeval-nonthinking.jsonl').read_bytes()==samples
+    (dest/'ifeval-nonthinking.jsonl').write_text('progress')
+    r.reuse_legacy(exp, 'nonthinking', dest, current)
+    assert (dest/'ifeval-nonthinking.jsonl').read_text()=='progress'
+    with pytest.raises(RuntimeError, match='Legacy'):
+        r.reuse_legacy(exp, 'nonthinking', dest, dict(current, checkpoint={'mtime':2}))
