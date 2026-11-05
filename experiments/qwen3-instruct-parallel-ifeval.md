@@ -4,7 +4,7 @@ The adapted SPS checkpoints retain instruction-following ability relative to the
 
 # Setup
 
-Evaluation function: `scripts.ifeval_run.evaluate`; registry: the existing instruct `experiment_configs`. The separate launcher reuses the established generation and scoring protocol. Its artifact root is configured by `scripts.ifeval_config`; each arm writes isolated manifests, answer streams and completion markers under `runs/out/<experiment>`.
+Evaluation function: `scripts.ifeval_run.evaluate`; registry: the existing instruct `experiment_configs`. The separate launcher reuses the established generation and scoring protocol. Its artifact root is configured by `scripts.ifeval_config`; each arm writes isolated manifests, answer streams and completion markers under `runs/out/<experiment>--<mode>`.
 
 # Results
 
