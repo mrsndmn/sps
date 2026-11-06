@@ -97,22 +97,39 @@ def test_staged_training_freezes_parent_then_updates_shared_backbone():
 
 @pytest.mark.cuda
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
-def test_flex_training_backend_matches_dense_qwen_mask_and_has_gradients():
+@pytest.mark.parametrize("autocast", [False, True])
+def test_flex_training_backend_matches_dense_qwen_mask_and_has_gradients(autocast):
     _, model = tiny(head_dim=16)
     model = model.cuda()
     tokens = torch.tensor([[1, 2, 3, 4, 5]], device="cuda")
-    with torch.no_grad():
+    with torch.no_grad(), torch.autocast(
+        "cuda", dtype=torch.bfloat16, enabled=autocast
+    ):
         expected = model(tokens).logits
     model.backend = "flex_attention"
-    model.backbone.set_attn_implementation("flex_attention")
-    with torch.no_grad():
-        torch.testing.assert_close(model(tokens).logits, expected, atol=1e-5, rtol=1e-4)
-    model.set_stage(False)
+    model.backbone.set_attn_implementation("sps_flex_attention")
+    with torch.no_grad(), torch.autocast(
+        "cuda", dtype=torch.bfloat16, enabled=autocast
+    ):
+        tolerance = 0.005 if autocast else 1e-5
+        torch.testing.assert_close(
+            model(tokens).logits, expected, atol=tolerance, rtol=tolerance * 10
+        )
     labels = horizon_targets(tokens, torch.ones_like(tokens), 4)
-    loss, _ = model(tokens[:, :-1], targets=labels)
-    loss.backward()
-    assert torch.isfinite(model.new_embeddings.grad).all()
-    assert model.new_embeddings.grad.abs().sum() > 0
+    for frozen in (True, False):
+        model.zero_grad(set_to_none=True)
+        model.set_stage(frozen)
+        if not frozen:
+            model.backbone.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
+        model.train()
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=autocast):
+            loss, _ = model(tokens[:, :-1], targets=labels)
+        loss.backward()
+        assert torch.isfinite(model.new_embeddings.grad).all()
+        assert model.new_embeddings.grad.abs().sum() > 0
+        assert all(p.dtype == torch.float32 for p in model.parameters())
 
 
 @pytest.mark.cuda

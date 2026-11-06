@@ -6,6 +6,20 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.checkpoint import checkpoint
+from transformers.integrations.flex_attention import flex_attention_forward
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+
+def sps_flex_attention(module, query, key, value, *args, **kwargs):
+    # FP32 Qwen q/k norm weights promote their autocast outputs back to FP32.
+    # Match SDPA's autocast compute dtype without changing master parameters.
+    if torch.is_autocast_enabled(query.device.type):
+        dtype = torch.get_autocast_dtype(query.device.type)
+        query, key, value = query.to(dtype), key.to(dtype), value.to(dtype)
+    return flex_attention_forward(module, query, key, value, *args, **kwargs)
+
+
+ALL_ATTENTION_FUNCTIONS.register("sps_flex_attention", sps_flex_attention)
 
 
 def visibility(q, k, horizons):
@@ -50,7 +64,9 @@ class QwenSPSMTP(nn.Module):
         self.horizons = horizons
         self.backend = backend
         self.config = sps.config
-        self.backbone.set_attn_implementation(backend)
+        self.backbone.set_attn_implementation(
+            "sps_flex_attention" if backend == "flex_attention" else backend
+        )
         self.embedding_only = False
 
     def set_stage(self, embedding_only):
