@@ -54,3 +54,4 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.extend_run --phase train|eval --variant 1024|1536|2048` → instruct continuation and checkpoint-scoped IFEval; `scripts/extend_train.py`, `scripts/extend_eval.py`, `tests/test_extend_jobs.py`.
 - `python -m scripts.vllm_sps_run --phase probe|train|eval` → Qwen SPS-MTP and vLLM pilot; `scripts/vllm_sps_train.py`, `scripts/vllm_sps_evaluate.py`, `tests/test_qwen_sps_mtp.py`.
 - `python -m scripts.vllm_sps_report` → matched-verifier vLLM quality/speed report; `tests/test_vllm_sps_jobs.py`.
+- `python -m scripts.serving_runtime` → isolated vLLM runtime preparation worker; `tests/test_serving_runtime.py`.
