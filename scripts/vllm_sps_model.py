@@ -1,4 +1,4 @@
-"""Native Qwen SPS-MTP with a shared backbone and group-local prediction slots."""
+"""Isolated Qwen SPS-MTP; excluded from legacy suites' broad src provenance."""
 
 from types import SimpleNamespace
 

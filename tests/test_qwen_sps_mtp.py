@@ -8,7 +8,7 @@ import torch
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
 from modeling.models.sps.pretrained import PretrainedSPS
-from modeling.models.sps.qwen_mtp import QwenSPSMTP, horizon_targets
+from scripts.vllm_sps_model import QwenSPSMTP, horizon_targets
 
 
 def tiny(head_dim=8):

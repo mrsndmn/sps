@@ -19,7 +19,6 @@ def signature():
     repo = Path(__file__).resolve().parents[1]
     files = sorted((repo / "scripts").glob("vllm_sps_*.py"))
     files += [
-        repo / "src/modeling/models/sps/qwen_mtp.py",
         repo / "src/modeling/models/sps/pretrained.py",
         repo / "scripts/instruct_common.py",
         repo / "scripts/instruct_config.py",
@@ -51,8 +50,8 @@ def data(split):
 def load_model(device, backend=c.BACKEND):
     import torch
 
-    from modeling.models.sps.qwen_mtp import QwenSPSMTP
     from scripts.instruct_common import load_model as original
+    from scripts.vllm_sps_model import QwenSPSMTP
 
     state = torch.load(c.PARENT, map_location="cpu", mmap=True, weights_only=False)
     if (

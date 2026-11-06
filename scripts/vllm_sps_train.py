@@ -10,11 +10,11 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from modeling.models.sps.qwen_mtp import horizon_targets
 from scripts import instruct_config as source
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts.mlspace_launch import store_json
+from scripts.vllm_sps_model import horizon_targets
 
 
 def labels_for(row, device):
