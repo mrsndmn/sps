@@ -95,7 +95,6 @@ def evaluate(exp):
     os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "0"
     torch, vllm = check_runtime()
     from datasets import load_dataset
-    from huggingface_hub import HfApi
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
 
@@ -120,20 +119,9 @@ def evaluate(exp):
         )
     )
     selected = select_examples(rows)
-    # Resolve once per suite; immutable revision is shared by all arms/repeats.
-    pin_path = c.ROOT / "eagle_revision.json"
-    if pin_path.exists():
-        eagle_revision = json.loads(pin_path.read_text())["revision"]
-    else:
-        eagle_revision = c.EAGLE_REVISION or HfApi().model_info(c.EAGLE_MODEL).sha
-        # Concurrent writers must agree; use exclusive creation, not last writer wins.
-        pin_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with pin_path.open("x") as stream:
-                json.dump({"model": c.EAGLE_MODEL, "revision": eagle_revision}, stream)
-        except FileExistsError:
-            eagle_revision = json.loads(pin_path.read_text())["revision"]
-    arguments = engine_arguments(exp, trained["export"], eagle_revision)
+    # The immutable revision lives in executable configuration; no mutable
+    # publication file is shared between concurrently starting eval workers.
+    arguments = engine_arguments(exp, trained["export"], c.EAGLE_REVISION)
     references = None
     if exp.arm.startswith("sps"):
         from scripts.vllm_sps_audit import reference
