@@ -1,0 +1,4 @@
+# Additional official IFEval dependencies; install into the existing project environment.
+langdetect==1.0.9
+immutabledict==4.3.1
+nltk==3.9.2

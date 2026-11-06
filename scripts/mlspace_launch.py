@@ -164,13 +164,16 @@ def payload(phase, name, staged, author, nick):
         command = [str(PYTHON), '-m', 'scripts.ar_sps_run', phase]
     if SUITE in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'}:
         command = [str(PYTHON), '-m', 'scripts.mmlu_run', phase]
+    if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+        command = [str(PYTHON), '-m', 'scripts.instruct_run', phase]
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
         # MLSpace validates script as a single shell line (newlines rejected).
         script=f'cd {shlex.quote(str(staged))} && ' + shlex.join(command),
         job_desc=f'sps-{"pilot" if SUITE == "1b" else SUITE} {phase} {name} #{author} @{nick}',
-        env_variables={'PYTHONPATH': f'{staged}:{staged}/src',
+        env_variables={**({'HF_HUB_DISABLE_XET': '1'} if SUITE == 'ar-sps-qwen3-1.7b-instruct' else {}),
+                       'PYTHONPATH': f'{staged}:{staged}/src',
                        'SPS_EXPERIMENT_SUITE': SUITE,
                        'HF_HOME': str(HF_HOME), 'PYTHONUNBUFFERED': '1',
                        'CC': '/usr/bin/gcc',
@@ -209,9 +212,9 @@ def submit(args):
     if not candidates:
         raise ValueError('No matching experiments')
     if not args.dry:
-        if (args.phase == 'train' or (SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'} and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
+        if (args.phase == 'train' or (SUITE in {'ar-sps-qwen3-1.7b-instruct', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'} and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
             raise RuntimeError('Complete --phase prepare and inspect measured estimates first')
-        if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'} and args.phase in {'train', 'eval'}:
+        if SUITE in {'ar-sps-qwen3-1.7b-instruct', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'} and args.phase in {'train', 'eval'}:
             prepared = json.loads((ARTIFACTS_ROOT / 'prepared.json').read_text())
             if prepared.get('design_signature') != design_signature():
                 raise RuntimeError('Stale AR-SPS preparation marker')
@@ -253,6 +256,9 @@ def submit(args):
         # quota failure. The caller may retry after the allocation changes.
         if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
             from scripts.ar_sps_run import reserve
+            reserve(args.phase, name)
+        if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+            from scripts.instruct_run import reserve
             reserve(args.phase, name)
         jobs.append(submit_payload(client, body, args.phase, name, commit))
         active_by_desc[identity] = jobs[-1]['job_name']

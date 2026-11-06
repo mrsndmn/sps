@@ -44,3 +44,11 @@ Arkhip job_wait observation rather than polling shells.
 - `SPS_EXPERIMENT_SUITE=mmlu-stem-generation run_eval.py` → `scripts/mmlu_run.py`, `scripts/mmlu_subset.py`; STEM-only evaluation with answer reuse.
 
 - `SPS_EXPERIMENT_SUITE=mmlu-full-resume run_eval.py` → `scripts/mmlu_run.py`, `scripts/mmlu_subset.py`; full-MMLU continuation reusing full/STEM answers.
+
+- `SPS_EXPERIMENT_SUITE=ar-sps-qwen3-1.7b-instruct run_train_jobs.py` → `scripts/instruct_run.py`, `scripts/instruct_config.py`, `scripts/instruct_data.py`, `scripts/instruct_train.py`; `tests/test_instruct_jobs.py`.
+- `SPS_EXPERIMENT_SUITE=ar-sps-qwen3-1.7b-instruct run_eval.py` → `scripts/instruct_evaluate.py`, `scripts/instruct_generation.py`; `tests/test_instruct_eval.py`.
+- `python -m scripts.ifeval_run` → per-mode one-GPU IFEval submission/worker (--mode); `scripts/ifeval_config.py`, `tests/test_ifeval_jobs.py`, `tests/test_ifeval_worker.py`.
+- `python -m scripts.sched_run --variant step384 --phase eval` → checkpoint-scoped one-GPU evaluation; `scripts/sched_eval.py`, `tests/test_sched_eval.py`.
+- `python -m scripts.sched_run --variant cosine --phase train|eval` → scheduled instruct reruns; `scripts/sched_train.py`, `scripts/sched_common.py`, `tests/test_sched_jobs.py`.
+- `python -m scripts.base50_run` → isolated long base preparation/training; `scripts/base50_config.py`, `scripts/base50_train.py`, `tests/test_base50.py`.
+- `python -m scripts.extend_run --phase train|eval --variant 1024|1536|2048` → instruct continuation and checkpoint-scoped IFEval; `scripts/extend_train.py`, `scripts/extend_eval.py`, `tests/test_extend_jobs.py`.
