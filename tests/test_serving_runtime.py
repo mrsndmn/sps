@@ -1,6 +1,7 @@
 """Runtime preparation isolation and binary/source provenance gates."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -34,3 +35,18 @@ def test_precompiled_runtime_rejects_unaccounted_source_or_binary_changes(monkey
     changed.append("csrc/attention.cu")
     with pytest.raises(RuntimeError, match="Unexpected compiled/runtime"):
         runtime.validate_overlay()
+
+
+def test_overlay_does_not_mutate_cached_wheel_or_other_environments(tmp_path):
+    cached = tmp_path / "cached.py"
+    cached.write_text("upstream")
+    installed = tmp_path / "installed.py"
+    other = tmp_path / "other.py"
+    os.link(cached, installed)
+    os.link(cached, other)
+    source = tmp_path / "source.py"
+    source.write_text("SPS implementation")
+    runtime.replace_overlay(source, installed)
+    assert installed.read_text() == "SPS implementation"
+    assert cached.read_text() == other.read_text() == "upstream"
+    assert installed.stat().st_ino != cached.stat().st_ino

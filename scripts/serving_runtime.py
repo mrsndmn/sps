@@ -54,6 +54,21 @@ def run(command, **kwargs):
     return subprocess.run(list(map(str, command)), check=True, **kwargs)
 
 
+def replace_overlay(source, target):
+    """Replace the inode: an installed file might share uv's cached wheel."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(source.read_bytes())
+        temporary.chmod(0o644)
+        temporary.replace(target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def source_snapshot():
     """Independent immutable checkout, without copying repository credentials."""
     target = ARTIFACTS / "source" / c.VLLM_COMMIT
@@ -135,6 +150,8 @@ def worker():
             "install",
             "--python",
             python,
+            "--link-mode",
+            "copy",
             "--index-url",
             "https://pypi.org/simple",
             "--extra-index-url",
@@ -163,8 +180,7 @@ def worker():
     for name in OVERLAY:
         source = snapshot / name
         target = site / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+        replace_overlay(source, target)
         hashes[name] = hashlib.sha256(target.read_bytes()).hexdigest()
     smoke = """
 import json, torch, vllm
