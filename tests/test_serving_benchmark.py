@@ -98,6 +98,8 @@ def test_oracle_rejects_mismatched_checkpoints_and_empty_results(tmp_path, monke
 
 
 def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch):
+    from transformers import AutoTokenizer
+
     from scripts import vllm_sps_evaluate
 
     original = bench.native_audit.reference
@@ -112,15 +114,31 @@ def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch)
     monkeypatch.setattr(bench, "reference_tokens", lambda trained: samples)
     calls = []
 
+    class Tokenizer:
+        def apply_chat_template(self, messages, *, return_dict=True, **kwargs):
+            return {"input_ids": [42]} if return_dict else [42]
+
+    loader_calls = []
+
+    def load(*args, **kwargs):
+        loader_calls.append((args, kwargs))
+        return Tokenizer()
+
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", load)
+
     def evaluate(exp):
         calls.append(exp)
         assert bench.native_audit.reference({"checkpoint": "checked"}) is samples
+        tokenizer = AutoTokenizer.from_pretrained("pinned-model", revision="commit")
+        assert tokenizer.apply_chat_template([], tokenize=True) == [42]
 
     monkeypatch.setattr(vllm_sps_evaluate, "evaluate", evaluate)
     exp = bench.selected("eval")[0]
     bench.evaluate(exp)
     assert calls == [exp]
     assert bench.native_audit.reference is original
+    assert AutoTokenizer.from_pretrained is load
+    assert loader_calls == [(("pinned-model",), {"revision": "commit"})]
 
 
 def test_completed_results_cannot_be_reused_after_protocol_changes(

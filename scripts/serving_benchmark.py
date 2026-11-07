@@ -10,6 +10,7 @@ import shlex
 import signal
 import subprocess
 import time
+from functools import partial
 from pathlib import Path
 from unittest.mock import patch
 
@@ -147,13 +148,28 @@ def audit_arm(arm):
 
 
 def evaluate(exp):
+    from transformers import AutoTokenizer
+
     from scripts.vllm_sps_evaluate import evaluate as original
 
     check_gate(verify_runtime())
     # Keep the numerical oracle in the exact Torch/Transformers training
     # environment. Inference dependencies may contain a newer HF implementation.
-    with patch.object(native_audit, "reference", reference_tokens):
+    loader = partial(serving_tokenizer, AutoTokenizer.from_pretrained)
+    with (
+        patch.object(native_audit, "reference", reference_tokens),
+        patch.object(AutoTokenizer, "from_pretrained", side_effect=loader),
+    ):
         original(exp)
+
+
+def serving_tokenizer(loader, *args, **kwargs):
+    """Preserve token-list chat prompts across HF 4/5 return-dict defaults."""
+    tokenizer = loader(*args, **kwargs)
+    tokenizer.apply_chat_template = partial(
+        tokenizer.apply_chat_template, return_dict=False
+    )
+    return tokenizer
 
 
 def child(command, env, hours):
