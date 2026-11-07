@@ -156,6 +156,10 @@ def worker():
             "https://pypi.org/simple",
             "--extra-index-url",
             "https://download.pytorch.org/whl/cu130",
+            # Both are official indexes. The CUDA mirror also hosts stale
+            # ordinary packages, which must not shadow newer PyPI versions.
+            "--index-strategy",
+            "unsafe-best-match",
             WHEEL,
             *identity()["extra_packages"],
         ],
