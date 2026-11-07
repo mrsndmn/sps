@@ -41,7 +41,14 @@ def identity():
         "upstream": c.VLLM_BASE,
         "implementation": c.VLLM_COMMIT,
         "overlay": list(OVERLAY),
-        "extra_packages": ["datasets==5.1.0"],
+        "extra_packages": [
+            "datasets==5.1.0",
+            # The toolkit meta-package permits newer compiler components.
+            # FlashInfer CCCL requires their CUDA minor to match the headers.
+            "nvidia-cuda-nvcc==13.0.88",
+            "nvidia-cuda-crt==13.0.88",
+            "nvidia-nvvm==13.0.88",
+        ],
     }
 
 
@@ -210,10 +217,17 @@ x = torch.randn(4, 16, device='cuda', dtype=torch.bfloat16)
 out = torch.empty(4, 8, device='cuda', dtype=torch.bfloat16)
 torch.ops._C.silu_and_mul(out, x)
 torch.testing.assert_close(out, torch.nn.functional.silu(x[:, :8]) * x[:, 8:], atol=.02, rtol=.02)
+from flashinfer.sampling import sampling_from_probs, top_k_top_p_sampling_from_probs
+probs = torch.zeros(2, 16, device='cuda', dtype=torch.float32)
+probs[0, 3] = probs[1, 7] = 1
+expected = torch.tensor([3, 7], device='cuda')
+for sampled in (sampling_from_probs(probs),
+                top_k_top_p_sampling_from_probs(probs, top_k=5, top_p=.9)):
+    torch.testing.assert_close(sampled.long(), expected)
 torch.cuda.synchronize()
 print(json.dumps(dict(torch=torch.__version__, cuda=torch.version.cuda,
                      vllm=vllm.__version__, imported_from=vllm.__file__,
-                     gpu=torch.cuda.get_device_name())))
+                     gpu=torch.cuda.get_device_name(), flashinfer_sampling=True)))
 """
     checked = subprocess.check_output([str(python), "-c", smoke], env=env, text=True)
     print(checked, flush=True)
