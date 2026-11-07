@@ -18,9 +18,10 @@ format. Held-out cross-entropy across the prediction horizons decreased from
 The embedding-only stage uses a different loss mask and is not directly comparable.
 These losses do not establish first-slot quality, MMLU accuracy or serving speed.
 
-The native vLLM benchmark remains pending: the pinned source requires a runtime
-incompatible with the project environment. SPS and EAGLE use separate matched
-verifier baselines.
+The isolated serving runtime passed native CUDA and dependency checks. Native
+vLLM greedy parity is being checked before the benchmark; MMLU quality and
+serving speed remain unmeasured. SPS and EAGLE use separate matched verifier
+baselines.
 
 ## Conclusions
 
@@ -31,3 +32,4 @@ parent quality nor positive speedup is assumed.
 
 - 2026-11-06: Defined shared-backbone Qwen SPS-MTP adaptation and vLLM pilot.
 - 2026-11-06: Completed training and recorded held-out loss; serving measurements pending.
+- 2026-11-08: Prepared the serving runtime and launched native vLLM greedy verification.
