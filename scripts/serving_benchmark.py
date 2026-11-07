@@ -149,6 +149,7 @@ def audit_arm(arm):
 def evaluate(exp):
     from scripts.vllm_sps_evaluate import evaluate as original
 
+    check_gate(verify_runtime())
     # Keep the numerical oracle in the exact Torch/Transformers training
     # environment. Inference dependencies may contain a newer HF implementation.
     with patch.object(native_audit, "reference", reference_tokens):

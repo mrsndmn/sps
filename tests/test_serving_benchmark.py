@@ -101,6 +101,13 @@ def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch)
     from scripts import vllm_sps_evaluate
 
     original = bench.native_audit.reference
+    manifest = {"runtime": "verified"}
+    monkeypatch.setattr(bench, "verify_runtime", lambda: manifest)
+    monkeypatch.setattr(
+        bench,
+        "check_gate",
+        lambda actual: actual == manifest or pytest.fail("Unverified runtime"),
+    )
     samples = [{"expected_token_ids": [7]}]
     monkeypatch.setattr(bench, "reference_tokens", lambda trained: samples)
     calls = []
