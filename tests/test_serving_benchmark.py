@@ -129,10 +129,14 @@ def test_completed_results_cannot_be_reused_after_protocol_changes(
     monkeypatch.setattr(bench.c, "ROOT", tmp_path)
     monkeypatch.setattr(bench.common, "signature", lambda: "training")
     monkeypatch.setattr(bench, "protocol_signature", lambda: "current")
+    monkeypatch.setattr(bench, "trained", lambda: {"checkpoint_sha256": "current"})
+    gates = []
+    monkeypatch.setattr(bench, "check_gate", lambda manifest: gates.append(manifest))
     exp = bench.selected("eval")[0]
     root = bench.root_for(exp)
     bench.launch.store_json(root / "evaluated.json", {"design_signature": "training"})
     manifest = {"runtime": "tested"}
+    bench.launch.store_json(root / "manifest.json", {"checkpoint_sha256": "current"})
     bench.launch.store_json(root / "serving-runtime.json", manifest)
     bench.launch.store_json(
         root / "serving-protocol.json", {"protocol_signature": "old"}
@@ -143,3 +147,7 @@ def test_completed_results_cannot_be_reused_after_protocol_changes(
         root / "serving-protocol.json", {"protocol_signature": "current"}
     )
     assert bench.completed(exp, manifest)
+    assert gates == [manifest]
+    bench.launch.store_json(root / "manifest.json", {"checkpoint_sha256": "old"})
+    with pytest.raises(RuntimeError, match="another checkpoint"):
+        bench.completed(exp, manifest)

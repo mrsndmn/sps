@@ -294,8 +294,11 @@ def completed(exp, manifest):
     context = json.loads((root_for(exp) / "serving-protocol.json").read_text())
     if context["protocol_signature"] != protocol_signature():
         raise RuntimeError("Completed evaluation used another serving protocol")
-    if exp.arm == "audit":
-        check_gate(manifest)
+    if exp.arm != "audit":
+        measured = json.loads((root_for(exp) / "manifest.json").read_text())
+        if measured["checkpoint_sha256"] != trained()["checkpoint_sha256"]:
+            raise RuntimeError("Completed evaluation used another checkpoint")
+    check_gate(manifest)
     return True
 
 
