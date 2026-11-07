@@ -50,3 +50,24 @@ def test_overlay_does_not_mutate_cached_wheel_or_other_environments(tmp_path):
     assert installed.read_text() == "SPS implementation"
     assert cached.read_text() == other.read_text() == "upstream"
     assert installed.stat().st_ino != cached.stat().st_ino
+
+
+def test_runtime_child_uses_matching_headers_and_tools_without_activating(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(runtime, "RUNTIME", tmp_path)
+    monkeypatch.setenv("PATH", "/project/bin")
+    monkeypatch.setenv("C_INCLUDE_PATH", "/python310/include")
+    monkeypatch.setenv("CPLUS_INCLUDE_PATH", "/python310/include")
+    toolkit = tmp_path / "lib/python3.12/site-packages/nvidia/cu13"
+    (toolkit / "bin").mkdir(parents=True)
+    (toolkit / "bin/nvcc").touch()
+    env = runtime.runtime_environment()
+    assert env["PATH"].split(os.pathsep)[:2] == [
+        str(tmp_path / "bin"),
+        str(toolkit / "bin"),
+    ]
+    assert env["CUDA_HOME"] == env["CUDA_PATH"] == str(toolkit)
+    assert "C_INCLUDE_PATH" not in env and "CPLUS_INCLUDE_PATH" not in env
+    assert os.environ["PATH"] == "/project/bin"
+    assert os.environ["C_INCLUDE_PATH"] == "/python310/include"

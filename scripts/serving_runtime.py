@@ -117,6 +117,25 @@ def validate_overlay():
         raise RuntimeError(f"Unexpected compiled/runtime changes: {runtime_changes}")
 
 
+def runtime_environment():
+    """Child-process settings; never activate or mutate the project environment."""
+    env = dict(
+        os.environ,
+        UV_CACHE_DIR=str(ENV_ROOT / ".uv-cache"),
+        UV_PYTHON_INSTALL_DIR=str(ENV_ROOT / ".python"),
+        UV_HTTP_TIMEOUT="120",
+    )
+    env.pop("C_INCLUDE_PATH", None)
+    env.pop("CPLUS_INCLUDE_PATH", None)
+    paths = [str(RUNTIME / "bin")]
+    toolkit = RUNTIME / "lib/python3.12/site-packages/nvidia/cu13"
+    if (toolkit / "bin/nvcc").is_file():
+        env.update(CUDA_HOME=str(toolkit), CUDA_PATH=str(toolkit))
+        paths.append(str(toolkit / "bin"))
+    env["PATH"] = os.pathsep.join([*paths, env.get("PATH", "")])
+    return env
+
+
 def worker():
     owner = RUNTIME / ".sps-runtime-owner.json"
     RUNTIME.mkdir(parents=True, exist_ok=True)
@@ -127,16 +146,7 @@ def worker():
         raise RuntimeError("Refusing to modify a pre-existing unowned environment")
     else:
         launch.store_json(owner, identity())
-    env = dict(
-        os.environ,
-        UV_CACHE_DIR=str(ENV_ROOT / ".uv-cache"),
-        UV_PYTHON_INSTALL_DIR=str(ENV_ROOT / ".python"),
-        UV_HTTP_TIMEOUT="120",
-    )
-    # The orchestration environment supplies Python3.10 headers; the runtime
-    # interpreter comes with its own matching headers for Triton compilation.
-    env.pop("C_INCLUDE_PATH", None)
-    env.pop("CPLUS_INCLUDE_PATH", None)
+    env = runtime_environment()
     if not (RUNTIME / "pyvenv.cfg").exists():
         run(
             [UV, "venv", "--python", identity()["python"], "--allow-existing", RUNTIME],
@@ -165,6 +175,8 @@ def worker():
         ],
         env=env,
     )
+    # The wheel installation may have added the CUDA compiler/toolkit.
+    env = runtime_environment()
     # Restore upstream wheel files before applying the reviewed Python delta.
     # Only these files differ; the compiled ABI is exactly the upstream wheel's.
     site = Path(
