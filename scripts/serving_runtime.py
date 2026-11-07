@@ -41,7 +41,7 @@ def identity():
         "upstream": c.VLLM_BASE,
         "implementation": c.VLLM_COMMIT,
         "overlay": list(OVERLAY),
-        "extra_packages": ["datasets==4.4.1"],
+        "extra_packages": ["datasets==5.1.0"],
     }
 
 
