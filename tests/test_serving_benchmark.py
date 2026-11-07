@@ -4,7 +4,9 @@ import base64
 import csv
 import hashlib
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -98,10 +100,12 @@ def test_oracle_rejects_mismatched_checkpoints_and_empty_results(tmp_path, monke
 
 
 def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch):
-    from transformers import AutoTokenizer
-
     from scripts import vllm_sps_evaluate
 
+    AutoTokenizer = SimpleNamespace()
+    monkeypatch.setitem(
+        sys.modules, "transformers", SimpleNamespace(AutoTokenizer=AutoTokenizer)
+    )
     original = bench.native_audit.reference
     manifest = {"runtime": "verified"}
     monkeypatch.setattr(bench, "verify_runtime", lambda: manifest)
@@ -124,7 +128,7 @@ def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch)
         loader_calls.append((args, kwargs))
         return Tokenizer()
 
-    monkeypatch.setattr(AutoTokenizer, "from_pretrained", load)
+    AutoTokenizer.from_pretrained = load
 
     def evaluate(exp):
         calls.append(exp)
