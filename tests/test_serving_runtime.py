@@ -71,3 +71,32 @@ def test_runtime_child_uses_matching_headers_and_tools_without_activating(
     assert "C_INCLUDE_PATH" not in env and "CPLUS_INCLUDE_PATH" not in env
     assert os.environ["PATH"] == "/project/bin"
     assert os.environ["C_INCLUDE_PATH"] == "/python310/include"
+
+
+def test_cuda_linker_alias_is_private_and_child_paths_preserve_parent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(runtime, "RUNTIME", tmp_path)
+    library = tmp_path / "lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+    library.parent.mkdir(parents=True)
+    library.write_bytes(b"runtime library")
+    monkeypatch.setenv("LIBRARY_PATH", "/parent/link")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/parent/load")
+    runtime.prepare_cuda_linker()
+    runtime.prepare_cuda_linker()
+    alias = tmp_path / ".sps-cuda-link/libcudart.so"
+    assert alias.is_symlink() and alias.resolve() == library
+    assert library.read_bytes() == b"runtime library"
+    assert not (library.parent / "libcudart.so").exists()
+    env = runtime.runtime_environment()
+    assert env["LIBRARY_PATH"].split(os.pathsep) == [str(alias.parent), "/parent/link"]
+    assert env["LD_LIBRARY_PATH"].split(os.pathsep) == [
+        str(library.parent),
+        "/parent/load",
+    ]
+    assert os.environ["LIBRARY_PATH"] == "/parent/link"
+    assert os.environ["LD_LIBRARY_PATH"] == "/parent/load"
+    alias.unlink()
+    alias.write_text("unrelated")
+    with pytest.raises(RuntimeError, match="Unexpected CUDA linker alias"):
+        runtime.prepare_cuda_linker()

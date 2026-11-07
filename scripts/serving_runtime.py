@@ -139,8 +139,30 @@ def runtime_environment():
     if (toolkit / "bin/nvcc").is_file():
         env.update(CUDA_HOME=str(toolkit), CUDA_PATH=str(toolkit))
         paths.append(str(toolkit / "bin"))
+    linker = RUNTIME / ".sps-cuda-link"
+    if (linker / "libcudart.so").is_file():
+        for key, directory in (
+            ("LIBRARY_PATH", linker),
+            ("LD_LIBRARY_PATH", toolkit / "lib"),
+        ):
+            env[key] = os.pathsep.join([str(directory), *filter(None, [env.get(key)])])
     env["PATH"] = os.pathsep.join([*paths, env.get("PATH", "")])
     return env
+
+
+def prepare_cuda_linker():
+    """Supply the development alias missing from NVIDIA's runtime wheel."""
+    library = RUNTIME / "lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+    if not library.is_file():
+        raise RuntimeError(f"Missing CUDA runtime library: {library}")
+    directory = RUNTIME / ".sps-cuda-link"
+    directory.mkdir(exist_ok=True)
+    alias = directory / "libcudart.so"
+    if alias.is_symlink() and alias.resolve() == library.resolve():
+        return
+    if alias.exists() or alias.is_symlink():
+        raise RuntimeError(f"Unexpected CUDA linker alias: {alias}")
+    alias.symlink_to(library)
 
 
 def worker():
@@ -182,6 +204,9 @@ def worker():
         ],
         env=env,
     )
+    # FlashInfer links with -lcudart, while the wheel ships only its SONAME.
+    # Keep the alias outside installed/cache-owned package files.
+    prepare_cuda_linker()
     # The wheel installation may have added the CUDA compiler/toolkit.
     env = runtime_environment()
     # Restore upstream wheel files before applying the reviewed Python delta.
