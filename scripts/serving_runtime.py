@@ -188,7 +188,7 @@ def worker():
         hashes[name] = hashlib.sha256(target.read_bytes()).hexdigest()
     smoke = """
 import json, torch, vllm
-import vllm._C
+import vllm._C_stable_libtorch
 from vllm.model_executor.models.qwen3_sps import Qwen3SPSForCausalLM
 from vllm.v1.spec_decode.sps_proposer import SPSProposer
 from vllm.v1.attention.ops.sps_prediction import sps_prediction_attention
