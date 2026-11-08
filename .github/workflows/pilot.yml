@@ -9,12 +9,14 @@ jobs:
         with:
           python-version: '3.10'
       - run: pip install pytest requests
-      - run: python -m pytest -q tests/test_pilot.py tests/test_ar_sps_jobs.py tests/test_mmlu_stem.py tests/test_instruct_jobs.py tests/test_ifeval_jobs.py tests/test_sched_jobs.py tests/test_base50.py tests/test_extend_jobs.py tests/test_vllm_sps_jobs.py tests/test_serving_runtime.py tests/test_serving_benchmark.py
+      - run: python -m pytest -q tests/test_pilot.py tests/test_ar_sps_jobs.py tests/test_mmlu_stem.py tests/test_instruct_jobs.py tests/test_ifeval_jobs.py tests/test_sched_jobs.py tests/test_base50.py tests/test_extend_jobs.py tests/test_vllm_sps_jobs.py tests/test_serving_runtime.py tests/test_serving_benchmark.py tests/test_serving_graphs.py
       - run: python -m scripts.vllm_sps_run --phase probe --dry
       - run: python -m scripts.vllm_sps_run --phase eval --dry
       - run: python -m scripts.serving_runtime --dry
       - run: python -m scripts.serving_benchmark --phase audit --dry
       - run: python -m scripts.serving_benchmark --phase eval --dry
+      - run: python -m scripts.serving_graphs --phase audit --dry
+      - run: python -m scripts.serving_graphs --phase eval --dry
       - run: python run_train_jobs.py --dry
       - run: python run_train_jobs.py --dry --phase prepare
       - run: python run_eval.py --dry

@@ -56,3 +56,5 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.vllm_sps_report` → matched-verifier vLLM quality/speed report; `tests/test_vllm_sps_jobs.py`.
 - `python -m scripts.serving_runtime` → isolated vLLM runtime preparation worker; `tests/test_serving_runtime.py`.
 - `python -m scripts.serving_benchmark --phase audit|eval` → native vLLM gate and one-GPU benchmark waves; `tests/test_serving_benchmark.py`.
+- `python -m scripts.serving_graphs --phase audit|eval` / `--report` → decode graph replay gate, benchmark and report; `tests/test_serving_graphs.py`.
+- `python -m scripts.serving_graphs --prepare-source` → pinned graph-compatible Python overlay and checkpoint reference; `scripts/serving_graphs.py`.
