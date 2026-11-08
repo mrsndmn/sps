@@ -34,13 +34,26 @@ throughput is 36.66 and 74.67 tokens/s, with median paired speedup 2.04x
 (range 2.00–2.05x across timing repeats). Median request latency is 27.47 and
 13.92 seconds. The output cap is reached on 13% and 18% of answers. This
 sampled pilot therefore demonstrates acceleration but does not establish
-preserved quality. Non-thinking comparisons are pending.
+preserved quality.
+
+In non-thinking mode, AR and EAGLE-3 accuracy is 57% and 63%; median decode
+throughput is 44.99 and 79.51 tokens/s, with paired median speedup 1.75x.
+SPS and SPS-MTP accuracy is 55% and 59%; throughput is 37.19 and 85.95 tokens/s,
+with paired median speedup 2.32x (range 2.31–2.43x across timing repeats).
+Median SPS request latency decreases from 1.387 to 0.568 seconds. Both SPS
+arms reach the output cap on 1% of answers. All evaluation arms completed and
+passed input, checkpoint and serving-protocol consistency checks. The generated
+report is `reports/summary.csv` under the experiment artifact root.
 
 ## Conclusions
 
-The thinking pilot shows positive SPS-MTP throughput speedup, together with
-lower observed accuracy on the sampled subset. Complete the non-thinking
-comparisons before drawing conclusions across generation modes.
+SPS-MTP accelerates decode throughput relative to its own SPS verifier in both
+generation modes, with larger relative gains than EAGLE-3 against its AR
+verifier. These verifier models differ, so speedup ratios have separate
+baselines. Observed SPS accuracy decreases in thinking mode and increases in
+non-thinking mode. Greedy parity and this small sampled pilot do not establish
+distributional equivalence or preserved general quality; a broader quality and
+sampling-correctness study would be a separate next experiment.
 
 ## Changelog
 
@@ -50,3 +63,4 @@ comparisons before drawing conclusions across generation modes.
 - 2026-11-08: Passed native greedy parity for both SPS arms; started benchmark submission.
 - 2026-11-08: Completed the initial AR/EAGLE-3 thinking comparison; SPS evaluation follows.
 - 2026-11-08: Completed SPS thinking comparison; measured acceleration and lower sampled accuracy.
+- 2026-11-08: Completed all non-thinking arms and generated the matched quality/throughput report.
