@@ -10,10 +10,11 @@ Evaluation function: `scripts.serving_graphs.main` and its `experiment_configs`.
 
 ## Results
 
-Initial native SPS graph capture succeeded. The replay observation RPC failed
-before generation because callable RPC payloads require optional pickle
-serialization in this vLLM version. The observer now uses named worker-extension
-methods. Replay and greedy parity checks remain pending.
+Native target graph capture and replay passed for SPS and SPS-MTP. Both arms
+exactly matched the training-runtime greedy reference on the correctness pilot.
+The observer recorded 30 target replays for SPS and 12 for SPS-MTP; capture alone
+is not accepted as replay evidence. Named worker-extension RPC methods keep the
+default serialization policy. Quality and speed measurements remain pending.
 
 ## Conclusions
 
@@ -24,3 +25,4 @@ their quality and speed with the eager pilot.
 
 - 2026-11-08: Defined isolated CUDA-graph correctness gate and benchmark continuation.
 - 2026-11-09: Observed successful capture; replaced callable observer RPC with named worker methods.
+- 2026-11-09: Passed actual target replay and greedy parity for both SPS arms; submitted benchmark continuation.
