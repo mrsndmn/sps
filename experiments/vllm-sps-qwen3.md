@@ -27,13 +27,20 @@ The first completed thinking comparison gives AR and EAGLE-3 the same STEM
 accuracy of 62%. Median decode throughput is 43.03 and 68.38 tokens/s respectively;
 the median paired throughput speedup is 1.59x. Median request latency is 27.04
 and 17.15 seconds. Output limits were reached on 24% and 26% of answers, so this
-quality result is limited by the configured generation cap. SPS measurements
-and the non-thinking comparisons are pending.
+quality result is limited by the configured generation cap.
+
+SPS thinking achieves 70% accuracy and SPS-MTP thinking 63%. Median decode
+throughput is 36.66 and 74.67 tokens/s, with median paired speedup 2.04x
+(range 2.00–2.05x across timing repeats). Median request latency is 27.47 and
+13.92 seconds. The output cap is reached on 13% and 18% of answers. This
+sampled pilot therefore demonstrates acceleration but does not establish
+preserved quality. Non-thinking comparisons are pending.
 
 ## Conclusions
 
-Measure quality and latency for the resulting shared model. Neither unchanged
-parent quality nor positive speedup is assumed.
+The thinking pilot shows positive SPS-MTP throughput speedup, together with
+lower observed accuracy on the sampled subset. Complete the non-thinking
+comparisons before drawing conclusions across generation modes.
 
 ## Changelog
 
@@ -42,3 +49,4 @@ parent quality nor positive speedup is assumed.
 - 2026-11-08: Prepared the serving runtime and launched native vLLM greedy verification.
 - 2026-11-08: Passed native greedy parity for both SPS arms; started benchmark submission.
 - 2026-11-08: Completed the initial AR/EAGLE-3 thinking comparison; SPS evaluation follows.
+- 2026-11-08: Completed SPS thinking comparison; measured acceleration and lower sampled accuracy.
