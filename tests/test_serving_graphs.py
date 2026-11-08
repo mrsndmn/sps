@@ -20,6 +20,9 @@ def test_graph_arguments_preserve_sampling_target_and_enable_full_decode_capture
         original = graphs.engine_arguments(exp, "/export", "revision")
         assert result.pop("enforce_eager") is False
         assert result.pop("compilation_config") == graphs.COMPILATION
+        assert result.pop("worker_extension_cls") == (
+            "scripts.serving_graphs.GraphReplayWorkerExtension"
+        )
         original.pop("enforce_eager")
         assert result == original
     assert graphs.ROOT != graphs.EAGER_ROOT
@@ -91,14 +94,56 @@ def test_warmup_counts_only_target_replays_and_restores_torch_method(monkeypatch
             compilation_config=SimpleNamespace(cudagraph_mode="FULL_DECODE_ONLY"),
         )
     )
-    graphs.start_tracking(worker)
+    graphs.GraphReplayWorkerExtension.sps_start_graph_tracking(worker)
     try:
         assert target.replay() == draft.replay() == target.replay() == "replayed"
     finally:
-        state = graphs.stop_tracking(worker)
+        state = graphs.GraphReplayWorkerExtension.sps_stop_graph_tracking(worker)
     assert state["captured"] == 1
     assert state["target_replays"] == 2
     assert Graph.replay is original
+
+
+def test_graph_engine_uses_named_rpc_and_installs_importable_extension(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    class LLM:
+        def __init__(self, **kwargs):
+            assert kwargs["worker_extension_cls"] == (
+                "scripts.serving_graphs.GraphReplayWorkerExtension"
+            )
+
+        def collective_rpc(self, method):
+            assert isinstance(method, str), "RPC callables require unsafe serialization"
+            calls.append(method)
+            if method == "sps_stop_graph_tracking":
+                return [
+                    {"captured": 1, "target_replays": 3, "mode": "FULL_DECODE_ONLY"}
+                ]
+            return [None]
+
+        def generate(self):
+            return "output"
+
+    vllm = SimpleNamespace(LLM=LLM)
+    monkeypatch.setitem(sys.modules, "vllm", vllm)
+    monkeypatch.setattr(graphs, "protocol_signature", lambda: "current")
+    from scripts import vllm_sps_evaluate as evaluator
+
+    def run(exp):
+        arguments = evaluator.engine_arguments(exp, "/export", "revision")
+        llm = vllm.LLM(**arguments)
+        for _ in range(graphs.c.WARMUP_REQUESTS + 1):
+            assert llm.generate() == "output"
+
+    graphs.with_graph_engine(
+        run, graphs.bench.selected("eval")[0], tmp_path / "proof.json"
+    )
+    assert calls == ["sps_start_graph_tracking", "sps_stop_graph_tracking"]
+    assert vllm.LLM is LLM
+    assert evaluator.engine_arguments is graphs.engine_arguments
 
 
 def test_graph_cli_dry_payload_is_one_gpu_and_distinct_from_eager():

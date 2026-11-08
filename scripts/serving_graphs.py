@@ -138,7 +138,11 @@ def verify_runtime():
 
 def graph_arguments(original, *args, **kwargs):
     result = original(*args, **kwargs)
-    result.update(enforce_eager=False, compilation_config=dict(COMPILATION))
+    result.update(
+        enforce_eager=False,
+        compilation_config=dict(COMPILATION),
+        worker_extension_cls="scripts.serving_graphs.GraphReplayWorkerExtension",
+    )
     return result
 
 
@@ -181,6 +185,16 @@ def stop_tracking(worker):
     return state
 
 
+class GraphReplayWorkerExtension:
+    """Expose replay tracking through serializable named worker RPC methods."""
+
+    def sps_start_graph_tracking(self):
+        start_tracking(self)
+
+    def sps_stop_graph_tracking(self):
+        return stop_tracking(self)
+
+
 def validate_evidence(path):
     data = json.loads(path.read_text())
     if data.get("protocol_signature") != protocol_signature():
@@ -205,14 +219,14 @@ def with_graph_engine(function, argument, evidence):
     class VerifiedGraphLLM(original):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            self.collective_rpc(start_tracking)
+            self.collective_rpc("sps_start_graph_tracking")
             self.graph_warmups = 0
 
         def generate(self, *args, **kwargs):
             result = super().generate(*args, **kwargs)
             self.graph_warmups += 1
             if self.graph_warmups == c.WARMUP_REQUESTS:
-                workers = self.collective_rpc(stop_tracking)
+                workers = self.collective_rpc("sps_stop_graph_tracking")
                 bench.launch.store_json(
                     evidence,
                     {
