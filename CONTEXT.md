@@ -33,3 +33,28 @@ _Avoid_: SPS-to-MTP adaptation, unchanged AR quality
 **Observed quality retention**:
 An adapted model has no decrease in any selected benchmark point estimate and no increase in held-out negative log-likelihood relative to its original model under matched evaluation. This is an empirical pilot outcome, not proof of population-level non-inferiority.
 _Avoid_: Proven quality equivalence, statistically guaranteed no degradation
+
+
+**Matched-verifier speedup**:
+The measured speed ratio between speculative decoding and ordinary decoding of the same verifier under a matched workload. Speedups for different verifiers have separate baselines and are accompanied by absolute latency, throughput and quality.
+_Avoid_: Shared-baseline speedup across AR and SPS verifiers
+
+
+**Shared-backbone SPS-MTP**:
+An SPS model whose multi-horizon proposal and first-horizon verification use the same backbone weights. Its ordinary-decoding baseline uses that same model with the first prediction slot only.
+_Avoid_: Separate draft backbone, unchanged pretrained verifier
+
+
+**SPS verifier**:
+The first-prediction-slot distribution of an SPS model against which speculative proposals are accepted or corrected. In shared-backbone SPS-MTP it is a role of the same model that proposes the block.
+_Avoid_: Original AR verifier, external teacher
+
+
+**AR Qwen control**:
+The original instruction-tuned autoregressive Qwen model used as the quality reference and the verifier for the EAGLE-3 comparison arm. It is distinct from the adapted SPS verifier.
+_Avoid_: SPS baseline, continued-AR adaptation control
+
+
+**EAGLE-3 control**:
+Speculative decoding of the AR Qwen control with a compatible EAGLE-3 proposer. Its matched-verifier speedup is measured against ordinary decoding of that AR Qwen control.
+_Avoid_: EAGLE-3 verification by SPS, common-verifier comparison with SPS-MTP

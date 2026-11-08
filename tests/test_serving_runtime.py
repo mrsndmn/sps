@@ -1,0 +1,102 @@
+"""Runtime preparation isolation and binary/source provenance gates."""
+
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from scripts import serving_runtime as runtime
+
+
+def test_runtime_job_uses_one_gpu_and_preserves_project_interpreter():
+    payload = runtime.payload(Path("/staged"))
+    assert payload["instance_type"] == "a100.1gpu"
+    assert str(runtime.launch.PYTHON) in payload["script"]
+    assert "--worker" in payload["script"]
+    assert runtime.RUNTIME.parent == runtime.ENV_ROOT
+    assert runtime.c.VLLM_BASE in runtime.WHEEL
+
+
+def test_runtime_rejects_overwriting_existing_environment(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime, "RUNTIME", tmp_path)
+    (tmp_path / "pyvenv.cfg").write_text("home = /other/python")
+    with pytest.raises(RuntimeError, match="unowned"):
+        runtime.worker()
+    (tmp_path / ".sps-runtime-owner.json").write_text(json.dumps({"other": "owner"}))
+    with pytest.raises(RuntimeError, match="unrelated"):
+        runtime.worker()
+
+
+def test_precompiled_runtime_rejects_unaccounted_source_or_binary_changes(monkeypatch):
+    changed = list(runtime.OVERLAY) + ["docs/features/speculative_decoding/sps.md"]
+    monkeypatch.setattr(runtime.launch, "git", lambda *args: "\n".join(changed))
+    runtime.validate_overlay()
+    changed.append("csrc/attention.cu")
+    with pytest.raises(RuntimeError, match="Unexpected compiled/runtime"):
+        runtime.validate_overlay()
+
+
+def test_overlay_does_not_mutate_cached_wheel_or_other_environments(tmp_path):
+    cached = tmp_path / "cached.py"
+    cached.write_text("upstream")
+    installed = tmp_path / "installed.py"
+    other = tmp_path / "other.py"
+    os.link(cached, installed)
+    os.link(cached, other)
+    source = tmp_path / "source.py"
+    source.write_text("SPS implementation")
+    runtime.replace_overlay(source, installed)
+    assert installed.read_text() == "SPS implementation"
+    assert cached.read_text() == other.read_text() == "upstream"
+    assert installed.stat().st_ino != cached.stat().st_ino
+
+
+def test_runtime_child_uses_matching_headers_and_tools_without_activating(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(runtime, "RUNTIME", tmp_path)
+    monkeypatch.setenv("PATH", "/project/bin")
+    monkeypatch.setenv("C_INCLUDE_PATH", "/python310/include")
+    monkeypatch.setenv("CPLUS_INCLUDE_PATH", "/python310/include")
+    toolkit = tmp_path / "lib/python3.12/site-packages/nvidia/cu13"
+    (toolkit / "bin").mkdir(parents=True)
+    (toolkit / "bin/nvcc").touch()
+    env = runtime.runtime_environment()
+    assert env["PATH"].split(os.pathsep)[:2] == [
+        str(tmp_path / "bin"),
+        str(toolkit / "bin"),
+    ]
+    assert env["CUDA_HOME"] == env["CUDA_PATH"] == str(toolkit)
+    assert "C_INCLUDE_PATH" not in env and "CPLUS_INCLUDE_PATH" not in env
+    assert os.environ["PATH"] == "/project/bin"
+    assert os.environ["C_INCLUDE_PATH"] == "/python310/include"
+
+
+def test_cuda_linker_alias_is_private_and_child_paths_preserve_parent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(runtime, "RUNTIME", tmp_path)
+    library = tmp_path / "lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13"
+    library.parent.mkdir(parents=True)
+    library.write_bytes(b"runtime library")
+    monkeypatch.setenv("LIBRARY_PATH", "/parent/link")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/parent/load")
+    runtime.prepare_cuda_linker()
+    runtime.prepare_cuda_linker()
+    alias = tmp_path / ".sps-cuda-link/libcudart.so"
+    assert alias.is_symlink() and alias.resolve() == library
+    assert library.read_bytes() == b"runtime library"
+    assert not (library.parent / "libcudart.so").exists()
+    env = runtime.runtime_environment()
+    assert env["LIBRARY_PATH"].split(os.pathsep) == [str(alias.parent), "/parent/link"]
+    assert env["LD_LIBRARY_PATH"].split(os.pathsep) == [
+        str(library.parent),
+        "/parent/load",
+    ]
+    assert os.environ["LIBRARY_PATH"] == "/parent/link"
+    assert os.environ["LD_LIBRARY_PATH"] == "/parent/load"
+    alias.unlink()
+    alias.write_text("unrelated")
+    with pytest.raises(RuntimeError, match="Unexpected CUDA linker alias"):
+        runtime.prepare_cuda_linker()
