@@ -14,7 +14,13 @@ Native target graph capture and replay passed for SPS and SPS-MTP. Both arms
 exactly matched the training-runtime greedy reference on the correctness pilot.
 The observer recorded 30 target replays for SPS and 12 for SPS-MTP; capture alone
 is not accepted as replay evidence. Named worker-extension RPC methods keep the
-default serialization policy. Quality and speed measurements remain pending.
+default serialization policy.
+
+Thinking AR and EAGLE-3 completed with actual target replay evidence. Median
+decode throughput is 193.55 and 282.44 tokens/s; the paired median EAGLE-3
+speedup is 1.46x against AR with graphs. Accuracy remains 62% for both, and
+the first-trial token sequences exactly match the eager pilot. SPS and
+non-thinking graph comparisons remain pending.
 
 ## Conclusions
 
@@ -26,3 +32,4 @@ their quality and speed with the eager pilot.
 - 2026-11-08: Defined isolated CUDA-graph correctness gate and benchmark continuation.
 - 2026-11-09: Observed successful capture; replaced callable observer RPC with named worker methods.
 - 2026-11-09: Passed actual target replay and greedy parity for both SPS arms; submitted benchmark continuation.
+- 2026-11-09: Completed the graph-enabled AR/EAGLE-3 thinking comparison.
