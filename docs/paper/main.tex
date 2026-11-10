@@ -1,0 +1,62 @@
+\documentclass[11pt]{article}
+\usepackage[review]{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{booktabs}
+\title{Adapting Pretrained Language Models to State--Prediction Separation}
+\author{Anonymous Authors}
+\begin{document}
+\maketitle
+\begin{abstract}
+Can an existing autoregressive model be converted to a state--prediction separated (SPS) Transformer without losing quality? Two-stage adaptation recovers much of the initial conversion loss across five base models, but no final CE or CE+KD checkpoint preserves every measured source metric. For an instruction-tuned model, improved accuracy on a shared partial MMLU subset coexists with worse instruction following. These preliminary results motivate treating language modeling and instruction retention as separate adaptation objectives.
+\end{abstract}
+
+\section{Question and approach}
+SPS separates persistent text states from next-token prediction states \citep{monea2026sps}. We study conversion of pretrained weights rather than training an SPS model from scratch. In zero-window SPS, a prediction slot follows each text token; text positions cannot attend to prediction slots. Each prediction slot reads the causal text prefix and itself.
+
+We first learn only the new prediction embedding, then unfreeze the model. We compare cross-entropy (CE) with CE plus distribution matching to the frozen source model (CE+KD). Base experiments cover SmolLM2-135M, 360M and 1.7B, and Qwen3-0.6B-Base and 1.7B-Base. Instruction experiments use post-trained Qwen3-1.7B and matched AR continuation controls. Implementation and detailed results are deferred to the appendix.
+
+\section{Main observations}
+\paragraph{Adaptation repairs conversion, but retention is incomplete.}
+For SmolLM2-135M, untrained conversion raises held-out NLL from 2.828 to 6.165; two-stage CE reduces it to 2.857. The staged recipe improves LAMBADA over immediate full adaptation by 0.80 percentage points, but remains below the source. Across all five base models, KD improves final NLL over CE, yet neither recipe preserves every source benchmark and NLL (Appendix~\ref{app:base}).
+
+\paragraph{Knowledge-test gains do not imply instruction retention.}
+Table~\ref{tab:main} compares the instruction-tuned source and final constant-LR adaptations. SPS CE improves partial generative MMLU accuracy while losing 12.93 points on non-thinking IFEval \citep{zhou2023ifeval}. AR continuation also loses non-thinking IFEval quality, so the decline is not unique to SPS. However, SPS remains below its matched AR control in that mode.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lrrr}
+\toprule
+& Partial & \multicolumn{2}{c}{IFEval}\\
+Model & MMLU T & T & NT\\
+\midrule
+Source & 67.22 & 65.62 & 65.43\\
+SPS CE & \textbf{70.74} & 64.14 & 52.50\\
+SPS CE+KD & 69.06 & 64.33 & 55.82\\
+AR CE & 69.94 & \textbf{66.91} & 54.16\\
+AR CE+KD & 67.95 & 60.26 & 60.81\\
+\bottomrule
+\end{tabular}
+\caption{Qwen3-1.7B instruct, step 512 adaptations. Percent accuracy; IFEval uses prompt-level strict accuracy on all 541 prompts. T/NT: thinking/non-thinking. MMLU uses the same 3,859 questions for every row, not the full test.}
+\label{tab:main}
+\end{table}
+
+The shared MMLU subset \citep{hendrycks2021mmlu} covers 27.48\% of the test and is an ordered subject prefix, not a random sample. Invalid answers count as errors. Their rate falls from 19.93\% to 11.27\% for SPS CE, so the accuracy gain need not reflect knowledge alone. We do not claim full-MMLU retention.
+
+\paragraph{More updates are not sufficient.}
+Neither warmup/cosine scheduling nor continuation on the same instruction corpus consistently removes the IFEval deficit. Thinking targets are source-generated, whereas non-thinking targets come from SmolTalk; this confounds generation mode with target provenance. Even CE therefore includes sequence-level distillation for thinking. Matching target provenance is a more direct next test than simply extending training.
+
+\section{Takeaway}
+Pretrained SPS conversion is feasible as an adaptation procedure, but lossless quality transfer is not established. Distribution matching helps base-model NLL; instruction following remains a separate failure mode.
+
+\section*{Limitations}
+This is an exploratory, single-training-seed draft. Partial MMLU is not representative of the full test; instruction-score differences have no uncertainty estimates here. Most base configurations lack AR continuation controls. No inference-speed or capacity claim is made. Full provenance, repeated seeds and a complete matched generation evaluation are needed before submission.
+
+\bibliography{references}
+\clearpage
+\appendix
+\input{appendix}
+\end{document}
