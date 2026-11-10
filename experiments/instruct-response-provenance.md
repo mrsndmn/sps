@@ -1,0 +1,14 @@
+# Hypothesis
+Replacing corpus non-thinking answers with answers from the original instruction model can reduce adaptation-induced instruction loss. Paired prompt selection separates response provenance from changes in prompt composition.
+
+# Setup
+`scripts.provenance_prepare.worker` prepares paired conditions. Preparation settings and allocation are defined in its executable experiment registry. AR/SPS training is a dependent next stage, after accepted-pair coverage and token budgets are inspected.
+
+# Results
+Pending.
+
+# Conclusions
+Keep thinking answers identical and retain the same accepted prompts in both conditions. Report rejected responses and mode-specific token totals before fixing training budgets. Compare the change in the SPS–AR gap across response sources; do not select answers or checkpoints on the final benchmark.
+
+# Changelog
+- 2026-11-10: Added isolated resumable paired-response preparation using the frozen source model.
