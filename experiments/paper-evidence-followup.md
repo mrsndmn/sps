@@ -11,4 +11,5 @@ Initial paired analysis reproduces the manuscript's shared thinking MMLU subset.
 Run the kernel/cache gate before expanding serving measurements. Next implement matched response-provenance preparation and AR/SPS CE controls, then select a recipe using separate validation data before broader evaluation and seed replication. Follow with first-slot-preserving MTP and matched quality/latency/memory evaluation. The initial gate alone cannot prove general sampling equivalence; real-checkpoint block logits, cache rejection paths and independent quality sampling remain necessary.
 
 # Changelog
+- 2026-11-10: Submitted runtime audit as `lm-mpi-job-8d5e952d-1f0c-4025-b510-c486b1897e5d`; independent review approved and durable observation registered.
 - 2026-11-10: Started saved-answer diagnostics and isolated runtime correctness checks; retained later training and serving stages as dependent follow-ups.
