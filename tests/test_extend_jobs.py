@@ -20,10 +20,17 @@ def test_each_epoch_is_complete_and_different():
         assert sc.global_batch_indices(step,count,batch,seed)==tuple(epochs[step//512][(step%512)*16:(step%512+1)*16])
 
 
-def test_cli_and_one_gpu_eval_identity():
+def test_cli_and_one_gpu_eval_identity(tmp_path):
     env={**os.environ,'SPS_EXPERIMENT_SUITE':c.SOURCE_SUITE}
+    # Keep real CLI parsing and payload generation, isolate completion markers.
+    cli = '''from pathlib import Path
+import sys
+from scripts import extend_run as runner
+runner.sc.e.COMMON_ROOT = Path(sys.argv.pop(1))
+runner.main()
+'''
     for phase,step in [('train','2048'),('eval','1024'),('eval','1536'),('eval','2048')]:
-        p=subprocess.run([sys.executable,'-m','scripts.extend_run','--phase',phase,'--variant',step,'--dry','--filter','staged_sps_ce'],capture_output=True,text=True,check=True,env=env)
+        p=subprocess.run([sys.executable,'-c',cli,str(tmp_path),'--phase',phase,'--variant',step,'--dry','--filter','staged_sps_ce'],capture_output=True,text=True,check=True,env=env)
         assert 'scripts.extend_run' in p.stdout
         assert f'step{step}' in p.stdout
         assert ('a100.4gpu' if phase=='train' else 'a100.1gpu') in p.stdout

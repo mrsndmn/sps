@@ -24,7 +24,7 @@ def test_schedule_and_resume():
     with pytest.raises(ValueError): c.learning_rate(c.STEPS)
 
 
-def test_isolation_and_dry_payload():
+def test_isolation_and_dry_payload(tmp_path):
     env={**os.environ,'SPS_EXPERIMENT_SUITE':c.SOURCE_SUITE}
     code='''import experiments as e
 from scripts import base50_config as c
@@ -43,7 +43,14 @@ assert len(exps)==1 and exps[0].distillation_weight==0
 assert payload(exps[0],Path("/tmp/staged"))["instance_type"]==e.INSTANCE_TYPES_BY_NUM_GPUS[4]
 '''
     subprocess.run([sys.executable,'-c',code],env=env,check=True)
-    result=subprocess.run([sys.executable,'-m','scripts.base50_run','--dry'],env=env,check=True,capture_output=True,text=True)
+    # Exercise the real CLI parser without consulting completed production runs.
+    cli = '''from pathlib import Path
+import sys
+from scripts import base50_run as runner
+runner.e.RUN_ROOT = Path(sys.argv.pop(1)) / 'runs'
+runner.main()
+'''
+    result=subprocess.run([sys.executable,'-c',cli,str(tmp_path),'--dry'],env=env,check=True,capture_output=True,text=True)
     data=json.loads(result.stdout)
     assert 'scripts.base50_run --worker' in data['script']
     assert 'qwen3-base-1.7b-ce-50k' in data['job_desc']
