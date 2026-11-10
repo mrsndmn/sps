@@ -11,7 +11,7 @@
 \begin{document}
 \maketitle
 \begin{abstract}
-Can an existing autoregressive model be converted to a state--prediction separated (SPS) Transformer without losing quality? Two-stage adaptation recovers much of the initial conversion loss across five base models, but no final CE or CE+KD checkpoint preserves every measured source metric. For an instruction-tuned model, improved accuracy on a shared partial MMLU subset coexists with worse instruction following. These preliminary results motivate treating language modeling and instruction retention as separate adaptation objectives.
+Can an existing autoregressive model be converted to a state--prediction separated (SPS) Transformer without losing quality? Two-stage adaptation recovers much of the initial conversion loss across five base models, but no final CE or CE+KD checkpoint preserves every measured source metric. For an instruction-tuned model, improved accuracy on a shared partial MMLU subset coexists with worse instruction following. A separate single-request serving pilot finds shared-backbone SPS speculative decode-throughput gains of 1.58--1.80$\times$ with target decode CUDA graphs, without establishing preserved sampled quality. These preliminary results motivate treating language modeling, instruction retention and serving efficiency as separate adaptation objectives.
 \end{abstract}
 
 \section{Question and approach}
@@ -49,11 +49,14 @@ The shared MMLU subset \citep{hendrycks2021mmlu} covers 27.48\% of the test and 
 \paragraph{More updates are not sufficient.}
 Neither warmup/cosine scheduling nor continuation on the same instruction corpus consistently removes the IFEval deficit. Thinking targets are source-generated, whereas non-thinking targets come from SmolTalk; this confounds generation mode with target provenance. Even CE therefore includes sequence-level distillation for thinking. Matching target provenance is a more direct next test than simply extending training.
 
+\paragraph{Serving gains depend on the verifier and execution mode.}
+In a separate vLLM pilot on 100 MMLU STEM questions, a jointly adapted SPS model uses one backbone for multi-token proposals and verification. With target decode CUDA graphs, SPS-MTP reaches 1.58$\times$ thinking and 1.80$\times$ non-thinking decode-throughput gains against the same final SPS weights without speculation. EAGLE-3 reaches 1.46$\times$ and 1.60$\times$ against the original AR verifier. These are separate baselines, not a fixed-target comparison between draft methods. SPS-MTP thinking accuracy is 63\%, versus 70\% for its SPS baseline; graph execution itself leaves all sampled token sequences unchanged from eager execution. Appendix~\ref{app:serving} gives the protocol and both execution-mode results. This STEM pilot is distinct from the larger partial MMLU comparison above.
+
 \section{Takeaway}
-Pretrained SPS conversion is feasible as an adaptation procedure, but lossless quality transfer is not established. Distribution matching helps base-model NLL; instruction following remains a separate failure mode.
+Pretrained SPS conversion is feasible as an adaptation procedure, but lossless quality transfer is not established. Distribution matching helps base-model NLL; instruction following remains a separate failure mode. Shared-backbone speculation offers measured serving gains on the small pilot, while quality retention remains unresolved.
 
 \section*{Limitations}
-This is an exploratory, single-training-seed draft. Partial MMLU is not representative of the full test; instruction-score differences have no uncertainty estimates here. Most base configurations lack AR continuation controls. No inference-speed or capacity claim is made. Full provenance, repeated seeds and a complete matched generation evaluation are needed before submission.
+This is an exploratory, single-training-seed draft. Partial MMLU is not representative of the full test; instruction-score differences have no uncertainty estimates here. Most base configurations lack AR continuation controls. The speed results cover only a small, single-GPU, batch-one pilot with target decode graphs and no Torch compilation; they do not establish production throughput, fixed-length speedups or speculative sampling-distribution equivalence. No capacity claim is made. Repeated training seeds and broader matched quality and serving evaluations are needed before submission.
 
 \bibliography{references}
 \clearpage

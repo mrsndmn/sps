@@ -74,7 +74,66 @@ Cosine/512 & SPS CE & 67.92 & 16.30\\
 
 There are no saved non-thinking MMLU responses for the source or three constant-step-512 adaptations. The all-variant non-thinking intersection is therefore empty. Nine available variants share 1,377 questions across 11 subjects, but this cannot establish retention against the source. Absolute thinking and non-thinking scores on these different subsets are not comparable. The shared-subset result is descriptive and does not establish statistical significance.
 
-\section{Evidence and draft scope}
-The code registries are the single source of experimental configuration. Base runs use \texttt{scripts/ar\_sps\_config.py}; instruction, scheduling and continuation runs use the corresponding \texttt{instruct}, \texttt{sched} and \texttt{extend} configuration modules. Training and evaluation workers are separate. Measured evidence locations are documented in the accompanying draft README and Russian appendix notes.
+\section{Shared-backbone speculative serving pilot}\label{app:serving}
+\paragraph{Models and adaptation.}
+This experiment is separate from both the base-model conversion matrix and the constant-LR instruction checkpoints in Table~\ref{tab:main}. The AR verifier is the original post-trained \texttt{Qwen/Qwen3-1.7B}; EAGLE-3 \citep{li2025eagle3} uses the same verifier with the published \texttt{AngelSlim/Qwen3-1.7B\_eagle3} draft. For SPS, we initialize from the existing cosine-schedule instruction checkpoint at step 512 and add three prediction embeddings to its first prediction slot. Assistant-masked horizon training first updates only the new embeddings for 102 steps, then the shared backbone and all prediction embeddings for 410 steps. This continuation consumes 8,192 examples, approximately 5.17 million input tokens, including 2.63 million assistant tokens; its context limit is 2,048. Full-stage held-out horizon CE decreases from 2.181 to 1.603. This horizon loss is not a first-slot quality or retention measure.
 
-This draft excludes MTP, serving speed and the long base-training follow-up. The remaining full benchmark tables, complete model/data bibliography and publication-ready uncertainty analysis are not yet incorporated. No new experiments were run for manuscript preparation.
+The final adapted checkpoint supplies both the ordinary SPS baseline and SPS-MTP: there is no separate SPS draft backbone and no inference-time weight change between those two arms. Each real-token prefix has four causal prediction slots; later slots propose successors of the pending first-slot sample. Verification processes the candidate real-token block and prediction groups in one backbone traversal. Prediction states can read their own group's earlier prediction slots and causal real-token KV; real states cannot read prediction states, and only real-token KV persists. SPS proposals are greedy; target sampling uses vLLM's rejection sampler. The AR and SPS verifier weights differ, so their relative speedups must be interpreted against separate baselines.
+
+\paragraph{Evaluation and timing.}
+We run native vLLM \citep{kwon2023vllm} on one A100-SXM4-80GB per evaluation job, BF16, tensor parallelism one, with a single active request and Triton attention. A seeded, subject-balanced round-robin procedure selects the same 100 STEM test questions for every arm and mode. This is a small fixed pilot, not full MMLU, a uniformly sampled MMLU test, or the 3,859-question intersection in the instruction analysis. Thinking uses temperature 0.6, top-$p$ 0.95, top-$k$ 20 and a 2,048-token output cap; non-thinking uses 0.7, 0.8, 20 and 512, respectively. All speculative arms propose up to three tokens. Prefix caching, chunked prefill and asynchronous scheduling are disabled. Two requests with shortened output caps warm the engine before three timed repetitions of the same questions and per-question seeds. Accuracy is reported from the first timed repetition; timing repeats are not independent quality samples.
+
+For repetition $r$, aggregate decode throughput is
+\[
+D_r=\frac{\sum_{i=1}^{100}\max(n_{ir}-1,0)}{\sum_{i=1}^{100}(t^{\rm last}_{ir}-t^{\rm first}_{ir})},
+\]
+where $n_{ir}$ counts generated tokens and vLLM timestamps delimit the first and last generated token events. Prefill is excluded. Tables report $\mathrm{median}_r D_r$ and the median paired ratio $D^{\rm spec}_r/D^{\rm verifier}_r$. The reported speedup need not equal the ratio of the two separately reported throughput medians. Request latency is measured separately around generation with device synchronization. Neither throughput ratios nor request latency compare identical output lengths across draft methods: sampling can produce different continuations. Invalid final answers count as errors, and capped outputs remain in the accuracy denominator.
+
+\paragraph{CUDA graph scope and correctness.}
+We compare eager execution with full \emph{target decode} CUDA graphs, without Torch compilation; prefill is outside the graph. The graph implementation also replaces SPS per-forward Python state assignments with copies into persistent hidden and position buffers, which graph replay updates. Eager and graph runs thus use separately pinned serving implementations with identical model weights. Named worker-extension RPC methods count actual target replay during initial untimed requests, and restore the replay method before timed generation. Every graph arm records positive target replay evidence; this does not establish capture of the separate EAGLE drafter or imply that every irregular decode block uses a graph. Both SPS arms pass exact greedy parity with the original training-runtime reference on two prefixes of up to 16 generated tokens. Across the timed suite, all 2,400 graph-generated token sequences exactly match their corresponding eager sequences. These checks do not establish general sampling-distribution equivalence between speculative and non-speculative generation.
+
+\begin{table*}[t]
+\centering\small
+\begin{tabular}{lrrrrrr}
+\toprule
+& \multicolumn{3}{c}{Thinking} & \multicolumn{3}{c}{Non-thinking}\\
+Model & Acc. (\%) & Decode tok/s & Speedup & Acc. (\%) & Decode tok/s & Speedup\\
+\midrule
+AR & 62 & 193.55 & 1.00$\times$ & 57 & 199.48 & 1.00$\times$\\
+AR + EAGLE-3 & 62 & 282.44 & 1.46$\times$ & 63 & 319.62 & 1.60$\times$\\
+SPS & 70 & 161.54 & 1.00$\times$ & 55 & 185.60 & 1.00$\times$\\
+SPS + MTP & 63 & 254.71 & 1.58$\times$ & 59 & 334.87 & 1.80$\times$\\
+\bottomrule
+\end{tabular}
+\caption{Fixed MMLU STEM pilot with full target decode CUDA graphs. Speedup uses the matching verifier with graphs: AR for EAGLE-3, final SPS for SPS-MTP. Rows therefore do not share one verifier. Accuracy is based on 100 questions; three timing repetitions reuse seeds.}
+\label{tab:serving-graphs}
+\end{table*}
+
+\begin{table*}[t]
+\centering\small
+\begin{tabular}{lrrrrrr}
+\toprule
+& \multicolumn{3}{c}{Thinking} & \multicolumn{3}{c}{Non-thinking}\\
+Model & Eager tok/s & Eager speedup & Graph speedup & Eager tok/s & Eager speedup & Graph speedup\\
+\midrule
+AR & 43.03 & 1.00$\times$ & 1.00$\times$ & 44.99 & 1.00$\times$ & 1.00$\times$\\
+AR + EAGLE-3 & 68.38 & 1.59$\times$ & 1.46$\times$ & 79.51 & 1.75$\times$ & 1.60$\times$\\
+SPS & 36.66 & 1.00$\times$ & 1.00$\times$ & 37.19 & 1.00$\times$ & 1.00$\times$\\
+SPS + MTP & 74.67 & 2.04$\times$ & 1.58$\times$ & 85.95 & 2.32$\times$ & 1.80$\times$\\
+\bottomrule
+\end{tabular}
+\caption{Execution-mode sensitivity on the same pilot. Eager and graph speedups each use their own execution-mode-matched verifier baseline. Graph throughput is in Table~\ref{tab:serving-graphs}; answers and accuracy are unchanged between execution modes.}
+\label{tab:serving-eager}
+\end{table*}
+
+\paragraph{Results and interpretation.}
+Tables~\ref{tab:serving-graphs}--\ref{tab:serving-eager} show that graphs increase absolute throughput for every arm but reduce relative speculative gains. With graphs, SPS-MTP achieves 1.58$\times$ thinking and 1.80$\times$ non-thinking speedups; observed timing-repeat ranges are 1.57--1.58$\times$ and 1.80--1.81$\times$. These are timing ranges, not confidence intervals over questions or training seeds. EAGLE-3 reaches 1.46$\times$ and 1.60$\times$. Its absolute thinking throughput exceeds SPS-MTP (282.44 versus 254.71 tok/s), while SPS-MTP has higher absolute non-thinking throughput (334.87 versus 319.62 tok/s). For SPS/SPS-MTP, the median over repetitions of mean request generation latency is 6.259/4.106 seconds in thinking and 0.301/0.168 seconds in non-thinking; request latency also depends on the sampled response lengths.
+
+Faster non-thinking decoding co-occurs with shorter outputs and higher draft acceptance. SPS-MTP averages 1,038 thinking versus 47 non-thinking output tokens, with 38.9\% versus 52.7\% of proposed tokens accepted. EAGLE-3 acceptance is 33.5\% versus 41.5\%. Acceptance counters include warmup and, for SPS arms, the untimed greedy checks; we did not separately profile the causal contributions of acceptance, context length and launch overhead.
+
+No quality-preserving acceleration claim follows from this pilot. SPS-MTP thinking accuracy is 63\%, versus 70\% for the same SPS verifier without speculation; its non-thinking accuracy is 59\%, versus 55\%. For AR/EAGLE-3 the corresponding accuracies are 62/62\% and 57/63\%. Thinking output-cap rates are 13/18\% for SPS/SPS-MTP and 24/26\% for AR/EAGLE-3; non-thinking cap rates are 1/1\% and 7/5\%, respectively. Mode-dependent sampling, a small fixed question set and output truncation limit the quality interpretation. A fixed-length decode study, repeated quality seeds, broader tasks and a same-verifier comparison of draft methods remain separate follow-up experiments.
+
+\section{Evidence and draft scope}
+The code registries are the single source of experimental configuration. Base runs use \texttt{scripts/ar\_sps\_config.py}; instruction, scheduling and continuation runs use the corresponding \texttt{instruct}, \texttt{sched} and \texttt{extend} configuration modules. Serving definitions, training, timing and aggregation use the \texttt{vllm\_sps} and \texttt{serving\_graphs} script families. Training and evaluation workers are separate. The accompanying draft README and Russian appendix notes list source paths, measured evidence locations and pinned serving revisions.
+
+This draft includes the shared-backbone vLLM MTP pilot, but excludes the earlier alternative speculative prototypes and the long base-training follow-up. The remaining full benchmark tables, complete model/data bibliography and publication-ready uncertainty analysis are not yet incorporated. No new training or evaluation jobs were run for manuscript preparation.
