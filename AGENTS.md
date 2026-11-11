@@ -61,3 +61,4 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.paper_diagnostics` → paired saved-answer analysis; `tests/test_paper_diagnostics.py`.
 - `python -m scripts.sampling_audit` → one-GPU vLLM kernel/cache audit; `tests/test_sampling_audit.py`.
 - `python -m scripts.provenance_prepare` → paired response-provenance preparation; `tests/test_provenance_prepare.py`.
+- `python -m scripts.sampling_trace` → one-GPU same-prefix distribution diagnosis after failed greedy audit; `tests/test_sampling_trace.py`.
