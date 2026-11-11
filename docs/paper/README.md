@@ -44,6 +44,14 @@ External artifacts root:
 - Serving per-arm evidence: each serving root's `runs/out/<arm>-<mode>/` contains
   `manifest.json`, `evaluated.json`, `samples.jsonl` and serving provenance;
   graph arms additionally contain `cudagraph.json` with observed target replay.
+- Expanded correctness: `sps-sampling-audit/runs/out/kernel-and-cache/report.json`
+  records the failed greedy gate; `sps-sampling-trace/runs/out/divergence-distributions/`
+  holds full distributions. Derived stable-tie comparisons and head controls are in
+  `sps-sampling-precision/runs/out/matched-slots-and-head/report.json`.
+  Pre-sampler observations are in `sps-sampling-cache-trace/runs/out/target-logits/`;
+  the FP16 control is in `sps-sampling-backbone-precision/runs/out/fp16-backbone/`.
+  Diagnostic `passed` markers indicate completed collection, not passage of the
+  original sampling gate. Designs live in the corresponding `scripts/sampling_*.py`.
 - SPS-MTP training/export: `vllm-sps-qwen3/runs/out/qwen3_sps_mtp/` contains
   `trained.json`, `metrics.jsonl` and the final weights/export. AR/EAGLE use the
   original Qwen verifier; SPS/SPS-MTP share this final, jointly adapted verifier.

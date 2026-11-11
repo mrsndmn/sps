@@ -15,10 +15,14 @@ With matched four-slot execution, cached greedy differences decreased from 16/11
 
 Cached target-logit observation reproduced all selected generation outputs and validated every observed greedy emitted token against its verifier argmax. On the three first-divergence histories, sequential/speculative total variation was approximately 0.01517, 0.01241 and 0.00826. Cold full-prefix argmax agreed with speculative decoding on all three, but distributions were not identical. Divergences appeared at bonus, second verification and first verification rows, respectively. The discrepancy therefore precedes rejection sampling in these traces; neither exact arithmetic nor cache correctness has yet been established.
 
+The FP16-backbone control with FP32 head reduced matched-slot cached differences to 2/112, both EOS variants of one prefix. The remaining prefix differs from the three affected prefixes in the preceding BF16-backbone/FP32-head control; this is not a nested set of repaired cases. Its first differing token occurred at zero-based output offset 35. Four-slot ordinary/speculative full-prefix distributions were identical on all 13 diagnostic histories. The source export is FP32, so both weight rounding and arithmetic changed. These controls support precision sensitivity but do not eliminate the discrepancy or pass the original BF16 gate.
+
 # Conclusions
-Run the kernel/cache gate before expanding serving measurements. Next implement matched response-provenance preparation and AR/SPS CE controls, then select a recipe using separate validation data before broader evaluation and seed replication. Follow with first-slot-preserving MTP and matched quality/latency/memory evaluation. The initial gate alone cannot prove general sampling equivalence; real-checkpoint block logits, cache rejection paths and independent quality sampling remain necessary.
+The kernel checks pass, but expanded cached greedy equivalence remains failed. Record this limitation in the manuscript before expanding serving measurements. Further correctness work should separate cache-state/position invariants from numerical effects and test positive-temperature sampling on the actual model; repeated precision variants alone cannot establish equivalence. Paired response-provenance preparation has been submitted and remains under durable observation. Inspect its outputs before implementing the AR/SPS CE controls, then select a recipe using separate validation data before broader evaluation and seed replication. Follow with first-slot-preserving MTP and matched quality/latency/memory evaluation. The initial gate alone cannot prove general sampling equivalence; real-checkpoint block logits, cache rejection paths and independent quality sampling remain necessary.
 
 # Changelog
+
+- 2026-11-11: Recorded completed FP16 control (remaining 2/112 differences) and incorporated the expanded correctness evidence and limitations into the manuscript.
 
 - 2026-11-11: Submitted FP16-backbone control as `lm-mpi-job-769d7189-ca4c-41a6-8e44-1afdaca98630`; focused tests and independent adversarial review passed, durable observation registered.
 
