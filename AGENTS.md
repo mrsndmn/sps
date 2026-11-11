@@ -65,3 +65,5 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.sampling_precision` → one-GPU matched-slot cache and FP32-head diagnostics; `tests/test_sampling_precision.py`.
 
 - `python -m scripts.sampling_cache_trace` → one-GPU pre-sampler cached target-logit diagnosis; `tests/test_sampling_cache_trace.py`.
+
+- `python -m scripts.sampling_backbone_precision` → one-GPU FP16-backbone cached verification control; `tests/test_sampling_backbone_precision.py`.
