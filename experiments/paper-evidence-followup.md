@@ -18,6 +18,8 @@ Run the kernel/cache gate before expanding serving measurements. Next implement 
 
 # Changelog
 
+- 2026-11-11: Submitted cached target-logit trace as `lm-mpi-job-29d7abea-3ab6-4487-87e2-a6c735cf243c`; focused tests passed and independent adversarial review approved.
+
 - 2026-11-11: Recorded completed precision diagnosis and added target-logit observation at the remaining divergent histories, with output reproduction checks and cold-prefix comparison.
 
 - 2026-11-11: Submitted matched-slot/head diagnostic as `lm-mpi-job-f79d94ac-dc0b-4cfc-aa22-fded96a2e273`; independent review approved and durable observation registered.
