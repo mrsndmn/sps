@@ -170,9 +170,10 @@ def compare(a,b):
     a,b=check_logprobs(a),check_logprobs(b)
     if a.shape!=b.shape:raise ValueError('Vocabulary mismatch')
     p,q=np.exp(a),np.exp(b)
-    order_a=np.argsort(a)[-2:][::-1];order_b=np.argsort(b)[-2:][::-1]
+    order_a=np.argsort(-a,kind='stable')[:2];order_b=np.argsort(-b,kind='stable')[:2]
     top=[int(x) for x in set(order_a.tolist()+order_b.tolist())]
     return dict(argmax_a=int(order_a[0]),argmax_b=int(order_b[0]),
+        top_ties_a=int(np.sum(a==a[order_a[0]])),top_ties_b=int(np.sum(b==b[order_b[0]])),
         top_gap_a=float(a[order_a[0]]-a[order_a[1]]),top_gap_b=float(b[order_b[0]]-b[order_b[1]]),
         total_variation=float(np.abs(p-q).sum()/2),
         top_candidates={str(i):dict(logprob_a=float(a[i]),logprob_b=float(b[i])) for i in sorted(top)})

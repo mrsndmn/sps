@@ -46,3 +46,10 @@ def test_submission_adapter_does_not_recurse_identity_or_touch_parent(tmp_path,m
     assert body['instance_type']==t.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
     assert 'scripts.sampling_trace --worker' in body['script']
     assert t.ROOT!=t.audit.ROOT
+
+
+def test_ties_use_first_token_and_are_reported_explicitly():
+    result=t.compare(np.log([.5,.5]),np.log([.49,.51]))
+    assert result['argmax_a']==0 and result['argmax_b']==1
+    assert result['top_ties_a']==2 and result['top_ties_b']==1
+    assert result['top_gap_a']==0
