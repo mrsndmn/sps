@@ -20,6 +20,8 @@ Run the kernel/cache gate before expanding serving measurements. Next implement 
 
 # Changelog
 
+- 2026-11-11: Submitted FP16-backbone control as `lm-mpi-job-769d7189-ca4c-41a6-8e44-1afdaca98630`; focused tests and independent adversarial review passed, durable observation registered.
+
 - 2026-11-11: Recorded completed cached target-logit diagnosis; added an FP16-backbone numerical control. The source export is FP32, so this intervention changes both weight rounding and arithmetic, not arithmetic alone.
 
 - 2026-11-11: Submitted cached target-logit trace as `lm-mpi-job-29d7abea-3ab6-4487-87e2-a6c735cf243c`; focused tests passed and independent adversarial review approved.
