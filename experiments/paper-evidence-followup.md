@@ -16,6 +16,8 @@ Run the kernel/cache gate before expanding serving measurements. Next implement 
 
 # Changelog
 
+- 2026-11-11: Submitted matched-slot/head diagnostic as `lm-mpi-job-f79d94ac-dc0b-4cfc-aa22-fded96a2e273`; independent review approved and durable observation registered.
+
 - 2026-11-11: Recorded numerical trace evidence; added matched-slot cache and FP32-head diagnosis while preserving failed-gate artifacts.
 
 - 2026-11-11: Submitted distribution diagnosis as `lm-mpi-job-4efd5960-6841-4aff-a889-c8cbefe7632d`; independent review approved and a new durable observation registered.
