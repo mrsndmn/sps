@@ -35,6 +35,10 @@ remain in the Python registries. Base results are recorded in
 External artifacts root:
 `/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts`.
 
+- Paired response replacement: `instruct-provenance-evaluation/reports/nonthinking.json`
+  contains validated paired contrasts, bootstrap intervals and crossed held-out NLL;
+  `scripts/provenance_report.py` reproduces it from saved answers. Thinking results
+  are pending separately. The contrast does not match token exposure or answer length.
 - IFEval: `qwen3-instruct-ifeval/runs/out/*/evaluated.json`.
 - Ablations: `qwen3-instruct-{step384,cosine,extended-2048}/runs/out/`.
 - Partial MMLU: `reports/instruct-mmlu-partial-20261109/report.json` and `metrics.csv`;
