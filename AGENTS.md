@@ -67,3 +67,5 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.sampling_cache_trace` → one-GPU pre-sampler cached target-logit diagnosis; `tests/test_sampling_cache_trace.py`.
 
 - `python -m scripts.sampling_backbone_precision` → one-GPU FP16-backbone cached verification control; `tests/test_sampling_backbone_precision.py`.
+
+- `python -m scripts.provenance_train --arm all` → paired-prompt AR/SPS CE control submission and training; `tests/test_provenance_train.py`.
