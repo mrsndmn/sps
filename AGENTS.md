@@ -71,3 +71,5 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.provenance_train --arm all` → paired-prompt AR/SPS CE control submission and training; `tests/test_provenance_train.py`.
 
 - `python -m scripts.provenance_evaluate` → one-GPU per-mode IFEval and crossed held-out NLL for paired controls; `tests/test_provenance_evaluate.py`.
+
+- `python -m scripts.provenance_report --mode nonthinking|thinking` → paired IFEval contrasts and crossed-NLL evidence report; `tests/test_provenance_report.py`.
