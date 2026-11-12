@@ -71,3 +71,22 @@ def test_train_payload_and_stage_configs():
         assert p['instance_type']==t.launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus]
         assert p['env_variables']['SPS_EXPERIMENT_SUITE']==t.c.SUITE
         assert f'--worker --arm {exp.name}' in p['script']
+
+
+def test_active_reuse_requires_receipt_and_exact_input_identity(tmp_path, monkeypatch):
+    monkeypatch.setattr(t, 'ROOT', tmp_path)
+    exp=t.experiment_configs[0]
+    job='lm-mpi-job-01234567-89ab-4cde-8123-0123456789ab'
+    ident=dict(data='current', code='current', plan={'steps':10})
+    with pytest.raises(RuntimeError,match='receipt'):
+        t.verify_active_identity(exp,job,ident)
+    t.launch.store_json(tmp_path/'submissions'/f'{job}.json',
+        dict(job_name=job,name=exp.name,phase='train',commit='staged-commit'))
+    with pytest.raises(RuntimeError,match='unavailable'):
+        t.verify_active_identity(exp,job,ident)
+    path=t.submission_input_path('staged-commit',exp)
+    t.launch.store_json(path,dict(ident,data='older'))
+    with pytest.raises(RuntimeError,match='differ'):
+        t.verify_active_identity(exp,job,ident)
+    t.launch.store_json(path,ident)
+    t.verify_active_identity(exp,job,ident)

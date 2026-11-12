@@ -160,6 +160,23 @@ def payload(exp, staged):
     return body
 
 
+def submission_input_path(commit, exp):
+    return ROOT / 'submission-inputs' / commit / f'{exp.name}.json'
+
+
+def verify_active_identity(exp, job_name, ident):
+    receipt_path = ROOT / 'submissions' / f'{job_name}.json'
+    if not receipt_path.exists():
+        raise RuntimeError('Active training job has no local provenance receipt')
+    receipt = json.loads(receipt_path.read_text())
+    if (receipt.get('job_name') != job_name or receipt.get('name') != exp.name
+            or receipt.get('phase') != 'train'):
+        raise RuntimeError('Active training receipt mismatch')
+    path = submission_input_path(receipt['commit'], exp)
+    if not path.exists() or json.loads(path.read_text()) != ident:
+        raise RuntimeError('Active training job inputs differ or are unavailable')
+
+
 def submit(selected, dry=False):
     commit = launch.git('rev-parse', 'HEAD')
     staged = launch.STAGING_ROOT / commit
@@ -193,6 +210,7 @@ def submit(selected, dry=False):
         body = payload(exp, staged)
         key = launch.normalize(body['job_desc'])
         if key in active:
+            verify_active_identity(exp, active[key], ident)
             job = dict(name=exp.name, job_name=active[key], reused=True)
         else:
             staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
@@ -205,6 +223,9 @@ def submit(selected, dry=False):
                 raise RuntimeError('Training reservation cap exceeded')
             ledger['attempts'].append(dict(gpu_hours=cost, time=time.time()))
             launch.store_json(path, ledger)
+            # Persist before API send so lost-response intent reconciliation can
+            # recover both the UUID receipt and its exact input identity.
+            launch.store_json(submission_input_path(commit, exp), ident)
             job = launch.submit_payload(client, body, 'train', exp.name, commit)
             active[key] = job['job_name']
         jobs.append(job)
