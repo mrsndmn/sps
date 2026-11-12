@@ -24,6 +24,8 @@ The kernel checks pass, but expanded cached greedy equivalence remains failed. R
 
 # Changelog
 
+- 2026-11-12: Submitted paired CE controls after independent review APPROVE; durable observation registered. continued_ar-corpus `lm-mpi-job-e6959b4e-039e-4c39-b392-92eac461b145`; continued_ar-teacher `lm-mpi-job-da53e0bd-4a71-457a-9839-f912b6e48918`; staged_sps-corpus `lm-mpi-job-042b5ebe-2a61-40c6-8a99-ab1a17c42e77`; staged_sps-teacher `lm-mpi-job-71bb5f41-846e-479a-887c-5ab27ac0bc05`.
+
 - 2026-11-12: Validated completed paired preparation, measured unequal token exposure, and implemented isolated paired-prompt AR/SPS CE controls with fixed final endpoints.
 
 - 2026-11-11: Recorded completed FP16 control (remaining 2/112 differences) and incorporated the expanded correctness evidence and limitations into the manuscript.
