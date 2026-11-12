@@ -90,3 +90,16 @@ def test_active_reuse_requires_receipt_and_exact_input_identity(tmp_path, monkey
         t.verify_active_identity(exp,job,ident)
     t.launch.store_json(path,ident)
     t.verify_active_identity(exp,job,ident)
+
+
+def test_queued_worker_rejects_changed_inputs(tmp_path, monkeypatch):
+    monkeypatch.setattr(t, 'ROOT', tmp_path)
+    monkeypatch.setattr(t.launch, 'git', lambda *args: 'staged-commit')
+    exp=t.experiment_configs[0]
+    ident=dict(data='submitted')
+    with pytest.raises(RuntimeError,match='submission'):
+        t.verify_submitted_identity(exp,ident)
+    t.launch.store_json(t.submission_input_path('staged-commit',exp),ident)
+    t.verify_submitted_identity(exp,ident)
+    with pytest.raises(RuntimeError,match='submission'):
+        t.verify_submitted_identity(exp,dict(data='replaced'))

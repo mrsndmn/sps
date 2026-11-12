@@ -132,9 +132,16 @@ def train_worker(exp):
         trainer.main()
 
 
+def verify_submitted_identity(exp, ident):
+    path = submission_input_path(launch.git('rev-parse', 'HEAD'), exp)
+    if not path.exists() or json.loads(path.read_text()) != ident:
+        raise RuntimeError('Queued training inputs differ from submission or provenance is missing')
+
+
 def worker(exp):
     values, report = paired_data()
     ident = identity(exp, report, make_plan(values))
+    verify_submitted_identity(exp, ident)
     root = output_dir(exp)
     path = root / 'identity.json'
     if path.exists() and json.loads(path.read_text()) != ident:
