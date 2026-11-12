@@ -26,6 +26,8 @@ The kernel checks pass, but expanded cached greedy equivalence remains failed. R
 
 # Changelog
 
+- 2026-11-12: Submitted one-GPU per-mode evaluation after independent review APPROVE; independent thinking/non-thinking observation registered. continued_ar-corpus--nonthinking `lm-mpi-job-4012a1a0-b56a-4ddd-a6fc-aeaab05c8a47`; continued_ar-corpus--thinking `lm-mpi-job-806ec0f6-8a3f-4df7-81f4-953c7b53ac2f`; continued_ar-teacher--nonthinking `lm-mpi-job-d854372b-6fb0-4e83-aa72-1c20a22aabe5`; continued_ar-teacher--thinking `lm-mpi-job-e2334e27-41e3-4b09-9a2d-f7c669fc24d3`; staged_sps-corpus--nonthinking `lm-mpi-job-66d8885c-ea3a-4bca-98c6-bd479c9def55`; staged_sps-corpus--thinking `lm-mpi-job-b6df9dbe-086a-414b-8821-6e73e81f07d5`; staged_sps-teacher--nonthinking `lm-mpi-job-d887a9e6-f41e-47fd-b26f-ae1faa532350`; staged_sps-teacher--thinking `lm-mpi-job-8bce3211-4a08-4bb5-a47c-b7a52d3eb022`.
+
 - 2026-11-12: Recorded all four completed trainings; added paired IFEval in both modes and crossed held-out NLL at fixed final checkpoints, with submission-pinned checkpoint/protocol identities.
 
 - 2026-11-12: Submitted paired CE controls after independent review APPROVE; durable observation registered. continued_ar-corpus `lm-mpi-job-e6959b4e-039e-4c39-b392-92eac461b145`; continued_ar-teacher `lm-mpi-job-da53e0bd-4a71-457a-9839-f912b6e48918`; staged_sps-corpus `lm-mpi-job-042b5ebe-2a61-40c6-8a99-ab1a17c42e77`; staged_sps-teacher `lm-mpi-job-71bb5f41-846e-479a-887c-5ab27ac0bc05`.
