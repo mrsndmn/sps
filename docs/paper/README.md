@@ -37,8 +37,10 @@ External artifacts root:
 
 - Paired response replacement: `instruct-provenance-evaluation/reports/nonthinking.json`
   contains validated paired contrasts, bootstrap intervals and crossed held-out NLL;
-  `scripts/provenance_report.py` reproduces it from saved answers. Thinking results
-  are pending separately. The contrast does not match token exposure or answer length.
+  `instruct-provenance-evaluation/reports/thinking.json` contains the completed
+  thinking contrasts. `scripts/provenance_report.py --mode nonthinking|thinking`
+  reproduces each report from saved answers. The contrast does not match token
+  exposure or answer length.
 - IFEval: `qwen3-instruct-ifeval/runs/out/*/evaluated.json`.
 - Ablations: `qwen3-instruct-{step384,cosine,extended-2048}/runs/out/`.
 - Partial MMLU: `reports/instruct-mmlu-partial-20261109/report.json` and `metrics.csv`;
