@@ -121,3 +121,36 @@ def test_snapshot_excludes_warmup_and_sps_greedy_checks(tmp_path, monkeypatch, a
     assert sweep.untimed_counters(exp) == [
         {"name": "vllm:spec_decode_num_drafts", "value": untimed}
     ]
+
+
+def test_embedding_phase_enables_decoder_checkpoint_recomputation():
+    import torch
+    from transformers import Qwen3Config, Qwen3ForCausalLM
+
+    from modeling.models.sps.pretrained import PretrainedSPS
+    from scripts import draft_sweep_train, vllm_sps_train
+    from scripts.vllm_sps_model import QwenSPSMTP, horizon_targets
+
+    config = Qwen3Config(
+        vocab_size=32,
+        hidden_size=16,
+        intermediate_size=32,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=8,
+        attention_dropout=0.0,
+    )
+    parent = PretrainedSPS(Qwen3ForCausalLM(config).eval())
+    model = QwenSPSMTP(parent, draft_sweep_train.HORIZONS)
+    layer = model.backbone.model.layers[0]
+    assert not layer.training
+
+    draft_sweep_train.training_optimizer(vllm_sps_train.optimizer_for, model, True)
+    assert layer.training and layer.gradient_checkpointing
+    tokens = torch.arange(1, 13)[None]
+    labels = horizon_targets(tokens, torch.ones_like(tokens), model.horizons)
+    loss, _ = model(tokens[:, :-1], targets=labels)
+    loss.backward()
+    assert torch.count_nonzero(model.new_embeddings.grad[-1]) > 0
+    assert all(parameter.grad is None for parameter in model.backbone.parameters())

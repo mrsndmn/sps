@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import sys
+from functools import partial
 from pathlib import Path
 from unittest.mock import patch
 
@@ -37,6 +38,18 @@ def configure():
     common.signature = signature
 
 
+def training_optimizer(optimizer_for, model, frozen):
+    # from_pretrained leaves the nested decoder in eval mode. The checkpointed
+    # decoder layers only recompute activations when they are in training mode.
+    model.train()
+    optimizer = optimizer_for(model, frozen)
+    if frozen:
+        model.backbone.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+    return optimizer
+
+
 def main():
     from scripts import vllm_sps_train as trainer
 
@@ -44,18 +57,10 @@ def main():
     parser.add_argument("--probe", action="store_true")
     args = parser.parse_args()
     configure()
-    optimizer_for = trainer.optimizer_for
-
-    def checkpointed_optimizer(model, frozen):
-        optimizer = optimizer_for(model, frozen)
-        if frozen:
-            model.backbone.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs={"use_reentrant": False}
-            )
-        return optimizer
-
     with (
-        patch.object(trainer, "optimizer_for", checkpointed_optimizer),
+        patch.object(
+            trainer, "optimizer_for", partial(training_optimizer, trainer.optimizer_for)
+        ),
         patch.object(sys, "argv", [__file__] + (["--probe"] if args.probe else [])),
     ):
         trainer.main()
