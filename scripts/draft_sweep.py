@@ -51,11 +51,23 @@ AUDIT_ARMS = {"sps": 0, **{f"sps_mtp-{n}": n for n in DRAFT_LENGTHS}}
 
 
 def protocol_signature():
+    sources = (
+        Path(__file__),
+        Path(bench.__file__),
+        Path(graph.__file__),
+        *(
+            Path(__file__).with_name(name)
+            for name in (
+                "vllm_sps_evaluate.py",
+                "vllm_sps_audit.py",
+                "instruct_generation.py",
+                "report_mmlu_stem.py",
+            )
+        ),
+    )
     parts = (
         training.signature(),
-        common.file_hash(Path(__file__)),
-        common.file_hash(Path(bench.__file__)),
-        common.file_hash(Path(graph.__file__)),
+        {path.name: common.file_hash(path) for path in sources},
         runtime.signature(),
         graph.IMPLEMENTATION,
     )
