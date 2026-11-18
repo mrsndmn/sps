@@ -73,4 +73,4 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.provenance_evaluate` → one-GPU per-mode IFEval and crossed held-out NLL for paired controls; `tests/test_provenance_evaluate.py`.
 
 - `python -m scripts.provenance_report --mode nonthinking|thinking` → paired IFEval contrasts and crossed-NLL evidence report; `tests/test_provenance_report.py`.
-- `python -m scripts.draft_sweep --phase probe|train|audit|eval` / `--report` → `scripts/vllm_sps_train.py`, `scripts/serving_graphs.py`, `tests/test_draft_sweep.py`.
+- `python -m scripts.draft_sweep --phase probe|train|audit|eval` / `--report` → `scripts/draft_sweep_train.py`, `scripts/serving_graphs.py`, `tests/test_draft_sweep.py`.

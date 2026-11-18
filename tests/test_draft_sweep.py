@@ -43,8 +43,10 @@ def test_short_export_reuses_weights_and_preserves_slot_prefix(tmp_path):
     index = export / "model.safetensors.index.json"
     index.write_text(json.dumps({"metadata": {"total_size": 100}, "weight_map": {}}))
 
+    with pytest.raises(RuntimeError, match="Missing"):
+        sweep.prepare_short_export(export, create=False)
     sweep.prepare_short_export(export)
-    sweep.prepare_short_export(export)
+    sweep.prepare_short_export(export, create=False)
 
     short = tmp_path / "hf-draft-4"
     assert json.loads((short / "config.json").read_text())["sps_horizons"] == 5
@@ -61,7 +63,7 @@ def test_counter_metrics_uses_actual_proposals_and_rounds():
         "num_drafts": 10,
         "num_draft_tokens": 38,
         "num_accepted_tokens": 14,
-        "num_accepted_tokens_per_pos": [7, 4, 3, 0],
+        "num_accepted_tokens_per_pos": [7, 5, 2, 0],
     }
     result = {
         "acceptance_counters_including_warmup": [
@@ -69,9 +71,53 @@ def test_counter_metrics_uses_actual_proposals_and_rounds():
             for key, value in values.items()
         ],
     }
-    metrics = sweep.counter_metrics(result, 4)
-    assert metrics["tau"] == pytest.approx(2.4)
-    assert metrics["acceptance_rate"] == pytest.approx(14 / 38)
-    assert metrics["acceptance_by_position"] == [0.7, 0.4, 0.3, 0]
+    warmup_values = {
+        "num_drafts": 2,
+        "num_draft_tokens": 8,
+        "num_accepted_tokens": 4,
+        "num_accepted_tokens_per_pos": [2, 2, 0, 0],
+    }
+    warmup = [
+        {"name": f"vllm:spec_decode_{key}", "value": value}
+        for key, value in warmup_values.items()
+    ]
+    metrics = sweep.counter_metrics(result, 4, warmup)
+    assert metrics["tau"] == pytest.approx(2.25)
+    assert metrics["acceptance_rate"] == pytest.approx(10 / 30)
+    assert metrics["acceptance_by_position"] == [5 / 8, 3 / 8, 2 / 8, 0]
     with pytest.raises(ValueError, match="Inconsistent"):
-        sweep.counter_metrics(result, 8)
+        sweep.counter_metrics(result, 8, warmup)
+
+
+@pytest.mark.parametrize("arm", ["eagle3", "sps_mtp"])
+def test_snapshot_excludes_warmup_and_sps_greedy_checks(tmp_path, monkeypatch, arm):
+    import sys
+    from types import SimpleNamespace
+
+    class Engine:
+        requests = 0
+
+        def generate(self):
+            self.requests += 1
+
+        def get_metrics(self):
+            return [
+                SimpleNamespace(name="vllm:spec_decode_num_drafts", value=self.requests)
+            ]
+
+    vllm = SimpleNamespace(LLM=Engine)
+    monkeypatch.setitem(sys.modules, "vllm", vllm)
+    monkeypatch.setattr(sweep.bench, "root_for", lambda _: tmp_path)
+    untimed = sweep.c.WARMUP_REQUESTS + (sweep.c.AUDIT_COUNT if arm == "sps_mtp" else 0)
+
+    def run_graph(*_):
+        llm = vllm.LLM()
+        for _ in range(untimed + 3):
+            llm.generate()
+
+    monkeypatch.setattr(sweep, "graph_job", run_graph)
+    exp = next(x for x in sweep.experiment_configs if x.arm == arm)
+    sweep.evaluate(exp)
+    assert sweep.untimed_counters(exp) == [
+        {"name": "vllm:spec_decode_num_drafts", "value": untimed}
+    ]

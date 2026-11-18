@@ -13,6 +13,7 @@ from pathlib import Path
 from statistics import median
 from unittest.mock import patch
 
+from scripts import draft_sweep_train as training
 from scripts import serving_benchmark as bench
 from scripts import serving_graphs as graph
 from scripts import serving_runtime as runtime
@@ -20,15 +21,14 @@ from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts import vllm_sps_run as run
 
-ROOT = c.ROOT.parent / "vllm-sps-draft-sweep"
+ROOT = training.ROOT
 LAUNCHER = "scripts.draft_sweep"
 DRAFT_LENGTHS = (4, 8)
-HORIZONS = max(DRAFT_LENGTHS) + 1
+HORIZONS = training.HORIZONS
 PHASES = ("probe", "train", "audit", "eval")
 EVAL_HOURS = 2
 AUDIT_TOKENS = 32
-ORIGINAL_SIGNATURE = common.signature
-TRAINER = c.experiment_configs[0]
+TRAINER = training.EXPERIMENT
 AUDIT = c.Experiment(bench.AUDIT_NAME, "audit")
 
 
@@ -50,9 +50,9 @@ experiment_configs = [
 AUDIT_ARMS = {"sps": 0, **{f"sps_mtp-{n}": n for n in DRAFT_LENGTHS}}
 
 
-def signature():
+def protocol_signature():
     parts = (
-        ORIGINAL_SIGNATURE(),
+        training.signature(),
         common.file_hash(Path(__file__)),
         common.file_hash(Path(bench.__file__)),
         common.file_hash(Path(graph.__file__)),
@@ -63,8 +63,7 @@ def signature():
 
 
 def configure():
-    c.ROOT = ROOT
-    c.HORIZONS = HORIZONS
+    training.configure()
     c.EVAL_HOURS = EVAL_HOURS
     c.AUDIT_NEW_TOKENS = AUDIT_TOKENS
     c.experiment_configs = [TRAINER, *experiment_configs]
@@ -72,8 +71,7 @@ def configure():
         (c.PROBE_HOURS + c.TRAIN_HOURS) * TRAINER.num_gpus
         + (len(experiment_configs) + 1) * EVAL_HOURS
     )
-    common.signature = signature
-    bench.protocol_signature = graph.protocol_signature = signature
+    bench.protocol_signature = graph.protocol_signature = protocol_signature
     bench.verify_runtime = graph.verify_runtime
     bench.check_gate = check_gate
     graph.engine_arguments = engine_arguments
@@ -84,8 +82,7 @@ def engine_arguments(exp, export, eagle_revision):
     draft = getattr(exp, "draft_tokens", None)
     if draft is None:
         draft = int(length) if length else 0
-    if arm == "sps_mtp" and draft < max(DRAFT_LENGTHS):
-        export = Path(export).with_name(f"hf-draft-{draft}")
+    export = export_for(arm, draft, export)
     result = BASE_ENGINE_ARGUMENTS(replace(exp, arm=arm), export, eagle_revision)
     if draft:
         result["speculative_config"]["num_speculative_tokens"] = draft
@@ -96,7 +93,13 @@ BASE_ENGINE_ARGUMENTS = graph.engine_arguments
 BASE_GATE = bench.check_gate
 
 
-def prepare_short_export(export):
+def export_for(arm, draft, export):
+    if arm == "sps_mtp" and draft in DRAFT_LENGTHS[:-1]:
+        return Path(export).with_name(f"hf-draft-{draft}")
+    return Path(export)
+
+
+def prepare_short_export(export, *, create=True):
     """Expose the same checkpoint at the short SPS width for genuine timing."""
     from safetensors.torch import load_file, save_file
 
@@ -108,7 +111,7 @@ def prepare_short_export(export):
         raise ValueError("Unexpected source export width")
     for length in DRAFT_LENGTHS[:-1]:
         width = length + 1
-        target = export.with_name(f"hf-draft-{length}")
+        target = export_for("sps_mtp", length, export)
         index_path = "model.safetensors.index.json"
         index = json.loads((export / index_path).read_text())
         index["metadata"]["total_size"] -= (
@@ -131,6 +134,8 @@ def prepare_short_export(export):
                     "Existing short SPS export differs from the trained model"
                 )
             continue
+        if not create:
+            raise RuntimeError(f"Missing short SPS export: {target}")
         with tempfile.TemporaryDirectory(dir=target.parent) as temporary:
             staged = Path(temporary) / target.name
             staged.mkdir()
@@ -147,6 +152,7 @@ def prepare_short_export(export):
 
 def check_gate(manifest):
     BASE_GATE(manifest)
+    prepare_short_export(bench.trained()["export"], create=False)
     for arm in AUDIT_ARMS:
         graph.validate_evidence(bench.root_for(AUDIT) / f"graphs-{arm}.json")
 
@@ -161,11 +167,45 @@ def graph_job(function, argument, evidence, draft):
         graph.with_graph_engine(function, argument, evidence)
 
 
+def evaluate(exp):
+    import vllm
+
+    root = bench.root_for(exp)
+    needed = c.WARMUP_REQUESTS + (c.AUDIT_COUNT if exp.arm == "sps_mtp" else 0)
+    original = vllm.LLM
+
+    class MeasuredLLM(original):
+        untimed_requests = 0
+
+        def generate(self, *args, **kwargs):
+            result = super().generate(*args, **kwargs)
+            self.untimed_requests += 1
+            if exp.draft_tokens and self.untimed_requests == needed:
+                counters = [
+                    {
+                        "name": metric.name,
+                        "value": getattr(
+                            metric, "value", getattr(metric, "values", None)
+                        ),
+                    }
+                    for metric in self.get_metrics()
+                    if metric.name.startswith("vllm:spec_decode_")
+                ]
+                bench.launch.store_json(
+                    root / "untimed-counters.json",
+                    {"protocol_signature": protocol_signature(), "counters": counters},
+                )
+            return result
+
+    with patch.object(vllm, "LLM", MeasuredLLM):
+        graph_job(bench.evaluate, exp, root / "cudagraph.json", exp.draft_tokens)
+
+
 def audit_worker(manifest):
     root = bench.root_for(AUDIT)
     bench.launch.store_json(root / "serving-runtime.json", manifest)
     bench.launch.store_json(
-        root / "serving-protocol.json", {"protocol_signature": signature()}
+        root / "serving-protocol.json", {"protocol_signature": protocol_signature()}
     )
     deadline = time.monotonic() + EVAL_HOURS * 3600
 
@@ -183,7 +223,7 @@ def audit_worker(manifest):
     bench.launch.store_json(
         root / "evaluated.json",
         {
-            "design_signature": signature(),
+            "design_signature": training.signature(),
             "runtime_signature": runtime.signature(),
             "checkpoint_sha256": bench.trained()["checkpoint_sha256"],
             "arms": list(AUDIT_ARMS),
@@ -206,6 +246,8 @@ def serving_env(manifest):
 def worker(phase, exp):
     launch = bench.launch
     if phase in {"probe", "train"}:
+        if complete(phase, exp):
+            return
         command = [
             launch.PYTHON,
             "-m",
@@ -213,10 +255,10 @@ def worker(phase, exp):
             "--standalone",
             f"--nproc_per_node={exp.num_gpus}",
             "-m",
-            LAUNCHER,
-            "--train-worker",
-            phase,
+            "scripts.draft_sweep_train",
         ]
+        if phase == "probe":
+            command.append("--probe")
         return bench.child(
             command,
             os.environ.copy(),
@@ -230,37 +272,13 @@ def worker(phase, exp):
     root = bench.root_for(exp)
     bench.launch.store_json(root / "serving-runtime.json", manifest)
     bench.launch.store_json(
-        root / "serving-protocol.json", {"protocol_signature": signature()}
+        root / "serving-protocol.json", {"protocol_signature": protocol_signature()}
     )
     bench.child(
         [runtime.RUNTIME / "bin/python", "-m", LAUNCHER, "--eval-worker", exp.name],
         serving_env(manifest),
         EVAL_HOURS,
     )
-
-
-def train_worker(phase):
-    import sys
-
-    from scripts import vllm_sps_train as trainer
-
-    optimizer_for = trainer.optimizer_for
-
-    def checkpointed_optimizer(model, frozen):
-        optimizer = optimizer_for(model, frozen)
-        if frozen:
-            model.backbone.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs={"use_reentrant": False}
-            )
-        return optimizer
-
-    with (
-        patch.object(trainer, "optimizer_for", checkpointed_optimizer),
-        patch.object(
-            sys, "argv", [LAUNCHER] + (["--probe"] if phase == "probe" else [])
-        ),
-    ):
-        trainer.main()
 
 
 def complete(phase, exp, manifest=None):
@@ -272,13 +290,15 @@ def complete(phase, exp, manifest=None):
         )
         if not marker.exists():
             return False
-        if json.loads(marker.read_text())["design_signature"] != signature():
+        if json.loads(marker.read_text())["design_signature"] != training.signature():
             raise RuntimeError(f"Stale marker: {marker}")
         return True
     if not bench.completed(exp, manifest):
         return False
     if phase == "eval":
         graph.validate_evidence(bench.root_for(exp) / "cudagraph.json")
+        if exp.draft_tokens:
+            untimed_counters(exp)
     return True
 
 
@@ -295,7 +315,12 @@ def payload(phase, exp, staged):
         if phase in {"probe", "train"}
         else bench.payload(exp, staged, phase)
     )
-    body["job_desc"] = f"sps-draft-sweep {phase} {exp.name} #d.tarasov @mrsndmn"
+    identity = (
+        training.signature() if phase in {"probe", "train"} else protocol_signature()
+    )[:16]
+    body["job_desc"] = (
+        f"sps-draft-sweep {phase} {exp.name} {identity} #d.tarasov @mrsndmn"
+    )
     body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(
         [
             str(launch.PYTHON),
@@ -340,6 +365,8 @@ def submit(args, choices):
             check_gate(manifest)
     pending = [exp for exp in choices if not complete(phase, exp, manifest)]
     if not pending:
+        print("__MLS_JOBS_JSON__")
+        print(json.dumps({"phase": phase, "jobs": [], "deferred": []}), flush=True)
         return
 
     from mls.manager.job.utils import training_job_api_from_profile
@@ -361,18 +388,23 @@ def submit(args, choices):
     launch.reconcile_intents(active)
     staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
     occupied = sum(key.startswith("sps-draft-sweep eval ") for key in active)
+    jobs = []
+    deferred = []
     for exp in pending:
         body = payload(phase, exp, staged)
         identity = launch.normalize(body["job_desc"])
+        arm_prefix = identity.rsplit(" ", 1)[0] + " "
+        if any(key.startswith(arm_prefix) and key != identity for key in active):
+            raise RuntimeError(f"An older design is already running for {exp.name}")
         if identity in active:
-            print(
-                json.dumps(
-                    {"name": exp.name, "job_name": active[identity], "reused": True}
-                ),
-                flush=True,
+            jobs.append(
+                {"name": exp.name, "job_name": active[identity], "reused": True}
             )
             continue
+        if complete(phase, exp, manifest):
+            continue
         if phase == "eval" and occupied >= bench.MAX_ACTIVE_JOBS:
+            deferred.append(exp.name)
             continue
         body["region"] = options["region"]
         run.reserve("eval" if phase == "audit" else phase, exp)
@@ -381,25 +413,46 @@ def submit(args, choices):
         )
         result = launch.submit_payload(client, body, receipt_phase, exp.name, commit)
         occupied += 1
+        jobs.append(result)
         print(json.dumps(result), flush=True)
+    print("__MLS_JOBS_JSON__")
+    print(json.dumps({"phase": phase, "jobs": jobs, "deferred": deferred}), flush=True)
 
 
-def counter_metrics(result, draft):
+def untimed_counters(exp):
+    path = bench.root_for(exp) / "untimed-counters.json"
+    data = json.loads(path.read_text())
+    if data["protocol_signature"] != protocol_signature():
+        raise RuntimeError(
+            f"Untimed counter snapshot uses another protocol: {exp.name}"
+        )
+    return data["counters"]
+
+
+def counter_metrics(result, draft, untimed=()):
     if not draft:
         return {"tau": None, "acceptance_rate": None, "acceptance_by_position": None}
-    counters = {
-        row["name"].removeprefix("vllm:spec_decode_"): row["value"]
-        for row in result["acceptance_counters_including_warmup"]
-    }
-    rounds, proposed, accepted, positions = (
-        counters[key]
-        for key in (
-            "num_drafts",
-            "num_draft_tokens",
-            "num_accepted_tokens",
-            "num_accepted_tokens_per_pos",
-        )
+
+    def read(records):
+        return {
+            row["name"].removeprefix("vllm:spec_decode_"): row["value"]
+            for row in records
+        }
+
+    totals = read(result["acceptance_counters_including_warmup"])
+    warmup = read(untimed)
+    rounds, proposed, accepted = (
+        totals[key] - warmup[key]
+        for key in ("num_drafts", "num_draft_tokens", "num_accepted_tokens")
     )
+    positions = [
+        total - warm
+        for total, warm in zip(
+            totals["num_accepted_tokens_per_pos"],
+            warmup["num_accepted_tokens_per_pos"],
+            strict=True,
+        )
+    ]
     if not (
         rounds > 0
         and 0 < proposed <= rounds * draft
@@ -420,6 +473,7 @@ def counter_metrics(result, draft):
 def report():
     manifest = graph.verify_runtime()
     results = {}
+    export = bench.trained()["export"]
     identity = None
     for exp in experiment_configs:
         if not complete("eval", exp, manifest):
@@ -427,6 +481,13 @@ def report():
         root = bench.root_for(exp)
         measured = json.loads((root / "manifest.json").read_text())
         args = measured["arguments"]
+        expected_model = (
+            str(export_for(exp.arm, exp.draft_tokens, export))
+            if exp.arm.startswith("sps")
+            else c.MODEL
+        )
+        if args["model"] != expected_model:
+            raise ValueError(f"Wrong verifier/export for {exp.name}")
         if (args.get("speculative_config") or {}).get(
             "num_speculative_tokens", 0
         ) != exp.draft_tokens:
@@ -472,16 +533,21 @@ def report():
                     for row, base in zip(trials, baseline, strict=True)
                 ),
                 accuracy=trials[0]["accuracy"],
-                **counter_metrics(result, exp.draft_tokens),
+                **counter_metrics(
+                    result,
+                    exp.draft_tokens,
+                    untimed_counters(exp) if exp.draft_tokens else (),
+                ),
             )
         )
     target = ROOT / "reports"
     bench.launch.store_json(
         target / "results.json",
         {
-            "design_signature": signature(),
+            "design_signature": training.signature(),
+            "protocol_signature": protocol_signature(),
             "rows": rows,
-            "acceptance_scope": "vLLM counters including warmup and SPS audit. Per-position denominator is all drafts.",
+            "acceptance_scope": "Timed requests only. Per-position denominator is all timed drafts.",
         },
     )
     with (target / "summary.csv").open("w", newline="") as stream:
@@ -498,7 +564,6 @@ def main():
     mode.add_argument("--dry", action="store_true")
     mode.add_argument("--report", action="store_true")
     mode.add_argument("--worker", action="store_true")
-    mode.add_argument("--train-worker", choices=("probe", "train"))
     mode.add_argument("--reference-worker", action="store_true")
     mode.add_argument("--audit-arm", choices=AUDIT_ARMS)
     mode.add_argument("--eval-worker", choices=[exp.name for exp in experiment_configs])
@@ -506,8 +571,6 @@ def main():
     configure()
     if args.report:
         return report()
-    if args.train_worker:
-        return train_worker(args.train_worker)
     if args.reference_worker:
         prepare_short_export(bench.trained()["export"])
         return bench.make_reference()
@@ -519,12 +582,7 @@ def main():
         )
     if args.eval_worker:
         exp = next(exp for exp in experiment_configs if exp.name == args.eval_worker)
-        return graph_job(
-            bench.evaluate,
-            exp,
-            bench.root_for(exp) / "cudagraph.json",
-            exp.draft_tokens,
-        )
+        return evaluate(exp)
 
     choices = [
         exp
