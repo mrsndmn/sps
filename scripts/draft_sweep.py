@@ -17,6 +17,7 @@ from scripts import draft_sweep_train as training
 from scripts import serving_benchmark as bench
 from scripts import serving_graphs as graph
 from scripts import serving_runtime as runtime
+from scripts import vllm_sps_audit as native_audit
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts import vllm_sps_run as run
@@ -103,6 +104,7 @@ def engine_arguments(exp, export, eagle_revision):
 
 BASE_ENGINE_ARGUMENTS = graph.engine_arguments
 BASE_GATE = bench.check_gate
+BASE_REFERENCE_TOKENS = bench.reference_tokens
 
 
 def export_for(arm, draft, export):
@@ -162,11 +164,62 @@ def prepare_short_export(export, *, create=True):
             staged.rename(target)
 
 
+def audit_evidence(checkpoint):
+    references = BASE_REFERENCE_TOKENS(checkpoint)
+    root = bench.root_for(AUDIT)
+    summary = {}
+    baseline = None
+    for arm in AUDIT_ARMS:
+        graph.validate_evidence(root / f"graphs-{arm}.json")
+        data = json.loads((root / f"{arm}.json").read_text())
+        if data["protocol_signature"] != protocol_signature():
+            raise RuntimeError(f"Greedy comparison uses another protocol: {arm}")
+        actuals = []
+        for ref, sample in zip(references, data["samples"], strict=True):
+            actual = sample["actual_token_ids"]
+            if (
+                sample["prompt_token_ids"] != ref["prompt_token_ids"]
+                or sample["expected_token_ids"] != ref["expected_token_ids"]
+                or not 0 < len(actual) <= c.AUDIT_NEW_TOKENS
+                or sample["equal"] is not (actual == ref["expected_token_ids"])
+            ):
+                raise RuntimeError(f"Inconsistent greedy comparison: {arm}")
+            actuals.append(actual)
+        if baseline is None:
+            baseline = actuals
+        summary[arm] = {
+            "samples": len(references),
+            "exact_vs_native": sum(sample["equal"] for sample in data["samples"]),
+            "exact_vs_vllm_sps": sum(
+                a == b for a, b in zip(actuals, baseline, strict=True)
+            ),
+        }
+    return summary
+
+
 def check_gate(manifest):
     BASE_GATE(manifest)
-    prepare_short_export(bench.trained()["export"], create=False)
-    for arm in AUDIT_ARMS:
-        graph.validate_evidence(bench.root_for(AUDIT) / f"graphs-{arm}.json")
+    checkpoint = bench.trained()
+    prepare_short_export(checkpoint["export"], create=False)
+    audit_evidence(checkpoint)
+
+
+def audit_arm(arm):
+    from scripts.vllm_sps_evaluate import check_runtime
+    from scripts.vllm_sps_evaluate import engine_arguments as active_engine_arguments
+
+    _, vllm = check_runtime()
+    checkpoint = bench.trained()
+    refs = bench.reference_tokens(checkpoint)
+    exp = c.Experiment(arm, arm)
+    llm = vllm.LLM(
+        **active_engine_arguments(exp, checkpoint["export"], c.EAGLE_REVISION)
+    )
+    samples = native_audit.verify(llm, refs)
+    bench.launch.store_json(
+        bench.root_for(AUDIT) / f"{arm}.json",
+        {"protocol_signature": protocol_signature(), "samples": samples},
+    )
 
 
 def graph_job(function, argument, evidence, draft):
@@ -183,7 +236,6 @@ def evaluate(exp):
     import vllm
 
     root = bench.root_for(exp)
-    needed = c.WARMUP_REQUESTS + (c.AUDIT_COUNT if exp.arm == "sps_mtp" else 0)
     original = vllm.LLM
 
     class MeasuredLLM(original):
@@ -192,7 +244,7 @@ def evaluate(exp):
         def generate(self, *args, **kwargs):
             result = super().generate(*args, **kwargs)
             self.untimed_requests += 1
-            if exp.draft_tokens and self.untimed_requests == needed:
+            if exp.draft_tokens and self.untimed_requests == c.WARMUP_REQUESTS:
                 counters = [
                     {
                         "name": metric.name,
@@ -209,7 +261,12 @@ def evaluate(exp):
                 )
             return result
 
-    with patch.object(vllm, "LLM", MeasuredLLM):
+    # Each SPS width already has a greedy comparison under this protocol.
+    # The shared evaluator still supplies the matched workload and timed requests.
+    with (
+        patch.object(vllm, "LLM", MeasuredLLM),
+        patch.object(bench, "reference_tokens", return_value=[]),
+    ):
         graph_job(bench.evaluate, exp, root / "cudagraph.json", exp.draft_tokens)
 
 
@@ -232,13 +289,16 @@ def audit_worker(manifest):
         audit_stage(
             runtime.RUNTIME / "bin/python", ["--audit-arm", arm], serving_env(manifest)
         )
+    checkpoint = bench.trained()
+    greedy = audit_evidence(checkpoint)
     bench.launch.store_json(
         root / "evaluated.json",
         {
             "design_signature": training.signature(),
             "runtime_signature": runtime.signature(),
-            "checkpoint_sha256": bench.trained()["checkpoint_sha256"],
+            "checkpoint_sha256": checkpoint["checkpoint_sha256"],
             "arms": list(AUDIT_ARMS),
+            "greedy_diagnostics": greedy,
         },
     )
     check_gate(manifest)
@@ -560,6 +620,7 @@ def report():
             "protocol_signature": protocol_signature(),
             "rows": rows,
             "acceptance_scope": "Timed requests only. Per-position denominator is all timed drafts.",
+            "greedy_diagnostics": audit_evidence(bench.trained()),
         },
     )
     with (target / "summary.csv").open("w", newline="") as stream:
@@ -590,7 +651,7 @@ def main():
         arm = args.audit_arm
         draft = AUDIT_ARMS[arm]
         return graph_job(
-            bench.audit_arm, arm, bench.root_for(AUDIT) / f"graphs-{arm}.json", draft
+            audit_arm, arm, bench.root_for(AUDIT) / f"graphs-{arm}.json", draft
         )
     if args.eval_worker:
         exp = next(exp for exp in experiment_configs if exp.name == args.eval_worker)

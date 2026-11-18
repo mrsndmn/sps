@@ -90,7 +90,7 @@ def test_counter_metrics_uses_actual_proposals_and_rounds():
 
 
 @pytest.mark.parametrize("arm", ["eagle3", "sps_mtp"])
-def test_snapshot_excludes_warmup_and_sps_greedy_checks(tmp_path, monkeypatch, arm):
+def test_snapshot_excludes_warmup(tmp_path, monkeypatch, arm):
     import sys
     from types import SimpleNamespace
 
@@ -108,7 +108,7 @@ def test_snapshot_excludes_warmup_and_sps_greedy_checks(tmp_path, monkeypatch, a
     vllm = SimpleNamespace(LLM=Engine)
     monkeypatch.setitem(sys.modules, "vllm", vllm)
     monkeypatch.setattr(sweep.bench, "root_for", lambda _: tmp_path)
-    untimed = sweep.c.WARMUP_REQUESTS + (sweep.c.AUDIT_COUNT if arm == "sps_mtp" else 0)
+    untimed = sweep.c.WARMUP_REQUESTS
 
     def run_graph(*_):
         llm = vllm.LLM()
@@ -154,3 +154,43 @@ def test_embedding_phase_enables_decoder_checkpoint_recomputation():
     loss.backward()
     assert torch.count_nonzero(model.new_embeddings.grad[-1]) > 0
     assert all(parameter.grad is None for parameter in model.backbone.parameters())
+
+
+def test_greedy_mismatch_is_reported_but_missing_graph_evidence_blocks(
+    tmp_path, monkeypatch
+):
+    ref = {"prompt_token_ids": [1], "expected_token_ids": [2]}
+    monkeypatch.setattr(sweep, "BASE_REFERENCE_TOKENS", lambda _: [ref])
+    monkeypatch.setattr(sweep.bench, "root_for", lambda _: tmp_path)
+    monkeypatch.setattr(sweep.graph, "protocol_signature", sweep.protocol_signature)
+    signature = sweep.protocol_signature()
+    for arm in sweep.AUDIT_ARMS:
+        actual = [3] if arm == "sps" else [2]
+        (tmp_path / f"{arm}.json").write_text(
+            json.dumps(
+                {
+                    "protocol_signature": signature,
+                    "samples": [
+                        dict(ref, actual_token_ids=actual, equal=actual == [2])
+                    ],
+                }
+            )
+        )
+        (tmp_path / f"graphs-{arm}.json").write_text(
+            json.dumps(
+                {
+                    "protocol_signature": signature,
+                    "workers": [
+                        {"captured": 1, "target_replays": 1, "mode": "FULL_DECODE_ONLY"}
+                    ],
+                }
+            )
+        )
+    diagnostics = sweep.audit_evidence({})
+    assert diagnostics["sps"]["exact_vs_native"] == 0
+    assert diagnostics["sps_mtp-4"]["exact_vs_native"] == 1
+    assert diagnostics["sps_mtp-4"]["exact_vs_vllm_sps"] == 0
+    path = tmp_path / "graphs-sps_mtp-4.json"
+    path.unlink()
+    with pytest.raises(FileNotFoundError):
+        sweep.audit_evidence({})
