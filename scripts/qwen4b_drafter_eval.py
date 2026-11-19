@@ -92,15 +92,30 @@ def matched_throughput(samples):
     return report
 
 
-def draft_agreement(samples):
+def compare_drafts(left, right):
+    pairs = []
+    for first, second in zip(left, right, strict=True):
+        if (first["index"], first["repeat"]) != (second["index"], second["repeat"]):
+            raise RuntimeError("Unaligned benchmark requests")
+        if first["tokens"] == second["tokens"]:
+            pairs.append((first, second))
+    report = {"requests": len(pairs), "prompts": len({a["index"] for a, _ in pairs})}
+    if pairs:
+        first, second = zip(*pairs)
+        first_rate = decode_rate(first)
+        second_rate = decode_rate(second)
+        report.update(
+            first_tokens_per_second=first_rate, second_tokens_per_second=second_rate,
+            second_over_first=second_rate / first_rate if first_rate else None,
+        )
+    return report
+
+
+def pairwise_throughput(samples):
     return {
         str(width): {
-            f"{first.name} / {second.name}": sum(
-                left["tokens"] == right["tokens"]
-                for left, right in zip(
-                    samples[f"{first.name}-{width}"], samples[f"{second.name}-{width}"],
-                    strict=True,
-                )
+            f"{first.name} / {second.name}": compare_drafts(
+                samples[f"{first.name}-{width}"], samples[f"{second.name}-{width}"],
             )
             for first, second in combinations(training.experiment_configs, 2)
         }
@@ -178,7 +193,7 @@ def evaluate(train_root, result):
     ar = samples["ar"]
     summary["ar"] = {"requests": len(ar), "tokens_per_second": decode_rate(ar)}
     summary["greedy_matched_throughput"] = matched_throughput(samples)
-    summary["pairwise_greedy_matches"] = draft_agreement(samples)
+    summary["pairwise_draft_throughput"] = pairwise_throughput(samples)
     launch.store_json(result, dict(
         design_signature=signature(), gpu=torch.cuda.get_device_name(device),
         torch_version=torch.__version__, transformers_version=transformers.__version__,

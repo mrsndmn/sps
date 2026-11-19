@@ -87,3 +87,16 @@ def test_speedup_uses_the_same_greedy_outputs_in_every_arm():
     assert result["requests"] == result["prompts"] == 1
     assert result["arms"]["ar"]["tokens_per_second"] == 1
     assert result["arms"]["causal"]["speedup_vs_ar"] == 2
+
+
+def test_pairwise_drafter_rates_include_equal_outputs_that_diverge_from_ar():
+    def row(tokens, seconds):
+        return dict(index=1, repeat=0, tokens=tokens, decode_seconds=seconds, greedy_match=False)
+
+    left = [row([1, 3], 2.)]
+    right = [row([1, 3], 1.)]
+    result = jobs.evaluation.compare_drafts(left, right)
+    assert result["requests"] == result["prompts"] == 1
+    assert result["first_tokens_per_second"] == 0.5
+    assert result["second_over_first"] == 2
+    assert jobs.evaluation.compare_drafts(left, [row([1, 4], 1.)])["requests"] == 0
