@@ -71,3 +71,19 @@ def test_payload_stages_one_gpu_per_worker(monkeypatch, tmp_path):
             assert payload["instance_type"] == "a100.1gpu"
             assert payload["processes_per_worker"] == 1
             assert f"--phase {phase} --worker --filter {name}" in payload["script"]
+
+
+def test_speedup_uses_the_same_greedy_outputs_in_every_arm():
+    def row(index, seconds, same=True):
+        return dict(index=index, repeat=0, tokens=[0, 1, 2],
+                    decode_seconds=seconds, greedy_match=same)
+
+    samples = {
+        "ar": [row(1, 2), row(2, 1), row(3, 1)],
+        "causal": [row(1, 1), row(2, 0.25, False), row(3, 0.25)],
+        "bidirectional": [row(1, 1.5), row(2, 0.25), row(3, 0.25, False)],
+    }
+    result = jobs.evaluation.matched_throughput(samples)
+    assert result["requests"] == result["prompts"] == 1
+    assert result["arms"]["ar"]["tokens_per_second"] == 1
+    assert result["arms"]["causal"]["speedup_vs_ar"] == 2

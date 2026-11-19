@@ -1,6 +1,7 @@
 """Evaluate trained block drafters with one frozen verifier on a single GPU."""
 
 from hashlib import sha256
+from itertools import combinations
 import json
 from pathlib import Path
 import time
@@ -8,7 +9,7 @@ import time
 import torch
 
 from scripts import dflash_mask_ablation as reference
-from scripts import instruct_config, mlspace_launch as launch
+from scripts import instruct_config, mlspace_launch as launch, report_mmlu_stem, vllm_sps_config
 from scripts import qwen4b_drafter_train as training
 
 PROMPTS = 64
@@ -20,6 +21,7 @@ WARMUP_TOKENS = 24
 def signature():
     digest = sha256(training.signature().encode())
     for path in (Path(__file__), Path(reference.__file__), Path(instruct_config.__file__),
+                 Path(report_mmlu_stem.__file__), Path(vllm_sps_config.__file__),
                  Path(reference.select_examples.__code__.co_filename),
                  Path(reference.mmlu_messages.__code__.co_filename)):
         digest.update(sha256(path.read_bytes()).digest())
@@ -60,6 +62,50 @@ def validate_checkpoints(train_root):
     if len({info["initial_sha256"] for info in metadata.values()}) != 1:
         raise RuntimeError("The four Transformer initializations differ")
     return metadata
+
+
+def decode_rate(samples):
+    return sum(len(row["tokens"]) - 1 for row in samples) / sum(
+        row["decode_seconds"] for row in samples
+    )
+
+
+def matched_throughput(samples):
+    """Pair the timed comparison on requests with identical emitted sequences."""
+    comparable = set.intersection(*(
+        {(row["index"], row["repeat"]) for row in rows if row["greedy_match"]}
+        for rows in samples.values()
+    ))
+    matched = {
+        name: [row for row in rows if (row["index"], row["repeat"]) in comparable]
+        for name, rows in samples.items()
+    }
+    report = {"requests": len(comparable), "prompts": len({index for index, _ in comparable}),
+              "arms": {}}
+    if comparable:
+        baseline = decode_rate(matched["ar"])
+        for name, rows in matched.items():
+            rate = decode_rate(rows)
+            report["arms"][name] = {
+                "tokens_per_second": rate, "speedup_vs_ar": rate / baseline if baseline else None,
+            }
+    return report
+
+
+def draft_agreement(samples):
+    return {
+        str(width): {
+            f"{first.name} / {second.name}": sum(
+                left["tokens"] == right["tokens"]
+                for left, right in zip(
+                    samples[f"{first.name}-{width}"], samples[f"{second.name}-{width}"],
+                    strict=True,
+                )
+            )
+            for first, second in combinations(training.experiment_configs, 2)
+        }
+        for width in training.LENGTHS
+    }
 
 
 @torch.inference_mode()
@@ -130,10 +176,9 @@ def evaluate(train_root, result):
 
     summary = {name: reference.summary(samples[name], spec) for name, spec in specs.items()}
     ar = samples["ar"]
-    baseline = sum(len(s["tokens"]) - 1 for s in ar) / sum(s["decode_seconds"] for s in ar)
-    summary["ar"] = {"requests": len(ar), "tokens_per_second": baseline}
-    for name in specs:
-        summary[name]["speedup_vs_ar"] = summary[name]["tokens_per_second"] / baseline
+    summary["ar"] = {"requests": len(ar), "tokens_per_second": decode_rate(ar)}
+    summary["greedy_matched_throughput"] = matched_throughput(samples)
+    summary["pairwise_greedy_matches"] = draft_agreement(samples)
     launch.store_json(result, dict(
         design_signature=signature(), gpu=torch.cuda.get_device_name(device),
         torch_version=torch.__version__, transformers_version=transformers.__version__,

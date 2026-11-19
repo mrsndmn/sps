@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from hashlib import sha256
+from inspect import getsource
 import json
 from pathlib import Path
 import random
@@ -56,6 +57,7 @@ def signature():
     for path in paths:
         digest.update(sha256(path.read_bytes()).digest())
     digest.update((reference.TARGET_REVISION + reference.DRAFT_REVISION).encode())
+    digest.update(getsource(reference.context_features).encode())
     return digest.hexdigest()
 
 
@@ -135,6 +137,11 @@ def read_rows(tokenizer, split, limit):
                 )
             except ValueError:
                 continue
+            for index, (token, assistant) in enumerate(zip(row["input_ids"], row["loss_mask"])):
+                if assistant and token == tokenizer.eos_token_id:
+                    for field in ("input_ids", "loss_mask"):
+                        row[field] = row[field][: index + 1]
+                    break
             if candidate_anchors(row["loss_mask"], max(LENGTHS)):
                 rows.append(row)
             if len(rows) == limit:
