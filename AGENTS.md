@@ -75,3 +75,4 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.provenance_report --mode nonthinking|thinking` → paired IFEval contrasts and crossed-NLL evidence report; `tests/test_provenance_report.py`.
 - `python -m scripts.draft_sweep --phase probe|train|audit|eval` / `--report` → `scripts/draft_sweep_train.py`, `scripts/serving_graphs.py`, `tests/test_draft_sweep.py`.
 - `python -m scripts.dflash_mask_ablation --submit|--worker|--report` → `scripts/dflash_mask_ablation.py`, `tests/test_dflash_mask_ablation.py`.
+- `python -m scripts.qwen4b_drafter --phase probe|train|eval` / `--report` → `scripts/qwen4b_drafter_train.py`, `scripts/qwen4b_drafter_eval.py`, `tests/test_qwen4b_drafter.py`.
