@@ -6,6 +6,7 @@ from scripts.dflash_mask_ablation import (
     block_attention,
     commit_round,
     context_features,
+    round_is_complete,
     summary,
 )
 
@@ -31,6 +32,19 @@ def test_commit_contiguous_prefix_and_target_bonus_with_terminal_trim():
     assert commit_round([1, 2, 3], [1, 2, 3, 4], 2, {8}) == ([1, 2], 3, True)
 
 
+def test_keep_exact_cap_or_bonus_eos_and_exclude_truncated_rounds():
+    args = ([1, 2, 3], [1, 2, 3, 4])
+    for remaining, stop, expected in (
+        (4, {8}, True),
+        (5, {4}, True),
+        (5, {2}, False),
+        (2, {8}, False),
+    ):
+        suffix, count, finished = commit_round(*args, remaining, stop)
+        assert finished
+        assert round_is_complete(suffix, count) == expected
+
+
 def test_context_uses_output_indices_and_excludes_rejected_positions():
     from types import SimpleNamespace
 
@@ -39,7 +53,7 @@ def test_context_uses_output_indices_and_excludes_rejected_positions():
     assert projected_input.tolist() == [[[2, 4], [2, 4]]]
 
 
-def test_report_excludes_terminal_rounds_from_acceptance_and_first_token_from_speed():
+def test_report_excludes_incomplete_rounds_from_acceptance_and_first_token_from_speed():
     sample = dict(
         tokens=[1, 2, 3, 4, 5],
         decode_seconds=2,

@@ -91,6 +91,10 @@ def commit_round(proposals, posterior, remaining, stop_ids):
     return suffix, accepted, False
 
 
+def round_is_complete(suffix, accepted):
+    return len(suffix) == accepted + 1
+
+
 def context_features(output, target_layer_ids, committed=None):
     import torch
 
@@ -174,11 +178,12 @@ def generate(target, draft, ids, exp, stop_ids, limit):
             guesses[1:], posterior, limit - len(tokens), stop_ids
         )
         tokens.extend(suffix)
+        if round_is_complete(suffix, accepted):
+            acceptance.append(accepted)
         if not finished:
             committed = accepted + 1
             kv_target.crop(start + committed)
             context = context_features(output, draft.target_layer_ids, committed)
-            acceptance.append(accepted)
     torch.cuda.synchronize(device)
     elapsed = time.perf_counter() - start_time
     return {
