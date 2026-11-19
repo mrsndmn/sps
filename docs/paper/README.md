@@ -58,6 +58,12 @@ External artifacts root:
   the FP16 control is in `sps-sampling-backbone-precision/runs/out/fp16-backbone/`.
   Diagnostic `passed` markers indicate completed collection, not passage of the
   original sampling gate. Designs live in the corresponding `scripts/sampling_*.py`.
+- Qwen3-4B fixed-weight DFlash mask ablation:
+  `dflash-mask-ablation/runs/out/277ae900c11f7e9a/evaluated.json` contains
+  paired outputs, greedy references, acceptance counts and timing. Run
+  `python -m scripts.dflash_mask_ablation --report` to print the summary.
+  The one-GPU worker uses the Qwen3-4B and DFlash-b16 snapshots pinned by the
+  script from the shared Hugging Face cache.
 - SPS-MTP training/export: `vllm-sps-qwen3/runs/out/qwen3_sps_mtp/` contains
   `trained.json`, `metrics.jsonl` and the final weights/export. AR/EAGLE use the
   original Qwen verifier; SPS/SPS-MTP share this final, jointly adapted verifier.

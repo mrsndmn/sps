@@ -52,6 +52,8 @@ Neither warmup/cosine scheduling nor continuation on the same instruction corpus
 \paragraph{Serving gains depend on the verifier and execution mode.}
 In a separate vLLM pilot on 100 MMLU STEM questions, a jointly adapted SPS model uses one backbone for multi-token proposals and verification. With target decode CUDA graphs, SPS-MTP reaches 1.58$\times$ thinking and 1.80$\times$ non-thinking decode-throughput gains against the same final SPS weights without speculation. EAGLE-3 reaches 1.46$\times$ and 1.60$\times$ against the original AR verifier. These are separate baselines, not a fixed-target comparison between draft methods. SPS-MTP thinking accuracy is 63\%, versus 70\% for its SPS baseline; graph execution itself leaves all sampled token sequences unchanged from eager execution. Appendix~\ref{app:serving} gives the protocol and both execution-mode results. This STEM pilot is distinct from the larger partial MMLU comparison above.
 
+With frozen DFlash-b16 and Qwen3-4B weights, imposing SPS-style causal visibility within the draft block lowers acceptance and decode throughput at both tested widths. Both masks emit identical outputs at each width, with partial agreement against sequential greedy decoding (Appendix~\ref{app:dflash-mask}).
+
 \section{Takeaway}
 Pretrained SPS conversion is feasible as an adaptation procedure, but lossless quality transfer is not established. Distribution matching helps base-model NLL; instruction following remains a separate failure mode. Shared-backbone speculation offers measured serving gains on the small pilot, while quality retention remains unresolved.
 

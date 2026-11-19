@@ -147,6 +147,63 @@ Faster non-thinking decoding co-occurs with shorter outputs and higher draft acc
 
 No quality-preserving acceleration claim follows from this pilot. SPS-MTP thinking accuracy is 63\%, versus 70\% for the same SPS verifier without speculation; its non-thinking accuracy is 59\%, versus 55\%. For AR/EAGLE-3 the corresponding accuracies are 62/62\% and 57/63\%. Thinking output-cap rates are 13/18\% for SPS/SPS-MTP and 24/26\% for AR/EAGLE-3; non-thinking cap rates are 1/1\% and 7/5\%, respectively. Mode-dependent sampling, a small fixed question set and output truncation limit the quality interpretation. A fixed-length decode study, repeated quality seeds, broader tasks and a same-verifier comparison of draft methods remain separate follow-up experiments.
 
+\section{Fixed-weight DFlash mask ablation}\label{app:dflash-mask}
+We use the published five-layer DFlash-b16 drafter \citep{chen2026dflash} with
+the original \texttt{Qwen/Qwen3-4B} as the verifier. Both masks share
+weights, conditioning layers, the verifier embedding and output head,
+and the procedure for caching draft K/V per layer. For each block of $k+1$ positions, the verifier supplies
+the first token and the drafter predicts $k$ proposals in one forward pass.
+The original DFlash mask allows attention to the entire block. The
+SPS-style mask lets each query see the verified prefix and the
+block positions through its own. We test $k\in\{4,8\}$.
+
+We use 24 fixed MMLU STEM prompts with thinking enabled, greedy decoding
+and a cap of 128 new tokens. Two timing repeats per prompt rotate the order
+of the four configurations. All run in BF16 with PyTorch SDPA and one
+request at a time on one A100-SXM4-80GB. Decode throughput pools the tokens
+and wall time after prefill and the first token. Acceptance is the fraction
+of proposals accepted in the contiguous prefix. We compute acceptance and
+$\tau$ (mean accepted proposals plus one) over fully emitted verification
+rounds. We compare each output with sequential greedy decoding.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrrr}
+\toprule
+Mask & $k$ & Tok/s & $\tau$ & Accept. & First \\
+\midrule
+Bidirectional & 4 & 45.78 & 2.31 & 32.8 & 60.7 \\
+Causal & 4 & 42.03 & 2.12 & 28.1 & 54.6 \\
+\addlinespace
+Bidirectional & 8 & 49.06 & 2.46 & 18.3 & 60.7 \\
+Causal & 8 & 43.87 & 2.21 & 15.1 & 53.6 \\
+\bottomrule
+\end{tabular}
+\caption{Fixed-weight DFlash mask ablation. Accept. is the percentage of
+proposals accepted. First is the percentage of rounds accepting the first
+proposal. Both statistics use fully emitted verification rounds.}
+\label{tab:dflash-mask}
+\end{table}
+
+Table~\ref{tab:dflash-mask} shows lower acceptance with the causal mask
+at both widths, including on the first proposal. Decode throughput falls
+by 8.2\% at $k=4$ and 10.6\% at $k=8$. GPU timings per round
+remain close across masks, at roughly 7.2 ms for drafting and 43 ms for
+verification. The smaller $\tau$ leaves more rounds to complete the same
+128-token outputs. Moving from four to eight proposals raises $\tau$ and
+throughput under both masks while lowering acceptance as a fraction of
+proposals.
+
+For each width, the two masks emit identical token sequences on all 24
+prompts, also across repeats. Compared with sequential greedy Qwen3-4B,
+11 of 24 outputs match at $k=4$ and 12 of 24 at $k=8$ for both masks.
+The comparison therefore measures acceptance and timing on matched output
+sequences within each width. DFlash-b16 was trained with bidirectional
+blocks of size 16. Whether training with the causal mask closes the gap
+remains open.
+
 \section{Evidence and draft scope}
 The code registries are the single source of experimental configuration. Base runs use \texttt{scripts/ar\_sps\_config.py}; instruction, scheduling and continuation runs use the corresponding \texttt{instruct}, \texttt{sched} and \texttt{extend} configuration modules. Serving definitions, training, timing and aggregation use the \texttt{vllm\_sps} and \texttt{serving\_graphs} script families. Training and evaluation workers are separate. The accompanying draft README and Russian appendix notes list source paths, measured evidence locations and pinned serving revisions.
 
