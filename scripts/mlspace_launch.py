@@ -35,7 +35,8 @@ def stage_repo(repo, commit):
     STAGING_ROOT.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix=commit + '.', dir=STAGING_ROOT))
     try:
-        shutil.copytree(repo / '.git', tmp / '.git')
+        git_dir = Path(git('-C', str(repo), 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+        shutil.copytree(git_dir, tmp / '.git', ignore=shutil.ignore_patterns('worktrees'))
         # The checkout needs no remote; do not copy stored remote credentials
         # into the worker-accessible snapshot.
         subprocess.run(['git', '-C', str(tmp), 'config', '--remove-section', 'remote.origin'],

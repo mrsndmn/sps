@@ -276,3 +276,31 @@ print(json.dumps({phase:payload(phase,x.name,e.STAGING_ROOT,'a','b')['instance_t
 """
     r=json.loads(subprocess.check_output([sys.executable,'-c',code],env=dict(os.environ,SPS_EXPERIMENT_SUITE=suite),text=True))
     assert r=={'prepare':'a100.4gpu','train':'a100.4gpu','eval':'a100.1gpu'}
+
+
+def test_staging_uses_linked_worktree_commit(tmp_path, monkeypatch):
+    main = tmp_path / "main"
+    main.mkdir()
+
+    def git(repo, *args):
+        return subprocess.check_output(["git", "-C", str(repo), *args], text=True).strip()
+
+    git(main, "init", "-q")
+    git(main, "config", "user.name", "Test")
+    git(main, "config", "user.email", "test@example.com")
+    (main / "tracked").write_text("main")
+    git(main, "add", "tracked")
+    git(main, "commit", "-qm", "test: main")
+    worktree = tmp_path / "worktree"
+    git(main, "worktree", "add", "-qb", "experiment", str(worktree))
+    (worktree / "tracked").write_text("experiment")
+    git(worktree, "commit", "-qam", "test: experiment")
+    (main / "tracked").write_text("dirty main")
+
+    monkeypatch.setattr(mlspace_launch, "STAGING_ROOT", tmp_path / "stages")
+    commit = git(worktree, "rev-parse", "HEAD")
+    staged = mlspace_launch.stage_repo(worktree, commit)
+    assert git(staged, "rev-parse", "HEAD") == commit
+    assert (staged / "tracked").read_text() == "experiment"
+    assert (main / "tracked").read_text() == "dirty main"
+    assert not (staged / ".git" / "worktrees").exists()
