@@ -201,8 +201,98 @@ prompts, also across repeats. Compared with sequential greedy Qwen3-4B,
 11 of 24 outputs match at $k=4$ and 12 of 24 at $k=8$ for both masks.
 The comparison therefore measures acceptance and timing on matched output
 sequences within each width. DFlash-b16 was trained with bidirectional
-blocks of size 16. Whether training with the causal mask closes the gap
-remains open.
+blocks of size 16.
+
+\section{Training with causal draft blocks}\label{app:trained-draft}
+We train four five-layer drafters on frozen Qwen3-4B, crossing
+bidirectional or SPS-style causal block attention with a shared or
+per-position learned mask embedding. The four drafters share their initial
+Transformer weights. All mask embeddings start from the same frozen Qwen
+embedding. The drafters project the same five verifier layer outputs into a
+common representation and compute K/V from it separately in each draft
+layer. The target embedding table and output head stay frozen.
+
+All arms train on original non-thinking SmolTalk responses, with
+the same examples, sampled anchors, proposal lengths of four and eight,
+and weighted cross-entropy favoring early proposals. Each training block
+sees the verifier features strictly before its anchor and the anchor token
+itself. The target features beyond the anchor and the other training
+blocks are excluded from attention. We use one training seed per arm.
+
+For evaluation we use 64 held-out MMLU STEM prompts with thinking disabled,
+greedy decoding, and a cap of 128 new tokens. We rotate the order of all
+arms across two timing repeats per prompt on one A100-SXM4-80GB, with
+BF16 weights and PyTorch SDPA. We use the same decode-throughput,
+acceptance and $\tau$ definitions as in Appendix~\ref{app:dflash-mask}.
+The timing excludes prefill and the first output token.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llrrrr}
+\toprule
+Mask & Emb. & $k$ & Tok/s & $\tau$ & Accept. \\
+\midrule
+Bidir. & Shared & 4 & 25.32 & 1.277 & 6.92 \\
+Bidir. & Separate & 4 & 25.62 & 1.292 & 7.31 \\
+Causal & Shared & 4 & 25.26 & 1.277 & 6.93 \\
+Causal & Separate & 4 & 25.47 & 1.285 & 7.11 \\
+\addlinespace
+Bidir. & Shared & 8 & 25.49 & 1.276 & 3.45 \\
+Bidir. & Separate & 8 & 25.75 & 1.291 & 3.64 \\
+Causal & Shared & 8 & 25.44 & 1.278 & 3.48 \\
+Causal & Separate & 8 & 25.57 & 1.285 & 3.56 \\
+\bottomrule
+\end{tabular}
+\caption{Trained drafters on Qwen3-4B. Accept. is the percentage of
+proposals accepted in fully emitted rounds. Tok/s pools the full set of
+timed requests. Sequential AR runs at 26.78 tok/s on the full set.}
+\label{tab:trained-draft}
+\end{table}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llrrrrr}
+\toprule
+Mask & Emb. & $k$ & $A_1$ & $A_2$ & $A_3$ & $A_4$ \\
+\midrule
+Bidir. & Shared & 4 & 23.69 & 3.68 & 0.249 & 0.058 \\
+Bidir. & Separate & 4 & 25.03 & 3.78 & 0.407 & 0.019 \\
+Causal & Shared & 4 & 23.80 & 3.60 & 0.288 & 0.019 \\
+Causal & Separate & 4 & 24.21 & 3.82 & 0.366 & 0.058 \\
+\addlinespace
+Bidir. & Shared & 8 & 23.71 & 3.62 & 0.230 & 0.057 \\
+Bidir. & Separate & 8 & 24.95 & 3.68 & 0.445 & 0.039 \\
+Causal & Shared & 8 & 23.92 & 3.58 & 0.288 & 0.019 \\
+Causal & Separate & 8 & 24.24 & 3.77 & 0.366 & 0.058 \\
+\bottomrule
+\end{tabular}
+\caption{Percentage of fully emitted rounds that accept at least the first
+$i$ proposals ($A_i$). At $k=8$, $A_5$ is 0.019\% for causal with separate
+embeddings (two rounds) and zero elsewhere. $A_6$ through $A_8$ are zero.}
+\label{tab:trained-draft-position}
+\end{table}
+
+With a shared embedding, the masks differ in $\tau$ by at most 0.0021.
+Separate embeddings increase $\tau$ by 0.0150--0.0156 under bidirectional
+attention and by 0.0064--0.0074 under causal attention. Within a given mask
+and width they raise throughput by 0.5--1.2\%. Almost all of the gain in
+$\tau$ comes from the first few positions. Extra positions at $k=8$ are
+almost never accepted (Table~\ref{tab:trained-draft-position}).
+
+At each width all four drafters emit identical sequences on all 64 prompts
+and across timing repeats. These sequences match sequential AR on 39
+prompts at $k=4$ and 44 at $k=8$. On the common 38-prompt subset where every
+condition agrees with AR, the eight drafter configurations reach
+25.01--25.54 tok/s and sequential AR reaches 26.86 tok/s. These results
+measure mask and embedding effects on this training corpus and decode
+workload. The fixed-weight ablation above uses published weights and
+thinking-enabled evaluation, so the two protocols do not isolate the
+effect of retraining those weights. The partial AR agreement and the
+single training seed limit conclusions about correctness and stability.
 
 \section{Evidence and draft scope}
 The code registries are the single source of experimental configuration. Base runs use \texttt{scripts/ar\_sps\_config.py}; instruction, scheduling and continuation runs use the corresponding \texttt{instruct}, \texttt{sched} and \texttt{extend} configuration modules. Serving definitions, training, timing and aggregation use the \texttt{vllm\_sps} and \texttt{serving\_graphs} script families. Training and evaluation workers are separate. The accompanying draft README and Russian appendix notes list source paths, measured evidence locations and pinned serving revisions.

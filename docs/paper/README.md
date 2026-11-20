@@ -64,6 +64,12 @@ External artifacts root:
   `python -m scripts.dflash_mask_ablation --report` to print the summary.
   The one-GPU worker uses the Qwen3-4B and DFlash-b16 snapshots pinned by the
   script from the shared Hugging Face cache.
+- Qwen3-4B trained draft mask and embedding comparison
+  `qwen4b-drafter/b0088cb54b3bd646/runs/out/eval-5b067a4174bd18c8/evaluated.json`
+  contains all timed outputs, per-position acceptance and exact-output throughput
+  comparisons. Run `python -m scripts.qwen4b_drafter --phase eval --report`
+  to reproduce the summary. The four sibling run directories contain the
+  trained weights and their training reports.
 - SPS-MTP training/export: `vllm-sps-qwen3/runs/out/qwen3_sps_mtp/` contains
   `trained.json`, `metrics.jsonl` and the final weights/export. AR/EAGLE use the
   original Qwen verifier; SPS/SPS-MTP share this final, jointly adapted verifier.

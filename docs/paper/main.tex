@@ -54,6 +54,8 @@ In a separate vLLM pilot on 100 MMLU STEM questions, a jointly adapted SPS model
 
 With frozen DFlash-b16 and Qwen3-4B weights, imposing SPS-style causal visibility within the draft block lowers acceptance and decode throughput at both tested widths. Both masks emit identical outputs at each width, with partial agreement against sequential greedy decoding (Appendix~\ref{app:dflash-mask}).
 
+In a separate Qwen3-4B experiment, we train five-layer drafters from a shared initialization with either visibility rule. Separate embeddings for each proposal position yield small gains in accepted length under both masks. Increasing the number of proposals from four to eight leaves the mean accepted length nearly unchanged. On the 38 of 64 prompts with identical outputs across all arms, throughput is 0.93--0.95$\times$ that of sequential decoding (Appendix~\ref{app:trained-draft}).
+
 \section{Takeaway}
 Pretrained SPS conversion is feasible as an adaptation procedure, but lossless quality transfer is not established. Distribution matching helps base-model NLL; instruction following remains a separate failure mode. Shared-backbone speculation offers measured serving gains on the small pilot, while quality retention remains unresolved.
 
