@@ -1,7 +1,6 @@
 """Launch the isolated DFlash-b16 reproduction probe, training, or evaluation."""
 
 import argparse
-from hashlib import sha256
 import json
 from pathlib import Path
 import shlex
@@ -20,7 +19,7 @@ def final_step():
 def arm_name(phase, step):
     if phase != "eval":
         return training.EXPERIMENT.name
-    identity = sha256(Path(evaluation.__file__).read_bytes()).hexdigest()[:12]
+    identity = evaluation.signature()[:12]
     return f"gsm8k-step-{step:05d}-{identity}"
 
 

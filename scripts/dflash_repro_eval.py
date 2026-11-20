@@ -1,6 +1,8 @@
 """Compare a trained DFlash-b16 checkpoint with published b16 and sequential AR."""
 
+from hashlib import sha256
 import json
+from pathlib import Path
 
 import torch
 
@@ -14,6 +16,13 @@ GSM8K_REVISION = "740312add88f781978c0658806c59bc2815b9866"
 GSM8K_FILE = "main/test-00000-of-00001.parquet"
 LIMIT = 2048
 WARMUP_TOKENS = 32
+
+
+def signature():
+    digest = sha256()
+    for path in (Path(__file__), Path(paired.__file__)):
+        digest.update(sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
 
 
 def gsm8k():
@@ -75,7 +84,8 @@ def evaluate(checkpoint, result):
     summary["all_arms_matched"] = paired.matched_throughput(samples)
     summary["draft_pair"] = paired.compare_drafts(samples["published"], samples["trained"])
     launch.store_json(result, dict(
-        design=training.signature(), checkpoint=str(checkpoint), target=reference.TARGET_REVISION,
+        design=training.signature(), evaluation=signature(), checkpoint=str(checkpoint),
+        target=reference.TARGET_REVISION,
         published=reference.DRAFT_REVISION, gsm8k=GSM8K_REVISION,
         gpu=torch.cuda.get_device_name(), summary=summary, samples=samples,
     ))
