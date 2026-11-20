@@ -87,16 +87,21 @@ def test_prepared_selection_uses_context_and_holds_out_whole_prompts():
         ids = [prompt] + [66] * response_length
         return {"input_ids": ids, "loss_mask": [0] + [1] * response_length, "seq_len": len(ids)}
 
-    rows = [row(prompt, 5) for prompt in (1, 1, 2, 2, 3, 4, 8)]
-    rows += [row(5, 9), row(6, 2)]
-    args = dict(context=6, horizon=4, validation=2, accumulation=1, seed=1337)
+    rows = [row(prompt, 128) for prompt in (1, 1, 2, 2, 3, 4, 8)]
+    rows += [row(5, 256), row(6, 127)]
+    scattered = row(7, 255)
+    scattered["loss_mask"] = [0, 1] * 128
+    rows.append(scattered)
+    args = dict(context=256, horizon=4, validation=2, accumulation=1, seed=1337)
     result = prepared.select_rows(rows, Tokenizer(), Overlap(), **args)
     assert result == prepared.select_rows(rows, Tokenizer(), Overlap(), **args)
     train_prompts = {rows[index]["input_ids"][0] for index in result["train"]}
     val_prompts = {rows[index]["input_ids"][0] for index in result["val"]}
     assert len(val_prompts) == 2
     assert not train_prompts & val_prompts
+    assert all(sum(rows[index]["loss_mask"]) == 128 for index in result["train"] + result["val"])
     assert result["rejected"]["length"] == 1
+    assert result["rejected"]["min_loss_tokens"] == 1
     assert result["rejected"]["anchors"] == 1
     assert result["rejected"]["overlap"] == 1
 

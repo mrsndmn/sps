@@ -15,6 +15,7 @@ REPO = "jiamingshan/qwen3-4b-dflash-official100k-prepared"
 REVISION = "948e343b5ccc06e21794d195f2a34872ed180b9b"
 SOURCE_ROWS = 100_000
 MMLU_TEST_FILE = "all/test-00000-of-00001.parquet"
+MIN_LOSS_TOKENS = 128
 
 
 def open_dataset():
@@ -55,7 +56,8 @@ def select_rows(rows, tokenizer, overlap, *, context, horizon, validation, accum
     random.Random(seed).shuffle(order)
     train, val = [], []
     val_groups = set()
-    rejected = dict(length=0, anchors=0, overlap=0, held_out_prompt=0, incomplete_batch=0)
+    rejected = dict(length=0, min_loss_tokens=0, anchors=0, overlap=0,
+                    held_out_prompt=0, incomplete_batch=0)
     for index in order:
         row = rows[index]
         ids, mask = row["input_ids"], row["loss_mask"]
@@ -63,6 +65,9 @@ def select_rows(rows, tokenizer, overlap, *, context, horizon, validation, accum
             raise ValueError(f"Mismatched prepared token and mask lengths at row {index}")
         if len(ids) > context:
             rejected["length"] += 1
+            continue
+        if sum(mask) < MIN_LOSS_TOKENS:
+            rejected["min_loss_tokens"] += 1
             continue
         if not any(flag and sum(1 for _ in run) > horizon for flag, run in groupby(mask[1:])):
             rejected["anchors"] += 1
