@@ -18,8 +18,8 @@ LIMIT = 128
 WARMUP_TOKENS = 24
 
 
-def signature():
-    digest = sha256(training.signature().encode())
+def signature(dataset=training.DEFAULT_DATASET):
+    digest = sha256(training.signature(dataset).encode())
     for path in (Path(__file__), Path(reference.__file__), Path(instruct_config.__file__),
                  Path(report_mmlu_stem.__file__), Path(vllm_sps_config.__file__),
                  Path(reference.select_examples.__code__.co_filename),
@@ -47,14 +47,17 @@ def ar_decode(target, ids, stops, limit):
     return dict(tokens=tokens, decode_seconds=time.perf_counter() - start)
 
 
-def validate_checkpoints(train_root):
+def validate_checkpoints(train_root, dataset=training.DEFAULT_DATASET):
     metadata = {}
+    design = training.signature(dataset)
+    rows = training.training_rows(dataset)
     for exp in training.experiment_configs:
         root = train_root / exp.name
         info = json.loads((root / "trained.json").read_text())
-        if info["design_signature"] != training.signature() or info["experiment"] != exp.name:
+        if (info["design_signature"] != design or info["experiment"] != exp.name
+                or info["dataset"] != dataset):
             raise RuntimeError(f"Unexpected checkpoint for {exp.name}")
-        if info["steps"] != training.EPOCHS * training.ROWS["train"] // training.ACCUMULATION:
+        if info["rows"] != rows or info["steps"] != training.EPOCHS * rows // training.ACCUMULATION:
             raise RuntimeError(f"Incomplete checkpoint for {exp.name}")
         if not (root / "weights.safetensors").is_file():
             raise RuntimeError(f"Missing weights for {exp.name}")
@@ -124,14 +127,14 @@ def pairwise_throughput(samples):
 
 
 @torch.inference_mode()
-def evaluate(train_root, result):
+def evaluate(train_root, result, training_dataset=training.DEFAULT_DATASET):
     import transformers
     from datasets import load_dataset
     from safetensors.torch import load_file
 
     if torch.cuda.device_count() != 1:
         raise RuntimeError("The benchmark requires one visible GPU")
-    metadata = validate_checkpoints(train_root)
+    metadata = validate_checkpoints(train_root, training_dataset)
     device = torch.device("cuda:0")
     target, tokenizer = training.load_target(device)
     eos = target.generation_config.eos_token_id
@@ -195,10 +198,11 @@ def evaluate(train_root, result):
     summary["greedy_matched_throughput"] = matched_throughput(samples)
     summary["pairwise_draft_throughput"] = pairwise_throughput(samples)
     launch.store_json(result, dict(
-        design_signature=signature(), gpu=torch.cuda.get_device_name(device),
+        design_signature=signature(training_dataset), gpu=torch.cuda.get_device_name(device),
         torch_version=torch.__version__, transformers_version=transformers.__version__,
         target=[reference.TARGET, reference.TARGET_REVISION],
         dataset=[instruct_config.MMLU_DATASET, instruct_config.MMLU_REVISION],
-        thinking=False, metadata=metadata, inputs=inputs, samples=samples, summary=summary,
+        training_dataset=training_dataset, thinking=False, metadata=metadata,
+        inputs=inputs, samples=samples, summary=summary,
     ))
     print(json.dumps(summary, indent=2), flush=True)

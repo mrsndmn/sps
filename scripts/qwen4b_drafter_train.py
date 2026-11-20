@@ -15,14 +15,16 @@ from torch.nn import functional as F
 
 from experiments import COMMON_ROOT
 from scripts import dflash_mask_ablation as reference
-from scripts import instruct_data, mlspace_launch as launch
+from scripts import instruct_data, mlspace_launch as launch, qwen4b_drafter_data as prepared
 from scripts.vllm_sps_config import SOURCE_ROOT
 
 ROOT = COMMON_ROOT / "qwen4b-drafter"
 DATA = SOURCE_ROOT / "runs" / "data"
 LENGTHS = (4, 8)
 TARGET_LAYERS = (1, 9, 17, 25, 33)
-CONTEXT = 2048
+CONTEXT = 3072
+DEFAULT_DATASET = "smoltalk"
+DATASETS = (DEFAULT_DATASET, prepared.NAME)
 ROWS = {"train": 3072, "val": 64}
 ANCHORS = 16
 EPOCHS = 3
@@ -51,9 +53,36 @@ experiment_configs = [
 ]
 
 
-def signature():
-    paths = (Path(__file__), Path(instruct_data.__file__), DATA / "manifest.json")
+def prepared_settings():
+    return dict(context=CONTEXT, horizon=max(LENGTHS), validation=ROWS["val"],
+                accumulation=ACCUMULATION, seed=SEED)
+
+
+def selection_path():
+    return prepared.selection_path(ROOT, **prepared_settings())
+
+
+def selection():
+    path = selection_path()
+    if not path.is_file():
+        raise RuntimeError(f"Run --dataset {prepared.NAME} --prepare-data before using {path}")
+    return json.loads(path.read_text())
+
+
+def training_rows(dataset):
+    return ROWS["train"] if dataset == DEFAULT_DATASET else len(selection()["train"])
+
+
+def signature(dataset=DEFAULT_DATASET):
+    paths = [Path(__file__), Path(instruct_data.__file__)]
+    if dataset == DEFAULT_DATASET:
+        paths.append(DATA / "manifest.json")
+    else:
+        paths.extend((Path(prepared.__file__), selection_path()))
+        if not paths[-1].is_file():
+            selection()
     digest = sha256()
+    digest.update(dataset.encode())
     for path in paths:
         digest.update(sha256(path.read_bytes()).digest())
     digest.update((reference.TARGET_REVISION + reference.DRAFT_REVISION).encode())
@@ -210,12 +239,22 @@ def validate(target, draft, rows, exp, device):
     return {"loss": loss, "corpus_token_accuracy": accuracy}
 
 
-def train(target, tokenizer, exp, root, *, probe=False):
+def train(target, tokenizer, exp, root, *, probe=False, dataset=DEFAULT_DATASET):
     from transformers import get_cosine_schedule_with_warmup
 
     device = target.device
-    rows = read_rows(tokenizer, "train", PROBE_STEPS * ACCUMULATION if probe else ROWS["train"])
-    val_rows = read_rows(tokenizer, "val", 4 if probe else ROWS["val"])
+    if dataset == DEFAULT_DATASET:
+        rows = read_rows(tokenizer, "train", PROBE_STEPS * ACCUMULATION if probe else ROWS["train"])
+        val_rows = read_rows(tokenizer, "val", 4 if probe else ROWS["val"])
+    else:
+        corpus = prepared.open_dataset()
+        splits = selection()
+        train_indices, val_indices = splits["train"], splits["val"]
+        if probe:
+            train_indices = train_indices[: PROBE_STEPS * ACCUMULATION]
+            val_indices = val_indices[:4]
+        rows = corpus.select(train_indices)
+        val_rows = corpus.select(val_indices)
     draft = build_drafter(target, exp, device)
     # Verify equality of the initial Transformer independently of mask cardinality.
     initial = sha256()
@@ -253,7 +292,8 @@ def train(target, tokenizer, exp, root, *, probe=False):
         history.append(validate(target, draft, val_rows, exp, device))
         print(f"{exp.name} validation {history[-1]}", flush=True)
     report = dict(
-        experiment=exp.name, design_signature=signature(), initial_sha256=initial.hexdigest(),
+        experiment=exp.name, dataset=dataset, design_signature=signature(dataset),
+        initial_sha256=initial.hexdigest(),
         steps=steps * epochs, rows=len(rows), validation=history,
         seconds_per_probed_step=median(durations[1:]),
         peak_bytes=torch.cuda.max_memory_allocated(device),
