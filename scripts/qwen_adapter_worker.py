@@ -1,6 +1,8 @@
 """Train only the Qwen attention adapters and SPS prediction vector."""
 import argparse
 import contextlib
+import hashlib
+import io
 import json
 import math
 import os
@@ -43,7 +45,12 @@ def attach(model, arm):
 
 def initial(arm, device):
     model = common.load_model('staged_sps', device)
-    state = torch.load(cfg.PARENT, map_location='cpu', mmap=True, weights_only=True)
+    parent_bytes = cfg.PARENT.read_bytes()
+    if hashlib.sha256(parent_bytes).hexdigest() != cfg.PARENT_SHA:
+        raise RuntimeError('Parent bytes changed before worker start')
+    with io.BytesIO(parent_bytes) as snapshot:
+        state = torch.load(snapshot, map_location='cpu', weights_only=True)
+    del parent_bytes
     if (state['step'], state['stage'], state['source'], state['revision'], state['design_signature']) != (
             cfg.START, True, c.MODEL, c.REVISION, cfg.SIGNATURE):
         raise RuntimeError('Unexpected parent checkpoint')
@@ -110,14 +117,15 @@ def evaluate(arm, commit):
     if torch.cuda.device_count() != 1 or cfg.winner(commit) != arm:
         raise RuntimeError('Evaluate only the selected winner on one GPU')
     root = cfg.directory(arm)
-    marker = json.loads((root/'trained.json').read_text())
-    if cfg.digest(root/'final.pt') != marker.pop('sha256'):
+    marker = cfg.validated_final(arm, commit)
+    adapter_bytes = (root/'final.pt').read_bytes()
+    if hashlib.sha256(adapter_bytes).hexdigest() != marker['sha256']:
         raise RuntimeError('Adapter checkpoint changed')
-    state = torch.load(root/'final.pt', map_location='cpu', weights_only=True)
+    state = torch.load(io.BytesIO(adapter_bytes), map_location='cpu', weights_only=True)
     device = torch.device('cuda')
     model, _ = initial(arm, device)
     trainable = {name for name, param in model.named_parameters() if param.requires_grad}
-    if state['record'] != marker or set(state['params']) != trainable:
+    if dict(**state['record'], sha256=marker['sha256']) != marker or set(state['params']) != trainable:
         raise RuntimeError('Adapter parameter identity mismatch')
     model.load_state_dict(state['params'], strict=False)
     model.eval()

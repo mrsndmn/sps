@@ -22,12 +22,15 @@ def test_winner_requires_all_finals(monkeypatch, tmp_path):
         root.mkdir(parents=True)
         with pytest.raises(FileNotFoundError):
             cfg.winner('commit')
+        (root/'final.pt').write_bytes(arm.name.encode())
         (root/'trained.json').write_text(json.dumps(dict(arm=arm.name, step=cfg.END,
-            commit='commit', val_nll=10-index)))
-        (root/'final.pt').touch()
+            commit='commit', val_nll=10-index, sha256=cfg.digest(root/'final.pt'))))
     assert cfg.winner('commit') == cfg.experiment_configs[-1]
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValueError):
         cfg.winner('different')
+    (root/'final.pt').write_bytes(b'corrupt')
+    with pytest.raises(ValueError):
+        cfg.winner('commit')
 
 
 @pytest.mark.skipif(not cfg.WHEEL.exists(), reason='requires the project pinned PEFT wheel')

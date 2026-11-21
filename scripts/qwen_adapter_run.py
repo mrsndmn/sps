@@ -53,14 +53,21 @@ def digest(path):
     return result.hexdigest()
 
 
+def validated_final(arm, commit):
+    root = directory(arm)
+    record = json.loads((root/'trained.json').read_text())
+    path = root/'final.pt'
+    if (record.get('commit') != commit or record.get('step') != END or record.get('arm') != arm.name
+            or not math.isfinite(record.get('val_nll', math.nan)) or not path.is_file()
+            or not path.stat().st_size or digest(path) != record.get('sha256')):
+        raise ValueError(f'Invalid finalist: {arm.name}')
+    return record
+
+
 def winner(commit):
     scores = []
     for arm in experiment_configs:
-        root = directory(arm)
-        record = json.loads((root/'trained.json').read_text())
-        if (record['commit'] != commit or record['step'] != END or record['arm'] != arm.name
-                or not math.isfinite(record['val_nll']) or not (root/'final.pt').is_file()):
-            raise RuntimeError(f'Invalid finalist: {arm.name}')
+        record = validated_final(arm, commit)
         scores.append((record['val_nll'], arm.name, arm))
     return min(scores)[2]
 
@@ -100,7 +107,15 @@ def submit(phase, dry):
         if marker.exists():
             if json.loads(marker.read_text())['commit'] != commit:
                 raise RuntimeError(f'Stale marker: {marker}')
-            continue
+            if phase == 'train':
+                try:
+                    validated_final(arm, commit)
+                except ValueError:
+                    pass
+                else:
+                    continue
+            elif json.loads(marker.read_text()).get('sha256') == validated_final(arm, commit)['sha256']:
+                continue
         body = payload(phase, arm, staged)
         identity = launch.normalize(body['job_desc'])
         if identity in active:
