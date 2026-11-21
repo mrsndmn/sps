@@ -1,3 +1,4 @@
+import importlib
 import json
 import os
 import subprocess
@@ -26,7 +27,20 @@ for phase, count in [('train',8),('eval',1)]:
                    env={**os.environ, 'SPS_ADAPTER_SCOPE': 'attention-mlp'})
 
 
-def test_grid_and_resources():
+@pytest.fixture
+def select_scope(monkeypatch):
+    try:
+        with monkeypatch.context() as env:
+            def select(scope):
+                env.setenv('SPS_ADAPTER_SCOPE', scope)
+                importlib.reload(cfg)
+            yield select
+    finally:
+        importlib.reload(cfg)
+
+
+def test_grid_and_resources(select_scope):
+    select_scope('attention')
     grid = cfg.experiment_configs
     assert len({(arm.dora, arm.rs, arm.lr) for arm in grid}) == len(grid) == 8
     for phase, gpus in [('train', 4), ('eval', 1)]:
@@ -54,8 +68,10 @@ def test_winner_requires_all_finals(monkeypatch, tmp_path):
 
 
 @pytest.mark.skipif(not cfg.WHEEL.exists(), reason='requires the project pinned PEFT wheel')
-@pytest.mark.parametrize('arm', cfg.experiment_configs[:4], ids=lambda arm: arm.name)
-def test_adapter_roundtrip(arm):
+@pytest.mark.parametrize('scope,index', [('attention', index) for index in range(4)] + [('attention-mlp', 0)])
+def test_adapter_roundtrip(scope, index, select_scope):
+    select_scope(scope)
+    arm = cfg.experiment_configs[index]
     import torch
     from transformers import Qwen3Config, Qwen3ForCausalLM
     from modeling.models.sps.pretrained import PretrainedSPS
