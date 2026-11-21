@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import shlex
 
@@ -39,6 +40,16 @@ class Arm:
 experiment_configs = [Arm(f'{kind}-{scale}-{rate}', kind == 'dora', scale == 'rs', float(rate))
                       for rate in ('3e-5', '1e-4') for kind in ('lora', 'dora')
                       for scale in ('standard', 'rs')]
+
+SCOPE = os.environ.get('SPS_ADAPTER_SCOPE', 'attention')
+TRAIN_GPUS = 4
+if SCOPE == 'attention-mlp':
+    ROOT = COMMON / 'qwen3-base-adapters-attention-mlp'
+    TARGETS += ('gate_proj', 'up_proj', 'down_proj')
+    TRAIN_GPUS = 8
+    experiment_configs = [Arm('dora-attention-mlp-standard-1e-4', True, False, 1e-4)]
+elif SCOPE != 'attention':
+    raise ValueError(f'Unknown adapter scope: {SCOPE}')
 
 
 def directory(arm):
@@ -76,11 +87,13 @@ def payload(phase, arm, staged):
     body = launch.payload(phase, arm.name, staged, 'd.tarasov', 'mrsndmn')
     cmd = ['timeout', '8h', str(launch.PYTHON), '-m']
     if phase == 'train':
-        cmd += ['torch.distributed.run', '--standalone', '--nproc_per_node=4', '-m']
+        cmd += ['torch.distributed.run', '--standalone', f'--nproc_per_node={TRAIN_GPUS}', '-m']
+        body['instance_type'] = f'a100.{TRAIN_GPUS}gpu'
     cmd += ['scripts.qwen_adapter_worker', phase, arm.name]
     body.update(script=f'cd {shlex.quote(str(staged))} && '+shlex.join(cmd),
                 job_desc=f'sps-qwen3-adapters {phase} {arm.name} #d.tarasov @mrsndmn')
     body['env_variables']['SPS_EXPERIMENT_SUITE'] = SUITE
+    body['env_variables']['SPS_ADAPTER_SCOPE'] = SCOPE
     body['env_variables']['HF_HUB_OFFLINE'] = '1' if phase == 'train' else '0'
     return body
 

@@ -1,9 +1,29 @@
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from scripts import qwen_adapter_run as cfg
+
+
+def test_attention_mlp_scope():
+    command = """from pathlib import Path
+from scripts import qwen_adapter_run as cfg
+arm, = cfg.experiment_configs
+assert arm.dora and not arm.rs and arm.lr == 1e-4
+assert set(cfg.TARGETS) == {'q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj'}
+assert cfg.ROOT.name == 'qwen3-base-adapters-attention-mlp'
+for phase, count in [('train',8),('eval',1)]:
+    body = cfg.payload(phase,arm,Path('/stage'))
+    assert body['instance_type'] == f'a100.{count}gpu'
+    assert body['env_variables']['SPS_ADAPTER_SCOPE'] == 'attention-mlp'
+    assert ('--nproc_per_node=8' in body['script']) == (phase == 'train')
+"""
+    subprocess.run([sys.executable, '-c', command], check=True,
+                   env={**os.environ, 'SPS_ADAPTER_SCOPE': 'attention-mlp'})
 
 
 def test_grid_and_resources():

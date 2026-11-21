@@ -71,7 +71,7 @@ def train(arm, commit):
     device = torch.device('cuda', local)
     dist.init_process_group('nccl')
     world = dist.get_world_size()
-    if world != 4 or c.GLOBAL_BATCH % (world*c.MICRO_BATCH):
+    if world != cfg.TRAIN_GPUS or c.GLOBAL_BATCH % (world*c.MICRO_BATCH):
         raise RuntimeError('Unexpected training topology')
     rank = dist.get_rank()
     model, params = initial(arm, device)
