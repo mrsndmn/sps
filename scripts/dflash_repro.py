@@ -61,17 +61,19 @@ def submit(phase, step, dry):
         raise RuntimeError("Complete the DFlash GPU probe before training")
     if phase == "eval" and not (training.checkpoint_path(step) / "weights.safetensors").is_file():
         raise RuntimeError(f"Missing DFlash checkpoint at step {step}")
+    submit_job(phase, arm_name(phase, step), training.run_root(), marker(phase, step), body, commit)
 
+
+def submit_job(phase, name, root, result_path, body, commit):
     from mls.manager.job.utils import training_job_api_from_profile
 
-    root = training.run_root()
     with (
         patch.object(launch, "ARTIFACTS_ROOT", root),
         patch.object(launch, "RUN_ROOT", root / "runs"),
         launch.submission_lock(),
     ):
-        if marker(phase, step).is_file():
-            print(marker(phase, step))
+        if result_path.is_file():
+            print(result_path)
             return
         client, options = training_job_api_from_profile("default")
         launch.disable_submission_retries(client)
@@ -86,7 +88,6 @@ def submit(phase, step, dry):
         launch.reconcile_receipts(client, active)
         launch.reconcile_intents(active)
         identity = launch.normalize(body["job_desc"])
-        name = arm_name(phase, step)
         if identity in active:
             result = {"name": name, "job_name": active[identity], "reused": True}
         else:
