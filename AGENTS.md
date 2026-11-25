@@ -87,3 +87,4 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.real_readout_serving` → matched one-GPU sequential/block vLLM audits and STEM timing for native/SPS readouts.
 - `python -m scripts.real_readout_likelihood` → paired one-GPU likelihood evaluation of native/SPS MTP endpoints against archived parent scores.
 - `python -m scripts.real_readout_gsm8k` → paired one-GPU GSM8K chat generation for the final readouts.
+- `python -m scripts.real_readout_mmlu` → full zero-shot generative MMLU with one GPU per final readout and chat mode.
