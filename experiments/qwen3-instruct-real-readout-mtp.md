@@ -15,10 +15,26 @@ Before MTP, held-out NLL is 0.3810 for the continued AR parent and
 0.3964 for the SPS parent on the same 34,423 supervised tokens. At the final MTP checkpoint the corresponding values are 0.4366 and
 0.4510, increases of 0.0555 and 0.0546. Packed held-out CE for horizons two
 through four is 1.2454/1.9471/2.5542 for A and 1.2444/1.9529/2.5562 for B.
-Instruction following and timing are pending. The probe passed the native-readout audit on the tested
+The probe passed the native-readout audit on the tested
 prefix before and after frozen-stage updates. The BF16 argmax agreed at every
 tested position, with maximum total variation 0.03153. The two stages took
 5.14 and 7.49 seconds per measured worst-case step respectively.
+
+On the 100-question MMLU STEM pilot, median single-request decode throughput
+in tokens/s and correct answers per 100 were as follows. Each pair gives
+sequential then block decoding on the same final checkpoint.
+
+| Readout | Thinking tok/s | Non-thinking tok/s | Thinking correct | Non-thinking correct |
+|---|---:|---:|---:|---:|
+| A, native | 193.4 → 262.3 | 198.3 → 336.2 | 60 → 59 | 57 → 58 |
+| B, SPS first slot | 161.4 → 255.0 | 185.3 → 335.8 | 70 → 63 | 55 → 59 |
+
+The two decoders agreed on all 16 greedy tokens for 8/8 prefixes with A and
+7/8 with B. B first diverged on the fifth generated token of one prefix.
+CUDA graph replay was verified during warmup. For thinking and non-thinking
+respectively, A averaged 2.19 and 2.55 tokens per verification round, with
+median decode time per round of 8.33 and 7.38 ms. B averaged 2.17 and 2.58
+tokens per round, taking 8.48 and 7.42 ms.
 
 ## Conclusions
 
@@ -28,6 +44,12 @@ differences. The parents underwent different adaptation, and removing the first
 slot also removes a state visible to later slots. The comparison therefore
 estimates the effect of the complete recipes. A same-parent, identical-layout
 readout control would isolate the choice of next-token readout.
+
+On this pilot, A's native readout supports block decoding at 1.36× its
+sequential throughput in thinking mode and 1.70× in non-thinking mode.
+B's larger relative gains coincide with a slower sequential baseline and
+its timings are diagnostic given the greedy divergence. Absolute block
+throughput was close between recipes, especially in non-thinking mode.
 
 ## Changelog
 
@@ -45,3 +67,4 @@ readout control would isolate the choice of next-token readout.
 - 2026-11-25: Submitted full generative MMLU in thinking and non-thinking modes for A (`lm-mpi-job-8f7d1a1b-5ba5-443f-848b-f12e40b5fd59`, `lm-mpi-job-7696b8ca-a387-4892-9bac-02cd79858b75`) and B (`lm-mpi-job-3a6d6a5d-1fc5-411d-97eb-903d2f781ac8`, `lm-mpi-job-580bd14a-9a2f-4266-8e92-d5ced0c44992`).
 - 2026-11-25: Added HumanEval+ generation with separate raw responses and portable EvalPlus samples for external correctness scoring.
 - 2026-11-25: Submitted HumanEval+ generation in thinking/non-thinking modes for A (`lm-mpi-job-c8988d36-8e81-4f4e-97c8-84ee2ae945f1`, `lm-mpi-job-ec501146-edb6-4d7a-88bc-cf41da9c175a`) and B (`lm-mpi-job-6dc8e887-37d6-4e51-bd7c-04fea0dd54f6`, `lm-mpi-job-3f623dd1-365c-4f93-bcfa-a2447273ca71`).
+- 2026-11-25: Verified both serving runs against their submitted code and recorded paired throughput, STEM accuracy and greedy agreement.
