@@ -29,7 +29,9 @@ def signature(exp, marker):
     return dict(arm=exp.arm, checkpoint=marker["checkpoint_sha256"],
                 training=marker["design_signature"], graphs=graphs.protocol_signature(),
                 evaluator=common.file_hash(Path(__file__)), patch=common.file_hash(PATCH),
-                loader=common.file_hash(Path(quality.__file__)))
+                loader=common.file_hash(Path(quality.__file__)),
+                analysis={name: common.file_hash(Path(__file__).with_name(name + ".py"))
+                          for name in ("draft_sweep", "instruct_generation", "report_mmlu_stem")})
 
 
 def private_site(folder):
@@ -55,7 +57,9 @@ def prepare(exp, marker, folder, root):
     if torch.cuda.device_count() != 1:
         raise RuntimeError("Serving preparation requires one GPU")
     _, model = quality.load_endpoint(exp, marker)
-    export = Path(marker["export"]) if exp.arm == "B" else folder / "hf"
+    export = folder / "hf"
+    if exp.arm == "B":
+        common.export(model, export)
     if exp.arm == "A":
         # Export FP32 masters like B. Converting to BF16 belongs to inference.
         model.backbone.save_pretrained(export, safe_serialization=True)
@@ -114,6 +118,9 @@ def engine(exp, layout, export):
 def audit(llm, layout, root):
     from vllm import SamplingParams
     rows = []
+    sequential = (json.loads((root / "sps-audit.json").read_text())
+                  if layout == "sps_mtp" else [])
+    one_token = SamplingParams(temperature=0, max_tokens=1)
     llm.collective_rpc("sps_start_graph_tracking")
     for ref in json.loads((root / "prefixes.json").read_text()):
         prompt = [{"prompt_token_ids": ref["prefix"]}]
@@ -126,7 +133,24 @@ def audit(llm, layout, root):
                 raise ValueError("Proposer row disagrees with emitted first token")
         seq = llm.generate(prompt, SamplingParams(temperature=0, max_tokens=c.AUDIT_NEW_TOKENS),
                            use_tqdm=False)[0].outputs[0].token_ids
-        rows.append(dict(expected=ref["top"], margin=ref["margin"], predicted=predictions,
+        evidence = {}
+        if layout == "sps":
+            evidence["cold_argmax"] = [
+                llm.generate([{"prompt_token_ids": ref["prefix"] + list(seq[:i])}],
+                             one_token, use_tqdm=False)[0].outputs[0].token_ids[0]
+                for i in range(len(seq))]
+        else:
+            baseline = sequential[len(rows)]
+            if list(seq) != baseline["greedy"]:
+                i = next((j for j, (a, b) in enumerate(zip(seq, baseline["greedy"])) if a != b),
+                         min(len(seq), len(baseline["greedy"])))
+                history = ref["prefix"] + list(seq[:i])
+                cold = llm.generate([{"prompt_token_ids": history}], one_token,
+                                    use_tqdm=False)[0].outputs[0].token_ids[0]
+                evidence["first_difference"] = dict(offset=i, history=history, block_cold=cold,
+                    sequential_cold=baseline["cold_argmax"][i:i+1],
+                    sequential_cached=baseline["greedy"][i:i+1], block_cached=list(seq[i:i+1]))
+        rows.append(dict(**evidence, expected=ref["top"], margin=ref["margin"], predicted=predictions,
                          greedy=list(seq)))
     workers = llm.collective_rpc("sps_stop_graph_tracking")
     evidence = root / f"{layout}-graphs.json"
@@ -135,6 +159,8 @@ def audit(llm, layout, root):
     launch.store_json(root / f"{layout}-audit.json", rows)
     # Large-margin oracle disagreements flag layout or weight-loading errors.
     for r in rows:
+        if len(r["predicted"]) != (c.HORIZONS if layout == "sps_mtp" else 1):
+            raise ValueError("Incorrect horizon count")
         if any(actual != oracle and margin > 1. for actual, oracle, margin
                in zip(r["predicted"], r["expected"], r["margin"])):
             raise ValueError("Confident disagreement with the native checkpoint")
@@ -173,8 +199,13 @@ def benchmark(llm, exp, layout, root):
                         decode_seconds=result.metrics.last_token_ts-result.metrics.first_token_ts,
                         correct=answer == "ABCD"[docs[index]["answer"]], stop=out.finish_reason)
 
+        llm.collective_rpc("sps_start_graph_tracking")
         for index in indices[:c.WARMUP_REQUESTS]:
             generate(index, True)
+        evidence = root / f"{layout}-{mode}-graphs.json"
+        workers = llm.collective_rpc("sps_stop_graph_tracking")
+        launch.store_json(evidence, dict(protocol_signature=graphs.protocol_signature(), workers=workers))
+        graphs.validate_evidence(evidence)
         trials = []
         with (root / f"{layout}-{mode}.jsonl").open("w") as stream:
             for repeat in range(c.REPEATS):
@@ -218,9 +249,23 @@ def worker(exp):
                                 "--export", export], env=env, check=True)
             if phase == "audit":
                 seq, block = [json.loads((root / f"{name}-audit.json").read_text()) for name in LAYOUTS]
-                launch.store_json(root / "greedy.json", dict(matches=sum(
-                    s["greedy"] == b["greedy"] for s, b in zip(seq, block, strict=True)), total=len(seq)))
-    launch.store_json(root / "evaluated.json", dict(identity=signature(exp, marker)))
+                matches = sum(s["greedy"] == b["greedy"] for s, b in zip(seq, block, strict=True))
+                audit_passed = matches == len(seq)
+                launch.store_json(root / "greedy.json", dict(matches=matches, total=len(seq),
+                                  passed=audit_passed))
+    launch.store_json(root / "evaluated.json", dict(identity=signature(exp, marker),
+                      cached_greedy_passed=audit_passed,
+                      timing_scope="paired pilot" if audit_passed else "diagnostic: cached greedy audit failed",
+                      artifacts=artifact_hashes(root)))
+
+
+def artifact_hashes(root):
+    names = ["prefixes.json", "greedy.json"]
+    for layout in LAYOUTS:
+        names.extend((f"{layout}-audit.json", f"{layout}-graphs.json"))
+        for mode in c.GENERATION:
+            names.extend(f"{layout}-{mode}{suffix}" for suffix in (".json", ".jsonl", "-graphs.json"))
+    return {name: common.file_hash(root / name) for name in names}
 
 
 def main():
@@ -254,7 +299,9 @@ def main():
         for exp in selected:
             result = ROOT / "runs/out" / exp.name / "evaluated.json"
             if result.exists():
-                if json.loads(result.read_text())["identity"] != signature(exp, quality.endpoint(exp)):
+                saved = json.loads(result.read_text())
+                if (saved["identity"] != signature(exp, quality.endpoint(exp))
+                        or saved["artifacts"] != artifact_hashes(result.parent)):
                     raise ValueError("Stale serving result")
                 continue
             body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
