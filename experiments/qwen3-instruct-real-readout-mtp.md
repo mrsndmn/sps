@@ -11,7 +11,9 @@ the completed `scripts.vllm_sps_train.main` run.
 
 ## Results
 
-Pending.
+Before MTP, held-out NLL is 0.3810 for the continued AR parent and
+0.3964 for the SPS parent on the same 34,423 supervised tokens. Endpoint
+comparison is pending.
 
 ## Conclusions
 
@@ -26,3 +28,4 @@ readout control would isolate the choice of next-token readout.
 
 - 2026-11-25: Planned staged training of the native-readout arm and comparison
   against the completed SPS-MTP arm.
+- 2026-11-25: Submitted arm A probe `lm-mpi-job-4bb134b0-7807-4b40-abf0-dc0c64165658`.
