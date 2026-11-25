@@ -6,8 +6,8 @@ on next-token quality, instruction following and absolute decoding throughput.
 
 ## Setup
 
-Planned training entry point for arm A is an arm-specific counterpart to
-`scripts.vllm_sps_train.main`. Arm B reuses the completed run of that function.
+Training function for arm A is `scripts.real_readout_train.main`. Arm B reuses
+the completed `scripts.vllm_sps_train.main` run.
 
 ## Results
 

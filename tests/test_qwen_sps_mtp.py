@@ -185,3 +185,24 @@ def test_paged_prediction_kernel_matches_dense_mask_with_reordered_pages(
                 enable_gqa=True,
             )[0, :, 0]
     torch.testing.assert_close(output, expected, atol=0.025, rtol=0.025)
+
+
+def test_real_readout_matches_native_ar_and_trains_future_slots():
+    from scripts.real_readout_model import RealReadoutMTP
+
+    sps, _ = tiny()
+    model = RealReadoutMTP(sps.backbone, 4).eval()
+    ids = torch.tensor([[2, 4, 1, 8, 3]])
+    with torch.no_grad():
+        native = model.backbone(ids).logits
+        logits = model(ids).logits
+        torch.testing.assert_close(logits[:, :, 0], native)
+        torch.testing.assert_close(model(ids[:, :3]).logits, logits[:, :3])
+    labels = horizon_targets(ids, torch.ones_like(ids), 4)
+    for frozen, count in ((True, 6), (False, 10)):
+        model.set_stage(frozen)
+        model.zero_grad()
+        loss, n = model(ids[:, :-1], targets=labels)
+        loss.backward()
+        assert n == count and model.future.grad.abs().sum() > 0
+        assert (model.backbone.lm_head.weight.grad is None) == frozen

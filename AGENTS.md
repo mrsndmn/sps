@@ -81,3 +81,5 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.qwen_adapter_run train|eval` → Qwen base SPS adapter sweep and winner benchmarks; `scripts/qwen_adapter_worker.py`, `tests/test_qwen_adapter.py`.
 - `SPS_ADAPTER_SCOPE=attention-mlp python -m scripts.qwen_adapter_run train|eval` → isolated attention + MLP DoRA comparison.
 - `python -m scripts.dflash_kd --phase probe|train|eval` / `--report` → `scripts.dflash_kd_train.py`, `tests/test_dflash_kd.py`.
+
+- `python -m scripts.real_readout_run probe|train` → native Qwen next-token readout and future-slot MTP control; `scripts/real_readout_train.py`, `tests/test_qwen_sps_mtp.py`.

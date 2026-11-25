@@ -1,0 +1,157 @@
+"""Train future slots, then jointly adapt the native AR readout and slots."""
+import argparse
+import contextlib
+import json
+import os
+import time
+
+import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+from scripts import instruct_config as source
+from scripts import real_readout_run as run
+from scripts import vllm_sps_common as common
+from scripts import vllm_sps_config as c
+from scripts.instruct_common import load_model
+from scripts.mlspace_launch import store_json
+from scripts.real_readout_model import RealReadoutMTP
+from scripts.vllm_sps_train import labels_for, optimizer_for, validation
+
+
+def parent():
+    state = torch.load(run.PARENT, map_location="cpu", mmap=True, weights_only=False)
+    if (state["design_signature"] != c.PARENT_SIGNATURE or state["step"] != c.PARENT_STEP
+            or state["source"] != c.MODEL or state["revision"] != c.REVISION
+            or state["experiment"]["name"] != run.PARENT.parent.name
+            or state["experiment"]["recipe"] != "continued_ar" or state["experiment"]["distillation_weight"]):
+        raise ValueError("Unexpected AR parent")
+    wrapper = load_model("continued_ar", "cpu")
+    wrapper.load_state_dict(state["model"])
+    return RealReadoutMTP(wrapper.backbone, c.HORIZONS, c.BACKEND)
+
+
+@torch.no_grad()
+def audit_readout(model, example, device):
+    ids = torch.tensor([example["input_ids"][:64]], device=device)
+    model.eval()
+    model.backbone.set_attn_implementation("sdpa")
+    model.backend = "sdpa"
+    try:
+        reference = model.backbone(ids, use_cache=False).logits
+        observed = model(ids).logits[:, :, 0]
+        torch.testing.assert_close(observed, reference, atol=2e-4, rtol=2e-4)
+        return float((observed-reference).abs().max())
+    finally:
+        model.backend = c.BACKEND
+        model.backbone.set_attn_implementation("sps_flex_attention")
+        model.train()
+
+
+def atomic_save(path, record):
+    temporary = path.with_suffix(".tmp")
+    torch.save(record, temporary)
+    temporary.replace(path)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("phase", choices=("probe", "train"))
+    probe = parser.parse_args().phase == "probe"
+    device = torch.device("cuda", int(os.environ["LOCAL_RANK"]))
+    torch.cuda.set_device(device)
+    dist.init_process_group("nccl")
+    rank, world = dist.get_rank(), dist.get_world_size()
+    if world != run.ARM.num_gpus or c.GLOBAL_BATCH % world:
+        raise RuntimeError("Unexpected allocation")
+    torch.manual_seed(c.SEED)
+    data = common.data("train")
+    heldout = common.data("val")[:c.VAL_ROWS]
+    steps = c.PROBE_STEPS if probe else c.TRAIN_STEPS
+    split = steps // 2 if probe else c.STAGE_STEPS
+    model = parent().to(device)
+    sig = run.signature()
+    root = run.ROOT / "probe" if probe else run.OUT
+    root.mkdir(parents=True, exist_ok=True)
+    start = 0
+    state = None
+    latest = root / "latest.pt"
+    if not probe and latest.exists():
+        state = torch.load(latest, map_location="cpu", mmap=True, weights_only=False)
+        if state["design_signature"] != sig:
+            raise ValueError("Resume signature mismatch")
+        model.load_state_dict(state["model"])
+        start = state["step"]
+    audit = {}
+    if start == 0:
+        audit["initial"] = audit_readout(model, heldout[0], device)
+    durations = {}
+    for frozen, begin, end in ((True, 0, split), (False, split, steps)):
+        if start >= end:
+            continue
+        model.train()
+        optimizer = optimizer_for(model, frozen)
+        if state is not None and state["frozen"] == frozen:
+            optimizer.load_state_dict(state["optimizer"])
+        state = None
+        ddp = DDP(model, device_ids=[device.index], broadcast_buffers=False)
+        times = []
+        for step in range(max(begin, start), end):
+            offset = step * c.GLOBAL_BATCH
+            batch = [labels_for(data[offset+j], device)
+                     for j in range(rank, c.GLOBAL_BATCH, world)]
+            count = sum((labels[:, :, int(frozen):] != -100).sum() for _, labels in batch)
+            dist.all_reduce(count)
+            if count.item() <= 0:
+                raise ValueError("Empty supervised batch")
+            optimizer.zero_grad(set_to_none=True)
+            torch.cuda.synchronize()
+            began = time.monotonic()
+            for j, (ids, labels) in enumerate(batch):
+                sync = contextlib.nullcontext() if j == len(batch)-1 else ddp.no_sync()
+                with sync, torch.autocast("cuda", dtype=torch.bfloat16):
+                    loss, _ = ddp(ids, targets=labels)
+                    (loss * (world / count.double())).backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), source.CLIP, error_if_nonfinite=True)
+            optimizer.step()
+            torch.cuda.synchronize()
+            elapsed = time.monotonic() - began
+            if step > begin:
+                times.append(elapsed)
+            if rank == 0:
+                print(json.dumps(dict(step=step+1, frozen=frozen, seconds=elapsed)), flush=True)
+            if not probe and ((step+1) % c.CHECKPOINT_INTERVAL == 0 or step+1 == end):
+                dist.barrier()
+                if rank == 0:
+                    score = validation(model, heldout, device)
+                    record = dict(model=model.state_dict(), optimizer=optimizer.state_dict(),
+                                  step=step+1, frozen=frozen, design_signature=sig,
+                                  parent=str(run.PARENT), val_horizon_ce=score)
+                    if step+1 == end:
+                        atomic_save(root / ("stage_endpoint.pt" if frozen else "final.pt"), record)
+                    atomic_save(latest, record)
+                    with (root / "metrics.jsonl").open("a") as stream:
+                        stream.write(json.dumps(dict(step=step+1, val_horizon_ce=score))+"\n")
+                dist.barrier()
+        if frozen:
+            audit["after_frozen"] = audit_readout(model, heldout[0], device)
+            if rank == 0:
+                store_json(root / "readout_audit.json", audit)
+        durations[frozen] = max(times, default=0.)
+        del ddp, optimizer
+    if probe:
+        measured = torch.tensor([durations[True], durations[False]], device=device)
+        dist.all_reduce(measured, op=dist.ReduceOp.MAX)
+        if rank == 0:
+            projected = (measured[0]*c.STAGE_STEPS + measured[1]*(c.TRAIN_STEPS-c.STAGE_STEPS))/3600
+            store_json(run.ROOT / "prepared.json", dict(design_signature=sig,
+                       seconds=measured.tolist(), projected_hours=projected.item()))
+    elif rank == 0:
+        store_json(root / "trained.json", dict(design_signature=sig, parent=str(run.PARENT),
+                   checkpoint=str(root/"final.pt"), step=steps,
+                   checkpoint_sha256=common.file_hash(root/"final.pt")))
+    dist.destroy_process_group()
+
+
+if __name__ == "__main__":
+    main()
