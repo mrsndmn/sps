@@ -43,3 +43,4 @@ readout control would isolate the choice of next-token readout.
 - 2026-11-25: Stopped both likelihood benchmark jobs at the user's request. Added paired generative GSM8K evaluation.
 - 2026-11-25: Submitted GSM8K chat generation in thinking/non-thinking modes for A (`lm-mpi-job-ebeaed92-0da3-4271-8d32-a1cad465997e`, `lm-mpi-job-4a244d43-e261-45e9-8654-da815429a230`) and B (`lm-mpi-job-e3641317-5874-45cf-bc89-d8a06b4697d1`, `lm-mpi-job-2625b364-a4dd-400c-b289-f0066074440b`).
 - 2026-11-25: Submitted full generative MMLU in thinking and non-thinking modes for A (`lm-mpi-job-8f7d1a1b-5ba5-443f-848b-f12e40b5fd59`, `lm-mpi-job-7696b8ca-a387-4892-9bac-02cd79858b75`) and B (`lm-mpi-job-3a6d6a5d-1fc5-411d-97eb-903d2f781ac8`, `lm-mpi-job-580bd14a-9a2f-4266-8e92-d5ced0c44992`).
+- 2026-11-25: Added HumanEval+ generation with separate raw responses and portable EvalPlus samples for external correctness scoring.
