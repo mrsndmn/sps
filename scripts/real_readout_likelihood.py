@@ -2,6 +2,7 @@
 import argparse
 import importlib.metadata
 import json
+import re
 from pathlib import Path
 import shlex
 import tempfile
@@ -14,6 +15,7 @@ from scripts import sched_config
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 
+INITIAL_WORKER = "73a63d156648bcd65801378ee670a9bb70d68cf3baba32b9336be0f340841baa"
 ROOT = train.ROOT / "likelihood-eval"
 experiment_configs = [c.Experiment(f"likelihood-{arm}", arm) for arm in ("A", "B")]
 
@@ -27,6 +29,10 @@ def inputs(exp, marker):
             or manifest["design_signature"] != c.PARENT_SIGNATURE or manifest["limit"] is not None
             or manifest["checkpoint"]["step"] != c.PARENT_STEP):
         raise ValueError("Parent benchmark checkpoint mismatch")
+    stat = parent.stat()
+    if (manifest["checkpoint"]["size"] != stat.st_size
+            or manifest["checkpoint"]["mtime_ns"] != stat.st_mtime_ns):
+        raise ValueError("Parent checkpoint changed since its evaluation")
     identity = dict(arm=exp.arm, endpoint=marker["checkpoint_sha256"],
                     training=marker["design_signature"], parent=str(parent),
                     parents={t: common.file_hash(folder / f"{t}.json") for t in source.LIKELIHOOD_TASKS},
@@ -43,6 +49,18 @@ def compare(task, current, parent):
     ids = keys(parent)
     if not ids or len(set(ids)) != len(ids) or keys(current) != ids:
         raise ValueError(f"Different benchmark examples or prompts for {task}")
+    if any(a["arguments"] != b["arguments"]
+           for a, b in zip(current["samples"][task], parent["samples"][task])):
+        raise ValueError(f"Benchmark choices or requests changed for {task}")
+    for field in ("lm_eval_version", "transformers_version", "max_length", "tokenizer_pad_token",
+                  "tokenizer_bos_token", "tokenizer_eos_token", "eot_token_id", "config"):
+        if current[field] != parent[field]:
+            raise ValueError(f"Different {field} for {task}")
+    def protocol(result):
+        return re.sub(r"(<function [^<>]+) at 0x[0-9a-f]+>", r"\1>",
+                      json.dumps(result["configs"][task], sort_keys=True))
+    if protocol(current) != protocol(parent):
+        raise ValueError(f"Different task configuration for {task}")
     for name in ("n-shot", "versions", "higher_is_better"):
         if current[name][task] != parent[name][task]:
             raise ValueError(f"Scoring protocol changed for {task}")
@@ -62,6 +80,7 @@ def evaluate(exp):
         raise RuntimeError("One visible GPU required")
     marker = quality.endpoint(exp)
     parent, ident = inputs(exp, marker)
+    verify_parent(marker)
     native, packed = quality.load_endpoint(exp, marker)
     del packed
     tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
@@ -85,12 +104,45 @@ def evaluate(exp):
     launch.store_json(root / "evaluated.json", dict(identity=ident, results=results, artifacts=hashes))
 
 
+def verify_parent(marker):
+    if "parent_sha256" in marker and common.file_hash(marker["parent"]) != marker["parent_sha256"]:
+        raise ValueError("Historical parent checksum mismatch")
+
+
+def verify_saved(exp):
+    # Independently re-score the comparison from the GPU jobs' immutable task logs.
+    marker = quality.endpoint(exp)
+    verify_parent(marker)
+    parent, ident = inputs(exp, marker)
+    root = ROOT / "runs/out" / exp.name
+    saved = json.loads((root / "evaluated.json").read_text())
+    actual = saved["identity"]
+    old = dict(ident, files=dict(ident["files"], real_readout_likelihood=INITIAL_WORKER))
+    if actual not in (ident, old):
+        raise ValueError("Unrecognized likelihood output identity")
+    verified = {}
+    for task in source.LIKELIHOOD_TASKS:
+        path = root / f"{task}.json"
+        if saved["artifacts"][path.name] != common.file_hash(path):
+            raise ValueError("Changed task artifact")
+        verified[task] = compare(task, json.loads(path.read_text()),
+                                 json.loads((parent / path.name).read_text()))
+    if verified != saved["results"]:
+        raise ValueError("Saved metrics differ from validated task outputs")
+    return verified
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arm", choices=("A", "B"))
     parser.add_argument("--worker", action="store_true")
+    parser.add_argument("--verify", action="store_true")
     args = parser.parse_args()
     selected = [e for e in experiment_configs if args.arm in (None, e.arm)]
+    if args.verify:
+        for exp in selected:
+            print(json.dumps({exp.name: verify_saved(exp)}))
+        return
     if args.worker:
         exp, = selected
         return evaluate(exp)
@@ -110,10 +162,7 @@ def main():
             root = ROOT / "runs/out" / exp.name
             marker = root / "evaluated.json"
             if marker.exists():
-                saved = json.loads(marker.read_text())
-                hashes = {f"{t}.json": common.file_hash(root / f"{t}.json") for t in source.LIKELIHOOD_TASKS}
-                if ident != saved["identity"] or hashes != saved["artifacts"]:
-                    raise ValueError("Stale likelihood result")
+                verify_saved(exp)
                 continue
             body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
             body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1], region=options["region"],
