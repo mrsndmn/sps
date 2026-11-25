@@ -38,6 +38,12 @@ tokens per round, taking 8.48 and 7.42 ms.
 
 HumanEval+ generation produced one record per task in all four runs. In thinking mode, A and B reached the length cap on 45 and 49 tasks, with 37 and 42 empty extracted solutions respectively. In non-thinking mode, A reached the cap once and B never reached it. Both exported 164 nonempty solutions. Functional scoring is pending.
 
+All four sequential-generation IFEval runs covered the same 541 prompts. In
+thinking mode, strict prompt passes changed from 360 to 309 for A and 349 to
+293 for B after MTP. In non-thinking mode, they changed from 285 to 272 for A
+and 265 to 271 for B. The thinking-mode rates of malformed reasoning boundaries
+rose from 4.25% to 12.57% for A and from 6.84% to 12.01% for B.
+
 ## Conclusions
 
 Measure both parents before MTP training and both final models with sequential
@@ -52,6 +58,12 @@ sequential throughput in thinking mode and 1.70× in non-thinking mode.
 B's larger relative gains coincide with a slower sequential baseline and
 its timings are diagnostic given the greedy divergence. Absolute block
 throughput was close between recipes, especially in non-thinking mode.
+
+Thinking-mode strict accuracy declined for both recipes. The difference in
+their parent-to-final changes (A minus B) was +0.92 percentage points in
+thinking mode and −3.51 points in non-thinking mode. Paired 95% percentile
+bootstrap intervals over prompts were [−4.07, +5.91] and [−8.69, +1.48]
+respectively. This comparison does not resolve a readout advantage.
 
 ## Changelog
 
@@ -71,3 +83,4 @@ throughput was close between recipes, especially in non-thinking mode.
 - 2026-11-25: Submitted HumanEval+ generation in thinking/non-thinking modes for A (`lm-mpi-job-c8988d36-8e81-4f4e-97c8-84ee2ae945f1`, `lm-mpi-job-ec501146-edb6-4d7a-88bc-cf41da9c175a`) and B (`lm-mpi-job-6dc8e887-37d6-4e51-bd7c-04fea0dd54f6`, `lm-mpi-job-3f623dd1-365c-4f93-bcfa-a2447273ca71`).
 - 2026-11-25: Verified both serving runs against their submitted code and recorded paired throughput, STEM accuracy and greedy agreement.
 - 2026-11-26: Verified task coverage, sample extraction and raw/export hashes for all four HumanEval+ runs and packaged the samples for external scoring.
+- 2026-11-26: Verified all eight parent and final IFEval answer sets against the pinned prompts, reproduced per-answer scores, and compared paired changes.
