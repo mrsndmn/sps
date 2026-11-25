@@ -39,3 +39,4 @@ readout control would isolate the choice of next-token readout.
 
 - 2026-11-25: Submitted one-GPU IFEval for A non-thinking (`lm-mpi-job-81d30d24-1da3-46f1-ae4a-b1c9e0c6224f`) and thinking (`lm-mpi-job-c5b3180f-f6d5-43a4-86ef-4ee9fefdea6f`), and B non-thinking (`lm-mpi-job-1ef8fc08-14f8-4e45-ab7c-6a3c57b96e80`) and thinking (`lm-mpi-job-c2a37cc9-3ef3-43f3-9caf-bb748f741f55`). Checked that parent and endpoint held-out token counts and example IDs match.
 - 2026-11-25: Submitted one-GPU matched serving audits and timings for A (`lm-mpi-job-befe903a-8394-4c95-9046-2a11690b3435`) and B (`lm-mpi-job-3dcb62fd-27f7-4d57-be9a-89ce0ddd89d1`).
+- 2026-11-25: Submitted matched zero-shot likelihood evaluations against both parents' saved task results, A `lm-mpi-job-3643aa2b-d6ed-4dd0-abcb-17f14b5d7cd9` and B `lm-mpi-job-f43fd8ba-67f1-433d-bd14-42a0936d78d3`.
