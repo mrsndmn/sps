@@ -70,6 +70,15 @@ External artifacts root:
   comparisons. Run `python -m scripts.qwen4b_drafter --dataset smoltalk-2048 --phase eval --report`
   to reproduce the summary. The four sibling run directories contain the
   trained weights and their training reports.
+- DFlash-b16 scratch reproduction on GSM8K
+  `dflash-repro/ec224ca5303b0f5b/runs/out/gsm8k-step-*-780d2d2a6375/evaluated.json`
+  and `dflash-kd/45d1905c50658e45/runs/out/gsm8k-step-*-5938c51ca9ec/evaluated.json`
+  contain hard and soft results for the three checkpoints, per-position
+  acceptance, matched-output comparisons and raw timings. Use
+  `python -m scripts.dflash_repro --phase eval --step <step> --report`
+  and `python -m scripts.dflash_kd --phase eval --step <step> --report`.
+  Training cost and job provenance are recorded in
+  `experiments/dflash-reproduction.md` and `experiments/dflash-soft-kd.md`.
 - SPS-MTP training/export: `vllm-sps-qwen3/runs/out/qwen3_sps_mtp/` contains
   `trained.json`, `metrics.jsonl` and the final weights/export. AR/EAGLE use the
   original Qwen verifier; SPS/SPS-MTP share this final, jointly adapted verifier.

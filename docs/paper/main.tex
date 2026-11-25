@@ -56,11 +56,14 @@ With frozen DFlash-b16 and Qwen3-4B weights, imposing SPS-style causal visibilit
 
 In a separate Qwen3-4B experiment, we train five-layer drafters from a shared initialization with either visibility rule. Separate embeddings for each proposal position yield small gains in accepted length under both masks. Increasing the number of proposals from four to eight leaves the mean accepted length nearly unchanged. On the 38 of 64 prompts with identical outputs across all arms, throughput is 0.93--0.95$\times$ that of sequential decoding (Appendix~\ref{app:trained-draft}).
 
+\paragraph{Training DFlash from scratch.}
+On GSM8K, training a DFlash-b16 drafter from scratch on the prepared Qwen3-4B corpus yields $\tau=4.161$ with hard targets and $4.224$ with soft distillation, compared with $5.972$ for the published drafter. The soft checkpoint reaches 70.6\% of the published drafter's decode throughput in the same job. Most of the acceptance gap appears later in the block (Appendix~\ref{app:dflash-reproduction}).
+
 \section{Takeaway}
 Pretrained SPS conversion is feasible as an adaptation procedure, but lossless quality transfer is not established. Distribution matching helps base-model NLL; instruction following remains a separate failure mode. Shared-backbone speculation offers measured serving gains on the small pilot, while quality retention remains unresolved.
 
 \section*{Limitations}
-This is an exploratory, single-training-seed draft. Partial MMLU is not representative of the full test; the paired response-replacement follow-up reports question-bootstrap intervals, which do not quantify training-seed variability. Most base configurations lack AR continuation controls. The speed results cover only a small, single-GPU, batch-one pilot with target decode graphs and no Torch compilation; they do not establish production throughput, fixed-length speedups or speculative sampling-distribution equivalence. Expanded greedy checks reveal precision-sensitive discrepancies between SPS and SPS-MTP despite eager/graph parity within each arm. No capacity claim is made. Repeated training seeds and broader matched quality and serving evaluations are needed before submission.
+This is an exploratory, single-training-seed draft. Partial MMLU is not representative of the full test; the paired response-replacement follow-up reports question-bootstrap intervals, which do not quantify training-seed variability. Most base configurations lack AR continuation controls. The serving results measure single-request decoding on one GPU per job. The SPS-MTP pilot uses target decode graphs and the DFlash reproduction uses PyTorch SDPA. The benchmarks leave production throughput, fixed-length speedups and speculative sampling-distribution equivalence unresolved. Expanded greedy checks reveal precision-sensitive discrepancies between SPS and SPS-MTP despite eager/graph parity within each arm. No capacity claim is made. Repeated training seeds and broader matched quality and serving evaluations are needed before submission.
 
 \bibliography{references}
 \clearpage

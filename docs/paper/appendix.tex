@@ -294,6 +294,60 @@ thinking-enabled evaluation, so the two protocols do not isolate the
 effect of retraining those weights. The partial AR agreement and the
 single training seed limit conclusions about correctness and stability.
 
+\section{DFlash-b16 reproduction on Qwen3-4B}\label{app:dflash-reproduction}
+We train a five-layer bidirectional DFlash-b16 drafter from random
+initialization with frozen Qwen3-4B and the prepared DFlash-100K corpus.
+We use 93,216 training sequences after length and MMLU STEM overlap
+filtering. Both runs share the reconstructed starting weights, the
+training sequence order, sampled anchors, and the learning-rate schedule.
+The hard run uses cross-entropy against the recorded response tokens.
+The soft run uses forward KL from the frozen verifier's next-token
+distribution on the recorded prefix, at temperature one.
+Both weight proposals by position and train for 11,652 optimizer steps.
+This reproduces the training method with the available corpus. The
+original DFlash report describes a larger mixture of model-generated
+responses \citep{chen2026dflash}.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lrrrr}
+\toprule
+Step & Hard $\tau$ & Soft $\tau$ & Hard tok/s & Soft tok/s \\
+\midrule
+5,000 & 3.648 & 3.698 & 74.79 & 76.26 \\
+10,000 & 4.143 & 4.211 & 87.93 & 88.07 \\
+11,652 & 4.161 & 4.224 & 85.34 & 87.95 \\
+\bottomrule
+\end{tabular}
+\caption{Scratch DFlash-b16 with hard or soft targets on 1,319 GSM8K
+prompts. The published checkpoint reaches $\tau=5.972$ in the same
+benchmark. Decode throughput excludes prefill and the first token.}
+\label{tab:dflash-reproduction}
+\end{table}
+
+We use greedy non-thinking generation with 15 proposals and the same
+frozen verifier throughout. Each evaluation job runs on one A100-SXM4-80GB.
+The final hard and soft acceptance rates are 21.07\% and 21.49\%, versus
+33.15\% for published b16. The final soft checkpoint accepts the first
+proposal in 83.49\% of fully emitted rounds and the first eight in 9.82\%,
+versus 86.97\% and 25.45\% for published b16. Most of the hard run's
+measured increase in $\tau$ occurs between steps 5,000 and 10,000.
+Soft targets raise final $\tau$ by 0.063 (95\% paired prompt bootstrap
+interval 0.051--0.075). The interval captures variation across prompts
+for these checkpoints.
+
+All six scratch checkpoints and published b16 produce the same token
+sequences on all 1,319 prompts. They agree with sequential greedy AR on
+the same 695 prompts. On this subset, the final hard and soft checkpoints
+reach 3.16$\times$ and 3.21$\times$ against their respective same-job AR
+runs. The final soft checkpoint reaches 87.95 tok/s versus 124.59 for
+published b16 in its job on the full set. Training used four A100s for
+hard targets and eight for soft targets, at 36.30 and 46.75 GPU-hours.
+The compute comparison includes the difference in training topology.
+The observed acceptance gain is based on one training seed.
+
 \section{Evidence and draft scope}
 The code registries are the single source of experimental configuration. Base runs use \texttt{scripts/ar\_sps\_config.py}; instruction, scheduling and continuation runs use the corresponding \texttt{instruct}, \texttt{sched} and \texttt{extend} configuration modules. Serving definitions, training, timing and aggregation use the \texttt{vllm\_sps} and \texttt{serving\_graphs} script families. Training and evaluation workers are separate. The accompanying draft README and Russian appendix notes list source paths, measured evidence locations and pinned serving revisions.
 
