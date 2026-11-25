@@ -83,3 +83,4 @@ Arkhip job_wait observation rather than polling shells.
 - `python -m scripts.dflash_kd --phase probe|train|eval` / `--report` → `scripts.dflash_kd_train.py`, `tests/test_dflash_kd.py`.
 
 - `python -m scripts.real_readout_run probe|train` → native Qwen next-token readout and future-slot MTP control; `scripts/real_readout_train.py`, `tests/test_qwen_sps_mtp.py`.
+- `python -m scripts.real_readout_eval` → one-GPU paired final-checkpoint IFEval and held-out horizon CE.

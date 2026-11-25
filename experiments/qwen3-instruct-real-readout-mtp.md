@@ -33,3 +33,4 @@ readout control would isolate the choice of next-token readout.
   against the completed SPS-MTP arm.
 - 2026-11-25: Submitted arm A probe `lm-mpi-job-4bb134b0-7807-4b40-abf0-dc0c64165658`.
 - 2026-11-25: Probe completed; submitted arm A training as `lm-mpi-job-431afba4-ec39-4582-af0f-3b7751d85ad1`.
+- 2026-11-25: Training reached its fixed final endpoint. Aggregate validation CE across horizons was 1.5965 for A and 1.6030 for B.
