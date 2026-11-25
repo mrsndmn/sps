@@ -12,8 +12,10 @@ the completed `scripts.vllm_sps_train.main` run.
 ## Results
 
 Before MTP, held-out NLL is 0.3810 for the continued AR parent and
-0.3964 for the SPS parent on the same 34,423 supervised tokens. Endpoint
-comparison is pending. The probe passed the native-readout audit on the tested
+0.3964 for the SPS parent on the same 34,423 supervised tokens. At the final MTP checkpoint the corresponding values are 0.4366 and
+0.4510, increases of 0.0555 and 0.0546. Packed held-out CE for horizons two
+through four is 1.2454/1.9471/2.5542 for A and 1.2444/1.9529/2.5562 for B.
+Instruction following and timing are pending. The probe passed the native-readout audit on the tested
 prefix before and after frozen-stage updates. The BF16 argmax agreed at every
 tested position, with maximum total variation 0.03153. The two stages took
 5.14 and 7.49 seconds per measured worst-case step respectively.
@@ -34,3 +36,6 @@ readout control would isolate the choice of next-token readout.
 - 2026-11-25: Submitted arm A probe `lm-mpi-job-4bb134b0-7807-4b40-abf0-dc0c64165658`.
 - 2026-11-25: Probe completed; submitted arm A training as `lm-mpi-job-431afba4-ec39-4582-af0f-3b7751d85ad1`.
 - 2026-11-25: Training reached its fixed final endpoint. Aggregate validation CE across horizons was 1.5965 for A and 1.6030 for B.
+
+- 2026-11-25: Submitted one-GPU IFEval for A non-thinking (`lm-mpi-job-81d30d24-1da3-46f1-ae4a-b1c9e0c6224f`) and thinking (`lm-mpi-job-c5b3180f-f6d5-43a4-86ef-4ee9fefdea6f`), and B non-thinking (`lm-mpi-job-1ef8fc08-14f8-4e45-ab7c-6a3c57b96e80`) and thinking (`lm-mpi-job-c2a37cc9-3ef3-43f3-9caf-bb748f741f55`). Checked that parent and endpoint held-out token counts and example IDs match.
+- 2026-11-25: Submitted one-GPU matched serving audits and timings for A (`lm-mpi-job-befe903a-8394-4c95-9046-2a11690b3435`) and B (`lm-mpi-job-3dcb62fd-27f7-4d57-be9a-89ce0ddd89d1`).
