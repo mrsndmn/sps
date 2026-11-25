@@ -27,7 +27,11 @@ def answer(text):
     lines = text.rstrip().splitlines()
     match = NUMBER.fullmatch(lines[-1].strip()) if lines else None
     if match:
-        return format(Decimal(match[1].replace(",", "")).normalize(), "f")
+        value = Decimal(match[1].replace(",", ""))
+        if not value:
+            return "0"
+        fixed = format(value, "f")
+        return fixed.rstrip("0").rstrip(".") if "." in fixed else fixed
     return None
 
 
