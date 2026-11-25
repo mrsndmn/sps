@@ -206,3 +206,27 @@ def test_real_readout_matches_native_ar_and_trains_future_slots():
         loss.backward()
         assert n == count and model.future.grad.abs().sum() > 0
         assert (model.backbone.lm_head.weight.grad is None) == frozen
+
+
+def test_real_readout_resume_requires_boundary_audit():
+    from scripts.real_readout_train import resume_audit
+
+    state = {"step": 5, "readout_audit": {"initial": {}}}
+    assert resume_audit(state, 6) == state["readout_audit"]
+    with pytest.raises(ValueError, match="Missing readout audit"):
+        resume_audit(state, 5)
+    state["readout_audit"]["after_frozen"] = {}
+    assert resume_audit(state, 5) == state["readout_audit"]
+
+
+@pytest.mark.cuda
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_real_readout_training_backend_audit():
+    from scripts.real_readout_model import RealReadoutMTP
+    from scripts.real_readout_train import audit_readout
+
+    wrapper, _ = tiny(head_dim=16)
+    model = RealReadoutMTP(wrapper.backbone, 4, backend="flex_attention").cuda()
+    result = audit_readout(model, {"input_ids": [1, 2, 3, 4, 5]}, torch.device("cuda"))
+    assert result["bf16_max_tv"] < 0.01
+    assert model.backend == "flex_attention"

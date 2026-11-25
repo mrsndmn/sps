@@ -41,7 +41,20 @@ def audit_readout(model, example, device):
         reference = model.backbone(ids, use_cache=False).logits
         observed = model(ids).logits[:, :, 0]
         torch.testing.assert_close(observed, reference, atol=2e-4, rtol=2e-4)
-        return float((observed-reference).abs().max())
+        fp32_error = float((observed-reference).abs().max())
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            native_bf16 = model.backbone(ids, use_cache=False).logits.float()
+            model.backend = c.BACKEND
+            model.backbone.set_attn_implementation("sps_flex_attention")
+            packed_bf16 = model(ids).logits[:, :, 0].float()
+        tv = 0.5 * (packed_bf16.softmax(-1) - native_bf16.softmax(-1)).abs().sum(-1)
+        # Previous BF16 layout controls reached TV 0.0312. Use 0.10 as a
+        # gross-regression gate and retain measured values for interpretation.
+        if not bool((tv <= 0.10).all()):
+            raise RuntimeError(f"Packed BF16 next-token distribution drift: {tv.max().item()}")
+        return dict(fp32_max_abs=fp32_error, bf16_max_tv=tv.max().item(),
+                    bf16_mean_tv=tv.mean().item(),
+                    bf16_argmax_differences=int((packed_bf16.argmax(-1) != native_bf16.argmax(-1)).sum()))
     finally:
         model.backend = c.BACKEND
         model.backbone.set_attn_implementation("sps_flex_attention")
@@ -52,6 +65,16 @@ def atomic_save(path, record):
     temporary = path.with_suffix(".tmp")
     torch.save(record, temporary)
     temporary.replace(path)
+
+
+def resume_audit(state, split):
+    if state is None:
+        return {}
+    audit = state["readout_audit"]
+    required = {"initial", "after_frozen"} if state["step"] >= split else {"initial"}
+    if not required.issubset(audit):
+        raise ValueError("Missing readout audit for resumed stage")
+    return dict(audit)
 
 
 def main():
@@ -82,7 +105,7 @@ def main():
             raise ValueError("Resume signature mismatch")
         model.load_state_dict(state["model"])
         start = state["step"]
-    audit = {}
+    audit = resume_audit(state, split)
     if start == 0:
         audit["initial"] = audit_readout(model, heldout[0], device)
     durations = {}
@@ -120,23 +143,23 @@ def main():
                 times.append(elapsed)
             if rank == 0:
                 print(json.dumps(dict(step=step+1, frozen=frozen, seconds=elapsed)), flush=True)
+            if frozen and step+1 == end:
+                audit["after_frozen"] = audit_readout(model, heldout[0], device)
+                if rank == 0:
+                    store_json(root / "readout_audit.json", audit)
             if not probe and ((step+1) % c.CHECKPOINT_INTERVAL == 0 or step+1 == end):
                 dist.barrier()
                 if rank == 0:
                     score = validation(model, heldout, device)
                     record = dict(model=model.state_dict(), optimizer=optimizer.state_dict(),
                                   step=step+1, frozen=frozen, design_signature=sig,
-                                  parent=str(run.PARENT), val_horizon_ce=score)
+                                  parent=str(run.PARENT), readout_audit=dict(audit), val_horizon_ce=score)
                     if step+1 == end:
                         atomic_save(root / ("stage_endpoint.pt" if frozen else "final.pt"), record)
                     atomic_save(latest, record)
                     with (root / "metrics.jsonl").open("a") as stream:
                         stream.write(json.dumps(dict(step=step+1, val_horizon_ce=score))+"\n")
                 dist.barrier()
-        if frozen:
-            audit["after_frozen"] = audit_readout(model, heldout[0], device)
-            if rank == 0:
-                store_json(root / "readout_audit.json", audit)
         durations[frozen] = max(times, default=0.)
         del ddp, optimizer
     if probe:
