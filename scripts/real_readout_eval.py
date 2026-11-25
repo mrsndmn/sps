@@ -28,8 +28,9 @@ def endpoint(exp):
     return marker
 
 
-def identity(exp):
-    marker = endpoint(exp)
+def identity(exp, marker=None):
+    if marker is None:
+        marker = endpoint(exp)
     sources = ("real_readout_eval", "instruct_evaluate", "instruct_generation", "mmlu_generation",
                "provenance_evaluate", "ifeval_config")
     return dict(checkpoint=marker["checkpoint_sha256"], training=marker["design_signature"],
@@ -90,13 +91,14 @@ def evaluate(exp):
     if torch.cuda.device_count() != 1:
         raise RuntimeError("Exactly one visible GPU required")
     root = ROOT / "runs/out" / exp.name
-    ident = identity(exp)
+    marker = endpoint(exp)
+    ident = identity(exp, marker)
     protocol()
     meta = root / "manifest.json"
     if meta.exists() and json.loads(meta.read_text()) != ident:
         raise ValueError("Incompatible saved evaluation")
     launch.store_json(meta, ident)
-    native, packed = load_endpoint(exp, endpoint(exp))
+    native, packed = load_endpoint(exp, marker)
     DetectorFactory.seed = source.SEED
     ensure_ifeval_resources()
     tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
@@ -113,7 +115,15 @@ def evaluate(exp):
         metrics = evaluate_generation(native, tokenizer, docs, "ifeval", exp.mode,
                                       source.GENERATION[exp.mode], root, sig, c.SEED,
                                       time.monotonic(), ic.EVAL_HOURS)
-    launch.store_json(root / "evaluated.json", dict(identity=ident, metrics=metrics))
+    launch.store_json(root / "evaluated.json", dict(identity=ident, metrics=metrics,
+                                                   artifacts=artifact_hashes(root, exp)))
+
+
+def artifact_hashes(root, exp):
+    names = [f"ifeval-{exp.mode}.jsonl", f"ifeval-{exp.mode}.json"]
+    if exp.mode == "nonthinking":
+        names.append("heldout.json")
+    return {name: common.file_hash(root / name) for name in names}
 
 
 def submit(experiments):
@@ -131,7 +141,8 @@ def submit(experiments):
         ident = identity(exp)
         marker = ROOT / "runs/out" / exp.name / "evaluated.json"
         if marker.exists():
-            if json.loads(marker.read_text())["identity"] != ident:
+            saved = json.loads(marker.read_text())
+            if saved["identity"] != ident or saved["artifacts"] != artifact_hashes(marker.parent, exp):
                 raise ValueError("Stale evaluation marker")
             continue
         body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
