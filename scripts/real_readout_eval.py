@@ -95,6 +95,8 @@ def evaluate(exp):
     ident = identity(exp, marker)
     protocol()
     meta = root / "manifest.json"
+    if not meta.exists() and (root / f"ifeval-{exp.mode}.jsonl").exists():
+        raise ValueError("Saved IFEval answers have no checkpoint manifest")
     if meta.exists() and json.loads(meta.read_text()) != ident:
         raise ValueError("Incompatible saved evaluation")
     launch.store_json(meta, ident)
