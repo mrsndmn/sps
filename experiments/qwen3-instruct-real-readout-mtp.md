@@ -36,6 +36,8 @@ respectively, A averaged 2.19 and 2.55 tokens per verification round, with
 median decode time per round of 8.33 and 7.38 ms. B averaged 2.17 and 2.58
 tokens per round, taking 8.48 and 7.42 ms.
 
+HumanEval+ generation produced one record per task in all four runs. In thinking mode, A and B reached the length cap on 45 and 49 tasks, with 37 and 42 empty extracted solutions respectively. In non-thinking mode, A reached the cap once and B never reached it. Both exported 164 nonempty solutions. Functional scoring is pending.
+
 ## Conclusions
 
 Measure both parents before MTP training and both final models with sequential
@@ -68,3 +70,4 @@ throughput was close between recipes, especially in non-thinking mode.
 - 2026-11-25: Added HumanEval+ generation with separate raw responses and portable EvalPlus samples for external correctness scoring.
 - 2026-11-25: Submitted HumanEval+ generation in thinking/non-thinking modes for A (`lm-mpi-job-c8988d36-8e81-4f4e-97c8-84ee2ae945f1`, `lm-mpi-job-ec501146-edb6-4d7a-88bc-cf41da9c175a`) and B (`lm-mpi-job-6dc8e887-37d6-4e51-bd7c-04fea0dd54f6`, `lm-mpi-job-3f623dd1-365c-4f93-bcfa-a2447273ca71`).
 - 2026-11-25: Verified both serving runs against their submitted code and recorded paired throughput, STEM accuracy and greedy agreement.
+- 2026-11-26: Verified task coverage, sample extraction and raw/export hashes for all four HumanEval+ runs and packaged the samples for external scoring.
