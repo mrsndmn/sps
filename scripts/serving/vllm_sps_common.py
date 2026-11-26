@@ -7,6 +7,14 @@ from pathlib import Path
 
 from scripts import vllm_sps_config as c
 
+_LEGACY_SCHEDULE = {"training_steps": 512, "stage_steps": 102, "global_batch": 16}
+_LEGACY_PROBE = {
+    "global_batch": _LEGACY_SCHEDULE["global_batch"],
+    "num_gpus": 4,
+    "context": 2048,
+    "backend": "flex_attention",
+}
+
 
 def file_hash(path):
     h = hashlib.sha256()
@@ -16,12 +24,21 @@ def file_hash(path):
     return h.hexdigest()
 
 
+def training_schedule():
+    return {"training_steps": c.TRAIN_STEPS, "stage_steps": c.STAGE_STEPS, "global_batch": c.GLOBAL_BATCH}
+
+
+def recorded_schedule(record):
+    return {name: record.get(name, default) for name, default in _LEGACY_SCHEDULE.items()}
+
+
 def trained():
     marker = c.ROOT / "runs/out/qwen3_sps_mtp/trained.json"
     record = json.loads(marker.read_text())
     checkpoint = Path(record["checkpoint"])
     if (
         record["steps"] != c.TRAIN_STEPS
+        or recorded_schedule(record) != training_schedule()
         or record["horizons"] != c.HORIZONS
         or record["parent"] != str(c.PARENT)
         or checkpoint.name != "final.pt"
@@ -48,12 +65,38 @@ def matches_training_input(state):
     )
 
 
-def probe_seconds(path):
+def probe_workload(num_gpus):
+    return {
+        "horizons": c.HORIZONS,
+        "global_batch": c.GLOBAL_BATCH,
+        "num_gpus": num_gpus,
+        "context": c.source.CONTEXT,
+        "backend": c.BACKEND,
+    }
+
+
+def probe_seconds(path, *, num_gpus=None, legacy_horizons=4):
     probe = json.loads(path.read_text())
-    embedding, full = probe["embedding"], probe["full"]
+    expected = probe_workload(c.experiment_configs[0].num_gpus if num_gpus is None else num_gpus)
+    legacy = dict(_LEGACY_PROBE, horizons=legacy_horizons)
+    recorded = {field: probe.get(field, default) for field, default in legacy.items()}
+    if recorded != expected:
+        raise RuntimeError(f"Training probe uses another workload: {path}")
+    if "seconds" in probe:
+        embedding, full = probe["seconds"]
+    else:
+        embedding, full = probe["embedding"], probe["full"]
     if any(not math.isfinite(value) or value <= 0 for value in (embedding, full)):
         raise RuntimeError(f"Invalid training probe timings: {path}")
     return embedding * c.STAGE_STEPS + full * (c.TRAIN_STEPS - c.STAGE_STEPS)
+
+
+def recorded_evaluation_protocol(record):
+    field = "evaluation_protocol" if "evaluation_protocol" in record else "design_signature"
+    digest = record.get(field)
+    if not isinstance(digest, str) or not digest:
+        raise RuntimeError(f"Evaluation is missing {field}")
+    return field, digest
 
 
 def evaluation_record(exp, checkpoint_sha256):
@@ -62,14 +105,14 @@ def evaluation_record(exp, checkpoint_sha256):
     manifest = json.loads((root / "manifest.json").read_text())
     if record["experiment"] != vars(exp) or manifest["experiment"] != vars(exp):
         raise RuntimeError(f"Evaluation used another experiment: {root}")
-    recorded_checksum = manifest["checkpoint_sha256"]
-    if (
-        recorded_checksum != checkpoint_sha256
-        or record.get("checkpoint_sha256", recorded_checksum) != checkpoint_sha256
-    ):
-        raise RuntimeError(f"Evaluation used another checkpoint: {root}")
-    if record.get("evaluation_protocol") != manifest.get("evaluation_protocol"):
+    protocol = recorded_evaluation_protocol(manifest)
+    if recorded_evaluation_protocol(record) != protocol:
         raise RuntimeError(f"Evaluation results and manifest use different protocols: {root}")
+    recorded_checksum = manifest["checkpoint_sha256"]
+    legacy_checksum = recorded_checksum if protocol[0] == "design_signature" else None
+    result_checksum = record.get("checkpoint_sha256", legacy_checksum)
+    if recorded_checksum != checkpoint_sha256 or result_checksum != checkpoint_sha256:
+        raise RuntimeError(f"Evaluation used another checkpoint: {root}")
     return record, manifest
 
 

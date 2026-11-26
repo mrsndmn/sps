@@ -100,7 +100,8 @@ def main():
     latest = root / "latest.pt"
     if not probe and latest.exists():
         state = torch.load(latest, map_location="cpu", mmap=True, weights_only=False)
-        if state["parent"] != str(run.PARENT) or not matches_schedule(state, steps, split):
+        if (state["parent"] != str(run.PARENT) or not matches_schedule(state, steps, split)
+                or state.get("horizons", run.LEGACY_HORIZONS) != c.HORIZONS):
             raise ValueError("Resume checkpoint does not match the configured run")
         model.load_state_dict(state["model"])
         start = state["step"]
@@ -152,7 +153,8 @@ def main():
                     score = validation(model, heldout, device)
                     record = dict(model=model.state_dict(), optimizer=optimizer.state_dict(),
                                   step=step+1, frozen=frozen, stage_steps=split,
-                                  global_batch=c.GLOBAL_BATCH,
+                                  global_batch=c.GLOBAL_BATCH, training_steps=steps,
+                                  horizons=c.HORIZONS,
                                   parent=str(run.PARENT), readout_audit=dict(audit), val_horizon_ce=score)
                     if step+1 == end:
                         atomic_save(root / ("stage_endpoint.pt" if frozen else "final.pt"), record)
@@ -168,10 +170,11 @@ def main():
         if rank == 0:
             projected = (measured[0]*c.STAGE_STEPS + measured[1]*(c.TRAIN_STEPS-c.STAGE_STEPS))/3600
             store_json(run.ROOT / "prepared.json", dict(
-                       seconds=measured.tolist(), projected_hours=projected.item()))
+                       **common.probe_workload(world), seconds=measured.tolist(), projected_hours=projected.item()))
     elif rank == 0:
         store_json(root / "trained.json", dict(parent=str(run.PARENT),
-                   checkpoint=str(root/"final.pt"), step=steps,
+                   checkpoint=str(root/"final.pt"), step=steps, horizons=c.HORIZONS,
+                   **common.training_schedule(),
                    checkpoint_sha256=common.file_hash(root/"final.pt")))
     dist.destroy_process_group()
 

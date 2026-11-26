@@ -148,17 +148,18 @@ def test_completed_results_cannot_be_reused_after_protocol_changes(
 ):
     monkeypatch.setattr(bench.c, "ROOT", tmp_path)
     monkeypatch.setattr(bench, "protocol_signature", lambda: "current")
+    monkeypatch.setattr(bench.evaluator, "protocol_signature", lambda: "current")
     monkeypatch.setattr(bench, "trained", lambda: {"checkpoint_sha256": "current"})
     gates = []
-    monkeypatch.setattr(bench, "check_gate", lambda manifest: gates.append(manifest))
+    monkeypatch.setattr(bench, "check_gate", lambda manifest, **kwargs: gates.append(manifest))
     exp = bench.selected("eval")[0]
     root = bench.root_for(exp)
     bench.launch.store_json(root / "evaluated.json", {
-        "experiment": vars(exp), "checkpoint_sha256": "current",
+        "experiment": vars(exp), "checkpoint_sha256": "current", "evaluation_protocol": "current",
     })
     manifest = {"runtime": "tested"}
     bench.launch.store_json(root / "manifest.json", {
-        "experiment": vars(exp), "checkpoint_sha256": "current",
+        "experiment": vars(exp), "checkpoint_sha256": "current", "evaluation_protocol": "current",
     })
     bench.launch.store_json(root / "serving-runtime.json", manifest)
     bench.launch.store_json(
@@ -171,8 +172,15 @@ def test_completed_results_cannot_be_reused_after_protocol_changes(
     )
     assert bench.completed(exp, manifest)
     assert gates == [manifest]
+    for name in ("evaluated.json", "manifest.json"):
+        bench.launch.store_json(root / name, {
+            "experiment": vars(exp), "checkpoint_sha256": "current", "evaluation_protocol": "archived",
+        })
+    with pytest.raises(RuntimeError, match="another evaluator"):
+        bench.completed(exp, manifest)
+    assert bench.completed(exp, manifest, protocol="current")
     bench.launch.store_json(root / "manifest.json", {
-        "experiment": vars(exp), "checkpoint_sha256": "old",
+        "experiment": vars(exp), "checkpoint_sha256": "old", "evaluation_protocol": "archived",
     })
     with pytest.raises(RuntimeError, match="another checkpoint"):
         bench.completed(exp, manifest)

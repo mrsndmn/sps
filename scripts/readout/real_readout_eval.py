@@ -46,9 +46,11 @@ def identity(exp, marker=None):
         marker = endpoint(exp)
     sources = ("real_readout_eval", "instruct_evaluate", "instruct_generation", "mmlu_generation",
                "provenance_evaluate", "ifeval_config")
+    files = {s: common.file_hash(Path(__file__).with_name(s + ".py")) for s in sources}
+    files["vllm_sps_common"] = common.file_hash(common.__file__)
     return dict(checkpoint=marker["checkpoint_sha256"], model_sources=model_sources(exp),
                 arm=exp.arm, mode=exp.mode, generation=source.GENERATION[exp.mode],
-                files={s: common.file_hash(Path(__file__).with_name(s + ".py")) for s in sources})
+                files=files)
 
 
 def load_endpoint(exp, marker):

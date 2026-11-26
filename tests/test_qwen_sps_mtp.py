@@ -24,6 +24,16 @@ def test_legacy_optimizer_resume_checks_configured_learning_rate():
     restore_optimizer(optimizer, recorded)
 
 
+def test_legacy_schedule_cannot_resume_with_a_different_batch_or_boundary(monkeypatch):
+    from scripts.serving import vllm_sps_train as train
+
+    state = {"step": 75, "frozen": True}
+    assert train.matches_schedule(state, 512, 102)
+    assert not train.matches_schedule(state, 512, 101)
+    monkeypatch.setattr(train.c, "GLOBAL_BATCH", 8)
+    assert not train.matches_schedule(state, 512, 102)
+
+
 def tiny(head_dim=8):
     torch.manual_seed(7)
     cfg = Qwen3Config(

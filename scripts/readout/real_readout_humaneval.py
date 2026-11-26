@@ -16,6 +16,7 @@ from scripts import real_readout_run as train
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts.mmlu_results import recover_samples
+from scripts.readout.readout_archive import compatible_identity
 
 ROOT = train.ROOT / "humaneval-plus"
 PROMPTS = ROOT / "input/prompts.jsonl"
@@ -86,8 +87,10 @@ def evaluate(exp):
     root, samples = paths(exp)
     meta, raw = root/"manifest.json", root/"raw.jsonl"
     if meta.exists():
-        if json.loads(meta.read_text()) != ident:
+        saved = json.loads(meta.read_text())
+        if not compatible_identity(saved, ident, marker, "humaneval"):
             raise ValueError("HumanEval+ manifest mismatch")
+        ident = saved
     elif raw.exists() or samples.exists():
         raise ValueError("Missing HumanEval+ manifest")
     launch.store_json(meta, ident)
@@ -146,10 +149,11 @@ def main():
         staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
         for exp in selected:
             root, samples = paths(exp)
-            ident = identity(exp, quality.endpoint(exp))
+            marker = quality.endpoint(exp)
+            ident = identity(exp, marker)
             if (root/"evaluated.json").exists():
                 done = json.loads((root/"evaluated.json").read_text())
-                if (done["identity"] != ident or done["generated"] != 164
+                if (not compatible_identity(done["identity"], ident, marker, "humaneval") or done["generated"] != 164
                         or done["samples_sha256"] != common.file_hash(samples)
                         or done["raw_sha256"] != common.file_hash(root/"raw.jsonl")):
                     raise ValueError("Stale HumanEval+ result")

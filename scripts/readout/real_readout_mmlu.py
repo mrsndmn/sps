@@ -15,6 +15,7 @@ from scripts import real_readout_eval as quality
 from scripts import real_readout_serving as serving
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
+from scripts.readout.readout_archive import compatible_identity
 
 ROOT = quality.train.ROOT / "full-mmlu-generation"
 HOURS = 72
@@ -82,8 +83,9 @@ def generate(exp, export):
 
     docs, digest = dataset()
     root = ROOT / "runs/out" / exp.name
-    ident = identity(exp, quality.endpoint(exp), digest)
-    if json.loads((root/"manifest.json").read_text()) != ident:
+    marker = quality.endpoint(exp)
+    ident = json.loads((root/"manifest.json").read_text())
+    if not compatible_identity(ident, identity(exp, marker, digest), marker, "mmlu"):
         raise ValueError("Export or evaluation identity changed")
     model = serving.engine(exp, "sps", export)
     tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
@@ -132,8 +134,10 @@ def worker(exp):
     ident = identity(exp, marker, digest)
     meta = root/"manifest.json"
     if meta.exists():
-        if json.loads(meta.read_text()) != ident:
+        saved = json.loads(meta.read_text())
+        if not compatible_identity(saved, ident, marker, "mmlu"):
             raise ValueError("Incompatible MMLU resume")
+        ident = saved
     elif (root/"answers.jsonl").exists():
         raise ValueError("Missing answer manifest")
     launch.store_json(meta, ident)
@@ -175,10 +179,11 @@ def main():
         staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
         for exp in selected:
             root = ROOT/"runs/out"/exp.name
-            ident = identity(exp, quality.endpoint(exp), digest)
+            marker = quality.endpoint(exp)
+            ident = identity(exp, marker, digest)
             if (root/"evaluated.json").exists():
                 done = json.loads((root/"evaluated.json").read_text())
-                if (done["identity"] != ident or done["count"] != COUNT
+                if (not compatible_identity(done["identity"], ident, marker, "mmlu") or done["count"] != COUNT
                         or done["answers_sha256"] != common.file_hash(root/"answers.jsonl")):
                     raise ValueError("Stale full MMLU result")
                 continue

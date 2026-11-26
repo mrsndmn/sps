@@ -8,7 +8,8 @@ from unittest.mock import patch
 from scripts import vllm_sps_config as c
 
 ROOT = c.ROOT.parent / "vllm-sps-draft-sweep"
-HORIZONS = 9
+LEGACY_HORIZONS = 9
+HORIZONS = LEGACY_HORIZONS
 EXPERIMENT = c.experiment_configs[0]
 
 
