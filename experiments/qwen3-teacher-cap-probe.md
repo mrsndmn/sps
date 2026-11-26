@@ -17,3 +17,4 @@ The recommendation applies to extending saved prefixes on the original prompt co
 ## Changelog
 
 - 2026-11-26: Planned conditional continuation on archived rejected prefixes stratified by SmolTalk source.
+- 2026-11-26: Submitted the one-GPU continuation pilot as `lm-mpi-job-8d83b722-4915-4aed-bed1-9441de2f2ece`.
