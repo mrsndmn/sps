@@ -57,7 +57,7 @@ External artifacts root:
   Pre-sampler observations are in `sps-sampling-cache-trace/runs/out/target-logits/`;
   the FP16 control is in `sps-sampling-backbone-precision/runs/out/fp16-backbone/`.
   Diagnostic `passed` markers indicate completed collection, not passage of the
-  original sampling gate. Designs live in the corresponding `scripts/sampling_*.py`.
+  original sampling gate. Designs live in the corresponding `scripts/serving/sampling_*.py`.
 - Qwen3-4B fixed-weight DFlash mask ablation:
   `dflash-mask-ablation/runs/out/277ae900c11f7e9a/evaluated.json` contains
   paired outputs, greedy references, acceptance counts and timing. Run
@@ -84,8 +84,8 @@ External artifacts root:
   original Qwen verifier; SPS/SPS-MTP share this final, jointly adapted verifier.
 
 Serving definitions live in `scripts/vllm_sps_config.py`, `instruct_config.py`
-(sampling), `vllm_sps_train.py`, `vllm_sps_evaluate.py`, `serving_benchmark.py`
-and `serving_graphs.py`. The report formula is in `vllm_sps_report.py`.
+(sampling), `vllm_sps_train.py`, `vllm_sps_evaluate.py`, `scripts/serving/serving_benchmark.py`
+and `scripts/serving/serving_graphs.py`. The report formula is in `vllm_sps_report.py`.
 The 100-question STEM pilot is separate from the ordered partial-MMLU analysis.
 Its three timing repeats reuse the same seeds, not independent quality samples.
 No training or evaluation job is needed to rebuild the paper.
