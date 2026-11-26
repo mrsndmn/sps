@@ -1,6 +1,7 @@
 """FineWeb preparation and paper-scale zero-window SPS training runs."""
 from dataclasses import dataclass
 from pathlib import Path
+from hashlib import sha256
 from typing import ClassVar
 
 from experiments.environment import COMMON_ROOT
@@ -18,10 +19,11 @@ class PaperSPS:
     phase: ClassVar[str]
 
     @classmethod
-    def experiment_configs(cls) -> list["PrepareFineWeb | TrainSPS"]:
+    def experiment_configs(cls) -> list["PrepareFineWeb | TokenizePart | TrainSPS"]:
         corpus = PrepareFineWeb(name="data", num_gpus=1)
         return [
             corpus,
+            *corpus.parts,
             TrainSPS(name="s", corpus=corpus, model=PaperRun, warmup_tokens=50_000_000, micro_batch_size=6),
             TrainSPS(name="m", corpus=corpus, model=MRun, warmup_tokens=100_000_000, micro_batch_size=2),
             TrainSPS(name="xl", corpus=corpus, model=XLRun, warmup_tokens=100_000_000, micro_batch_size=1),
@@ -52,6 +54,25 @@ class PrepareFineWeb(PaperSPS):
     @property
     def output(self):
         return self.data_root / "data" / "fineweb-edu"
+
+    @property
+    def parts(self):
+        groups = (self.extra_files[:8], self.extra_files[8:12],
+                  self.extra_files[12:16], self.extra_files[16:])
+        return [TokenizePart(name=f"part-{i}", corpus=self, files=files, num_gpus=1)
+                for i, files in enumerate(groups, 1)]
+
+
+@dataclass(frozen=True, kw_only=True)
+class TokenizePart(PaperSPS):
+    phase = "prepare"
+    corpus: PrepareFineWeb
+    files: tuple[str, ...]
+
+    @property
+    def output(self):
+        key = sha256("\n".join(self.files).encode()).hexdigest()[:16]
+        return self.corpus.data_root / "parts" / f"{self.name}-{key}"
 
 
 @dataclass(frozen=True, kw_only=True)

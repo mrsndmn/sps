@@ -307,3 +307,13 @@ are isolated from the default pilot; the cache and staged code are shared.
   year    = {2026},
 }
 ```
+
+For parallel FineWeb preparation, submit the four disjoint parts first.
+After all four publish, submit the data phase to concatenate them in corpus order.
+
+```bash
+for part in part-1 part-2 part-3 part-4; do
+  python scripts/run_train_jobs.py --experiment "paper-sps/$part" --phase prepare
+done
+python scripts/run_train_jobs.py --experiment paper-sps/data --phase prepare
+```

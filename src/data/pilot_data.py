@@ -35,7 +35,7 @@ def _prepare(dest):
                            max(run.training.max_tokens for run in collect_experiments()))
 
 
-def prepare_memmaps(dest, files, required, train_tokens, *, prefix_dir=None, prefix_files=()):
+def prepare_memmaps(dest, files, required, train_tokens, *, prefix_dir=None, prefix_files=(), parts=()):
     from huggingface_hub import hf_hub_download, try_to_load_from_cache
     import numpy as np
     import pyarrow.parquet as pq
@@ -47,6 +47,11 @@ def prepare_memmaps(dest, files, required, train_tokens, *, prefix_dir=None, pre
         return checked_manifest(dest, files)
     if tuple(files[:len(prefix_files)]) != tuple(prefix_files) or len(set(files)) != len(files):
         raise ValueError('Expected distinct shards starting with the cached prefix')
+    covered = len(prefix_files) if prefix_dir is not None else 0
+    for _, part_files in parts:
+        if tuple(files[covered:covered + len(part_files)]) != tuple(part_files):
+            raise ValueError("Tokenized parts do not match the ordered shard list")
+        covered += len(part_files)
     dest.mkdir(parents=True, exist_ok=True)
     # Deliberately conservative: source shards, uint16 output, temporary files,
     # checkpoints and downstream caches. No full 350BT download is attempted.
@@ -58,14 +63,15 @@ def prepare_memmaps(dest, files, required, train_tokens, *, prefix_dir=None, pre
     sources = []
     handles = {s: (dest / f'{s}.bin.tmp').open('wb') for s in counts}
     try:
-        if prefix_dir is not None:
-            prefix = checked_manifest(prefix_dir, prefix_files)
+        segments = ([(prefix_dir, prefix_files)] if prefix_dir is not None else []) + list(parts)
+        for part_dir, part_files in segments:
+            prefix = checked_manifest(part_dir, part_files)
             for split, handle in handles.items():
-                with (prefix_dir / f'{split}.bin').open('rb') as source_bin:
+                with (part_dir / f'{split}.bin').open('rb') as source_bin:
                     shutil.copyfileobj(source_bin, handle, length=8 << 20)
-                counts[split] = prefix['tokens'][split]
+                counts[split] += prefix['tokens'][split]
             sources.extend(prefix['sources'])
-        for filename in files[len(prefix_files) if prefix_dir is not None else 0:]:
+        for filename in files[covered:]:
             source = None
             for cache in EXISTING_HF_CACHES:
                 candidate = try_to_load_from_cache(DATASET_REPO, filename,

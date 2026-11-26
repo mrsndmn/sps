@@ -12,11 +12,14 @@ def test_catalog_matches_training_recipes():
     from experiments.paper import recipes
 
     catalog = family_runs(study.PaperSPS.family)
-    assert set(catalog) == {("data", "prepare"), ("s", "train"), ("m", "train"), ("xl", "train")}
+    assert set(catalog) == {("data", "prepare"), ("s", "train"), ("m", "train"), ("xl", "train"),
+                            *((f"part-{i}", "prepare") for i in range(1,5))}
     configs = study.PaperSPS.experiment_configs()
     assert isinstance(configs, list)
     assert [(exp.name, exp.phase) for exp in configs] == list(catalog)
-    corpus, *training = configs
+    corpus, *rest = configs
+    training = [r for r in rest if isinstance(r, study.TrainSPS)]
+    assert tuple(f for part in corpus.parts for f in part.files) == corpus.extra_files
     assert isinstance(corpus, study.PrepareFineWeb)
     assert len(corpus.files) == len(set(corpus.files)) == 36
     for exp in training:
