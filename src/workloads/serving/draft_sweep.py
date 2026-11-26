@@ -420,7 +420,7 @@ def submit(args, choices):
         receipt_phase = {"probe": "prepare", "audit": "eval"}.get(phase, phase)
         result = batch.submit(body, receipt_phase, exp.name, output(exp),
                               capacity=("sps-draft-sweep eval ", bench.MAX_ACTIVE_JOBS) if phase == "eval" else None,
-                              reject_legacy=True,
+                              legacy_prefix=f"sps-draft-sweep {phase} {exp.name} ",
                               before_send=lambda: run.reserve("eval" if phase == "audit" else phase, exp))
         if result.get("deferred"):
             deferred.append(exp.name)

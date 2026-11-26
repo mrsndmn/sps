@@ -30,15 +30,34 @@ def gsm8k(args):
     return read_table(path, columns=["question"])["question"].to_pylist()
 
 
+def validate_checkpoint(args):
+    checkpoint = args.checkpoint
+    manifest = checkpoint / "inputs.json"
+    if manifest.is_file():
+        inputs = json.loads(manifest.read_text())
+        if settings_digest(inputs.pop("settings")) != args.training_settings_sha256 or inputs != training.input_provenance():
+            raise ValueError("DFlash checkpoint training inputs do not match this experiment")
+        return
+
+    # Historical archives store the producer and step in the resume file.
+    published = json.loads((checkpoint.parent / "trained.json").read_text())
+    design = published["design"]
+    if not isinstance(design, str):
+        raise ValueError("DFlash checkpoint is missing its training inputs")
+    state = torch.load(checkpoint / "resume.pt", weights_only=True, mmap=True, map_location="meta")
+    step = state["step"]
+    if (state["design"] != design or step not in published["checkpoints"]
+            or checkpoint.name != f"step-{step:05d}" or checkpoint.parent.name != args.name):
+        raise ValueError("DFlash checkpoint does not belong to the published training run")
+
+
 @torch.inference_mode()
 def evaluate(args):
     from safetensors.torch import load_file
     from transformers import AutoModel
 
     checkpoint = args.checkpoint
-    inputs = json.loads((checkpoint / "inputs.json").read_text())
-    if settings_digest(inputs.pop("settings")) != args.training_settings_sha256 or inputs != training.input_provenance():
-        raise ValueError("DFlash checkpoint training inputs do not match this experiment")
+    validate_checkpoint(args)
     if torch.cuda.device_count() != 1:
         raise RuntimeError("The GSM8K benchmark requires exactly one visible GPU")
     device = torch.device("cuda:0")

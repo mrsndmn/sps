@@ -275,6 +275,14 @@ def test_family_capacity_counts_pending_siblings_when_list_lags(tmp_path, monkey
     assert mlspace_launch.occupied_slots(client, active, prefix) == 1
     active[prefix + "c"] = "lm-mpi-job-33333333-3333-4333-8333-333333333333"
     assert mlspace_launch.occupied_slots(client, active, prefix) == 2
+    other = tmp_path / "graphs"
+    mlspace_launch.store_json(other / "submission-intents" / "other.json",
+                              dict(identity=prefix + "graph", output_dir=str(other / "graph")))
+    assert mlspace_launch.occupied_slots(client, active, prefix, (tmp_path, other)) == 3
+    with mlspace_launch.submission_lock(tmp_path / "serving-capacity"):
+        with pytest.raises(RuntimeError, match="Another submission"):
+            with mlspace_launch.submission_lock(tmp_path / "serving-capacity"):
+                pass
 
 def test_ar_worker_retains_suite_and_derives_training_rows():
     from experiments.ar_sps import configuration
@@ -366,6 +374,12 @@ def test_batch_skips_finished_active_and_deferred_before_charging(tmp_path, monk
     assert submit("first")["job_name"] == job
     assert submit("first")["reused"]
     assert submit("second")["deferred"]
+    for signature in ("older-hash", "current-hash"):
+        batch.active = {f"sps-draft-sweep eval second {signature}": job}
+        with pytest.raises(RuntimeError, match="older design"):
+            batch.submit({"job_desc": "sps-draft-sweep eval second current-hash"}, "eval", "second",
+                         tmp_path / "second", legacy_prefix="sps-draft-sweep eval second ")
+
     assert len(sent) == 1 and sent[0]["region"] == "test"
     assert staged == ["commit"] and charged == ["first"]
     assert not RunDirectory(tmp_path, tmp_path / "second").reservation.exists()

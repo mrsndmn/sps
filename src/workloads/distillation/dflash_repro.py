@@ -29,7 +29,14 @@ def marker(experiment, phase, step=None):
         "train": "trained.json",
         "eval": "evaluated.json",
     }[phase]
-    return work_path(experiment.output(phase, step)) / filename
+    path = work_path(experiment.output(phase, step)) / filename
+    if phase == "probe" and not path.is_file():
+        archived = experiment.output_root / filename
+        if archived.is_file():
+            design = json.loads(archived.read_text()).get("design")
+            if isinstance(design, str) and design[:16] == experiment.output_root.name:
+                return archived
+    return path
 
 
 def worker_arguments(trainer, experiment, phase, step):
@@ -101,6 +108,9 @@ def payload(experiment, phase, step, staged, script, arguments):
 
 def submit_phase(experiment, trainer, phase, step, body, commit, arguments):
     output = experiment.output(phase, step)
+    if phase == "probe" and marker(experiment, phase).is_file():
+        print(f"Skip completed probe {experiment.name}")
+        return
     with submitting(output) as ready:
         if not ready:
             return
@@ -115,6 +125,7 @@ def submit_phase(experiment, trainer, phase, step, body, commit, arguments):
                 trainer.checkpoint_path(step, experiment) / "weights.safetensors"
             ).is_file():
                 raise FileNotFoundError(trainer.checkpoint_path(step, experiment))
+            evaluation.validate_checkpoint(arguments)
         name = output.name if phase == "eval" else experiment.name
         with (
             patch.object(launch, "ARTIFACTS_ROOT", experiment.output_root),

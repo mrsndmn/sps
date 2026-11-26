@@ -65,10 +65,11 @@ def normalize(desc):
 
 
 @contextmanager
-def submission_lock():
+def submission_lock(root=None):
     """NFS mkdir is atomic; fail closed rather than trusting NFS flock leases."""
-    ARTIFACTS_ROOT.mkdir(parents=True, exist_ok=True)
-    lock = ARTIFACTS_ROOT / '.submission-lock'
+    root = ARTIFACTS_ROOT if root is None else root
+    root.mkdir(parents=True, exist_ok=True)
+    lock = root / '.submission-lock'
     try:
         lock.mkdir()
     except FileExistsError:
@@ -93,15 +94,19 @@ def reconcile_for_outputs(client, active, outputs):
     reconcile_intents(active, selected)
 
 
-def occupied_slots(client, active, prefix):
+def occupied_slots(client, active, prefix, roots=()):
     """Count family submissions during list-API lag, including unconfirmed sends."""
     from orchestration.pilot_launch import TERMINAL_FAILURES
+
+    def records(subdirectory):
+        for root in roots or (ARTIFACTS_ROOT,):
+            for path in (root / subdirectory).glob("*.json"):
+                yield json.loads(path.read_text())
 
     listed = {key: job for key, job in active.items() if key.startswith(prefix)}
     jobs = set(listed.values())
     received_attempts = set()
-    for path in (ARTIFACTS_ROOT / "submissions").glob("*.json"):
-        row = json.loads(path.read_text())
+    for row in records("submissions"):
         if not row["identity"].startswith(prefix):
             continue
         received_attempts.add((row["identity"], row.get("attempt")))
@@ -111,8 +116,7 @@ def occupied_slots(client, active, prefix):
             if state not in TERMINAL_FAILURES | {"completed", "succeeded"}:
                 jobs.add(job)
     unknown = 0
-    for path in (ARTIFACTS_ROOT / "submission-intents").glob("*.json"):
-        row = json.loads(path.read_text())
+    for row in records("submission-intents"):
         identity = row["identity"]
         if not identity.startswith(prefix) or identity in listed:
             continue
@@ -292,11 +296,12 @@ def submit_payload(client, body, phase, name, commit, *, output_dir=None, direct
 class SubmissionBatch:
     """Reuse one active-job snapshot and committed checkout per native invocation."""
 
-    def __init__(self, commit, profile="default"):
+    def __init__(self, commit, profile="default", *, capacity_roots=()):
         self.commit = commit
         self.profile = profile
         self.client = None
         self.staged = False
+        self.capacity_roots = capacity_roots
 
     def connect(self):
         if self.client is not None:
@@ -326,7 +331,7 @@ class SubmissionBatch:
         before_send=None,
         settings=None,
         capacity=None,
-        reject_legacy=False,
+        legacy_prefix=None,
         directory=None,
     ):
         if (
@@ -347,15 +352,13 @@ class SubmissionBatch:
             if output is None or directory
             else output_identity(body["job_desc"], output)
         )
-        if reject_legacy:
-            prefix = normalize(body["job_desc"]) + " "
-            if any(k.startswith(prefix) and " output=" not in k for k in self.active):
-                raise RuntimeError(f"An older design is already running for {name}")
+        if legacy_prefix and any(k.startswith(legacy_prefix) and " output=" not in k for k in self.active):
+            raise RuntimeError(f"An older design is already running for {name}")
         if identity in self.active:
             return dict(name=name, job_name=self.active[identity], reused=True)
         if capacity:
             prefix, limit = capacity
-            if occupied_slots(self.client, self.active, prefix) >= limit:
+            if occupied_slots(self.client, self.active, prefix, self.capacity_roots) >= limit:
                 return dict(name=name, deferred=True)
         if not self.staged:
             stage_repo(Path(git("rev-parse", "--show-toplevel")), self.commit)

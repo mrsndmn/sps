@@ -304,7 +304,7 @@ def completed(exp, manifest, *, protocol=None):
     return True
 
 
-def submit(args):
+def submit(args, *, capacity_roots=()):
     choices = selected(args.phase, args.filter)
     if not choices:
         raise ValueError("No matching experiments")
@@ -321,7 +321,7 @@ def submit(args):
     trained()
     if args.phase == "eval":
         check_gate(manifest)
-    batch = launch.SubmissionBatch(commit)
+    batch = launch.SubmissionBatch(commit, capacity_roots=capacity_roots)
     jobs = []
     deferred = []
     for exp in choices:
@@ -367,5 +367,8 @@ def main():
     launch.RUN_ROOT = c.family_config.ROOT / "runs"
     if args.dry:
         return submit(args)
-    with launch.submission_lock():
-        return submit(args)
+    from workloads.serving import serving_graphs
+
+    roots = (serving_graphs.EAGER_ROOT, serving_graphs.ROOT)
+    with launch.submission_lock(), launch.submission_lock(serving_graphs.EAGER_ROOT / "serving-capacity"):
+        return submit(args, capacity_roots=roots)

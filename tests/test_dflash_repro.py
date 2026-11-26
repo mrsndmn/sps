@@ -105,7 +105,12 @@ def test_milestone_evaluation_waits_for_published_training(tmp_path, monkeypatch
     arguments = jobs.worker_arguments(training, exp, "eval", 5000)
     with pytest.raises(RuntimeError, match="Complete DFlash training"):
         jobs.submit_phase(exp, training, "eval", 5000, {}, "test", arguments)
-    jobs.marker(exp, "train").touch()
+    jobs.marker(exp, "train").write_text('{"design":"archive","checkpoints":[5000]}')
+    torch.save(dict(step=5000, design="other"), weights.parent / "resume.pt")
+    with pytest.raises(ValueError, match="published training run"):
+        jobs.submit_phase(exp, training, "eval", 5000, {}, "test", arguments)
+    assert not calls
+    torch.save(dict(step=5000, design="archive"), weights.parent / "resume.pt")
     jobs.submit_phase(exp, training, "eval", 5000, {}, "test", arguments)
     assert len(calls) == 1
     exp.output("eval", 5000).mkdir()
@@ -131,3 +136,30 @@ def test_checkpoint_inputs_detect_reordered_selection(tmp_path, monkeypatch):
                 checkpoint=tmp_path,
             )
         )
+
+
+def test_archived_checkpoint_must_match_published_run_and_step(tmp_path):
+    from dataclasses import replace
+    from workloads.distillation import dflash_repro_eval as evaluation
+
+    checkpoint = tmp_path / BASELINE.name / "step-05000"
+    checkpoint.mkdir(parents=True)
+    args = replace(jobs.worker_arguments(training, BASELINE, "eval", 5000), checkpoint=checkpoint)
+    training.launch.store_json(checkpoint.parent / "trained.json", dict(design="archived", checkpoints=[5000]))
+    torch.save(dict(step=5000, design="archived"), checkpoint / "resume.pt")
+    evaluation.validate_checkpoint(args)
+    for step, design in ((10000, "archived"), (5000, "another")):
+        torch.save(dict(step=step, design=design), checkpoint / "resume.pt")
+        with pytest.raises(ValueError, match="published training run"):
+            evaluation.validate_checkpoint(args)
+
+def test_archived_probe_is_reported_and_skipped_before_submission(tmp_path):
+    from dataclasses import replace
+
+    design = "a" * 64
+    exp = replace(BASELINE, output_root=tmp_path / design[:16])
+    archive = exp.output_root / "prepared.json"
+    training.launch.store_json(archive, {"design": design})
+    assert jobs.marker(exp, "probe") == archive
+    jobs.submit_phase(exp, training, "probe", None, {}, "unused", None)
+    assert not exp.output("probe").exists()
