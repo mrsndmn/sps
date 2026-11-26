@@ -11,3 +11,8 @@ defaults:
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
   - _self_
+
+# Hydra creates this directory even with job logging disabled.
+hydra:
+  run:
+    dir: ${oc.env:SPS_OUTPUT_ROOT,/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/outputs}/${now:%Y-%m-%d}/${hydra.job.name}-${now:%H-%M-%S-%f}

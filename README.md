@@ -119,7 +119,7 @@ uv run python scripts/evaluate.py +experiment=s_sps_w64_20b +checkpoint=final sy
 - **Tables** — `scripts/tables/export_main_results_table.py` produces the main results
   table in two forms: the compact headline (validation loss, generalization, and
   inference-efficiency ratios; `tab:main-compact`) and its per-corpus / per-benchmark
-  expansion (`tab:main-full`). Both `.tex` files are written to `outputs/tables/`.
+  expansion (`tab:main-full`). Both `.tex` files are written to `../sps-artifacts/outputs/tables/`.
 - **Inference-efficiency benchmarks** — `scripts/benchmark/`; see
   [`scripts/benchmark/REPRODUCE.md`](scripts/benchmark/REPRODUCE.md) for the throughput /
   peak-memory measurement protocol.
@@ -135,7 +135,7 @@ There are two kinds of input:
   shipped recipes (each sets `wandb_run_name: ${experiment.name}`) resolve with no flags.
   `plot_loss_vs_compute.py` caches its pull to JSON, so re-renders need no network.
 - **Local analysis outputs.** The Δ-NLL, gradient-ratio and multi-token-probe figures read
-  `outputs/…` trees written by the corresponding `scripts/analysis/run_*.sh` sweeps, which
+  `../sps-artifacts/outputs/…` trees written by the corresponding `scripts/analysis/run_*.sh` sweeps, which
   read the `.pt` checkpoints your training runs wrote.
 
 Figures render with the LaTeX text engine to match the paper's Times; a host without a `latex`
@@ -193,10 +193,10 @@ Its artifact directory is `qwen3-instruct-real-readout-mtp/` under the shared ro
   and `evaluated.json` for the aggregate result.
 - `submissions/` under a launcher’s artifact directory holds its job receipts.
 
-In the shared SPS checkout, `outputs/` is a local symlink to
-`../sps-artifacts/outputs/`. Analysis scripts and table exports can use their
-usual paths while their files live in shared storage. A fresh clone uses a
-local output directory unless you create the same symlink.
+Analysis, benchmark and table scripts use the shared NFS directory
+`../sps-artifacts/outputs/` directly. Hydra also stores its dated run metadata
+there. On another machine set `SPS_OUTPUT_ROOT` to an absolute directory before
+running these commands. Per-script input and output flags still take precedence.
 `run/` also contains local orchestration state, including job observations.
 The worker's output paths identify the shared results used downstream.
 

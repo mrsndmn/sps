@@ -63,7 +63,7 @@ STANDARD_KEY = "standard"
 METHOD_KEYS = ("delayed_state", "two_x_memory", "sps")
 
 # Non-embedding parameter counts, verified identical across methods within a scale from
-# outputs/generation_timing_correctness/THROUGHPUT_b8_all5_h100/results.json.
+# ../sps-artifacts/outputs/generation_timing_correctness/THROUGHPUT_b8_all5_h100/results.json.
 SCALE_PARAMS = {
     "xs": 53_027_328,
     "s": 130_665_216,

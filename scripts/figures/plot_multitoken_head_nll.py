@@ -48,6 +48,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from plotting.output_paths import OUTPUT_ROOT
+
 # figure_common selects the Agg backend + serif rcParams (and pins MPLCONFIGDIR off
 # NFS) before matplotlib.pyplot is imported below, and provides the shared styling
 # constants + plot helpers.
@@ -79,7 +81,7 @@ from plotting.style import (
 
 
 DEFAULT_SCALES = ("xs", "s", "m", "l", "xl")
-DEFAULT_ROOT = Path("outputs/multitoken_head_nll")
+DEFAULT_ROOT = OUTPUT_ROOT / "multitoken_head_nll"
 DEFAULT_OUTPUT_PATH = Path("figures/multitoken_head_nll.png")
 FIXED_FIGURE_WIDTH = 17.0
 

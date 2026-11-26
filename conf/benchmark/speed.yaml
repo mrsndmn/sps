@@ -1,5 +1,5 @@
 # The benchmark config for the paper. Reproduces BOTH speed columns of the main results
-# table (outputs/tables/main_results_table_compact.tex): "Throughput (x)" AND "Peak
+# table (../sps-artifacts/outputs/tables/main_results_table_compact.tex): "Throughput (x)" AND "Peak
 # Memory (x)". The table script (scripts/tables/export_main_results_table.py) derives both
 # from this single run's results.json -- throughput = end-to-end tok/s on the combined
 # "prefill 1k + decode 3k" workload; peak memory + decode tok/s from the same operating

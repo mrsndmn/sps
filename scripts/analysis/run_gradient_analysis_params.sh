@@ -18,13 +18,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SHARED_OUTPUTS="$(python3 "$ROOT_DIR/src/plotting/output_paths.py")"
 cd "$ROOT_DIR"
 mkdir -p logs/slurm
 
-# Where outputs and checkpoints live. Defaults are repo-relative (DATA_ROOT=repo
-# root); point them at a scratch filesystem via env if home is quota-limited.
+# DATA_ROOT locates inputs; OUTPUT_ROOT overrides shared analysis storage.
+OUTPUT_ROOT="${OUTPUT_ROOT:-$SHARED_OUTPUTS/gradient_analysis_params/multiposition}"
 DATA_ROOT="${DATA_ROOT:-$ROOT_DIR}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-${DATA_ROOT}/gradient_analysis_params/multiposition}"
 OUT_ROOT="${OUT_ROOT:-${DATA_ROOT}/out}"
 CKPT_FILE="${CKPT_FILE:-ckpt_tokens_20000145408_final.pt}"
 

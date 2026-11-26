@@ -38,6 +38,8 @@ from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any, Iterable
 
+from plotting.output_paths import OUTPUT_ROOT
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -2468,7 +2470,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--val-bin", default=str(default_val_bin()))
-    parser.add_argument("--output-dir", default="outputs/gradient_analysis_params/main")
+    parser.add_argument("--output-dir", default=str(OUTPUT_ROOT / "gradient_analysis_params/main"))
     parser.add_argument("--data-seed", type=int, default=42)
     parser.add_argument("--position-seed", type=int, default=123)
     parser.add_argument("--skip-first", type=int, default=64)

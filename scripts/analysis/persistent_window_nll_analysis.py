@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from plotting.output_paths import OUTPUT_ROOT
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -1558,7 +1560,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--position-bin-size", type=int, default=DEFAULT_POSITION_BIN_SIZE)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--val-bin", default=str(ga.default_val_bin()))
-    parser.add_argument("--output-dir", default="outputs/persistent_window_nll_analysis/main")
+    parser.add_argument("--output-dir", default=str(OUTPUT_ROOT / "persistent_window_nll_analysis/main"))
     parser.add_argument("--data-seed", type=int, default=42)
     parser.add_argument(
         "--future-horizon",

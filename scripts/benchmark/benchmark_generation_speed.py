@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from plotting.output_paths import OUTPUT_ROOT
+
 import numpy as np
 import torch
 from torch import Tensor
@@ -37,7 +39,7 @@ from export_main_results_table import (
 )
 
 
-DEFAULT_OUTPUT_JSON = Path("outputs/generation_timing_correctness/THROUGHPUT_b16_all5_h100/results.json")
+DEFAULT_OUTPUT_JSON = OUTPUT_ROOT / "generation_timing_correctness/THROUGHPUT_b16_all5_h100/results.json"
 # Cluster-independent default: the fineweb-edu val.bin Kempner path baked into
 # analysis_common is only a fallback. On another cluster, set BENCH_VAL_BIN (or pass
 # --val-bin) to point at that cluster's copy of the validation shard.

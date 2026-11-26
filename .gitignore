@@ -32,8 +32,6 @@ htmlcov/
 .claude/
 
 # Run outputs (not part of the release)
-outputs/
-/outputs
 run/
 wandb/
 *.log

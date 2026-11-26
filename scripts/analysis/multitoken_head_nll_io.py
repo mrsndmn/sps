@@ -15,7 +15,7 @@ requirement.
 Trivial CPU work -- a handful of small JSON files. Run it after the compute array
 finishes::
 
-    uv run python -m scripts.analysis.multitoken_head_nll_io --root outputs/multitoken_head_nll
+    uv run python -m scripts.analysis.multitoken_head_nll_io
 """
 
 from __future__ import annotations
@@ -24,6 +24,8 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any
+
+from plotting.output_paths import OUTPUT_ROOT
 
 DEFAULT_SCALES = ("xs", "s", "m", "l", "xl")
 DEFAULT_VARIANTS = ("full-attention", "sps-w64", "delayed-state-w64")
@@ -82,7 +84,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--root", type=Path, default=Path("outputs/multitoken_head_nll"))
+    parser.add_argument("--root", type=Path, default=OUTPUT_ROOT / "multitoken_head_nll")
     parser.add_argument("--scales", nargs="+", default=list(DEFAULT_SCALES))
     parser.add_argument("--variants", nargs="+", default=list(DEFAULT_VARIANTS))
     args = parser.parse_args()

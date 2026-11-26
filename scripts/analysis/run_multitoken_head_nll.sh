@@ -28,12 +28,13 @@ set -euo pipefail
 MODE="${1:-submit}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SHARED_OUTPUTS="$(python3 "$ROOT_DIR/src/plotting/output_paths.py")"
 cd "$ROOT_DIR"
 mkdir -p logs/slurm
 
 SCALES="${SCALES:-xs s m l xl}"
 VARIANTS="${VARIANTS:-full-attention sps-w64 delayed-state-w64}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT_DIR}/outputs/multitoken_head_nll}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-$SHARED_OUTPUTS/multitoken_head_nll}"
 
 # Where the tokenized corpus lives: <DATA_ROOT>/data/<DATASET>/{train,val}.bin, i.e. the
 # same DATA_ROOT used for `src/data/prepare.py` and every train.py / evaluate.py command.
@@ -96,7 +97,7 @@ variant_label() { case "$1" in full-attention) echo "Standard";; sps-w64) echo "
 variant_dir()   { case "$1" in full-attention) echo "full_attention";; sps-w64) echo "sps_w64";; sps-w4096) echo "sps_w4096";; delayed-state-w64) echo "delayed_state_w64";; *) echo "$1";; esac; }
 
 # Where the training runs wrote their checkpoints, mirroring run_persistent_window_nll.sh.
-OUT_ROOT="${OUT_ROOT:-${ROOT_DIR}/outputs}"
+OUT_ROOT="${OUT_ROOT:-$SHARED_OUTPUTS}"
 CKPT_FILE="${CKPT_FILE:-ckpt_tokens_20000145408_final.pt}"
 BUDGET="${BUDGET:-20b}"
 

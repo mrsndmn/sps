@@ -3,7 +3,7 @@
 
 Plots the future/present gradient ratio vs relative future offset, one line per
 method x stream, one column per scale, reading the PARAMETER-gradient analysis
-output (``outputs/gradient_analysis_params/...``). The three module types
+output (``../sps-artifacts/outputs/gradient_analysis_params/...``). The three module types
 (attention/mlp/norm) are collapsed into the whole-parameter-vector aggregate that
 the analysis emits as ``module_type="all"`` -- so there is no module-type
 separation, just one line per method x stream. This produces the paper's Figure 5
@@ -19,6 +19,8 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any
+
+from plotting.output_paths import OUTPUT_ROOT
 
 # matplotlib caches usetex output under MPLCONFIGDIR (default ~/.cache/matplotlib),
 # which is on NFS home here; TemporaryDirectory cleanup then races on .nfs* lock
@@ -91,7 +93,7 @@ FIXED_FIGURE_WIDTH = 17.0
 # Matches the default OUTPUT_ROOT of run_gradient_analysis_params.sh; a fresh re-run of
 # that submitter writes {scale}_{sps,delayed_state}_w64_20b dirs here that this default
 # reads directly. Reproduces figures/gradient_params_fp.png byte-for-byte.
-DEFAULT_GRADIENT_ROOT = Path("outputs/gradient_analysis_params/multiposition")
+DEFAULT_GRADIENT_ROOT = OUTPUT_ROOT / "gradient_analysis_params/multiposition"
 DEFAULT_OUTPUT_PATH = Path("figures/gradient_params_fp.png")
 
 # The plotted metric is the un-normalized future/present gradient ratio, computed

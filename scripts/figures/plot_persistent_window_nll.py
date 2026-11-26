@@ -12,6 +12,8 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from plotting.output_paths import OUTPUT_ROOT
+
 # Importing figure_common selects the Agg backend + serif rcParams (and pins
 # MPLCONFIGDIR off NFS) before matplotlib.pyplot is imported below, and provides the
 # styling constants + series/plot helpers shared with plot_gradient_params.py.
@@ -57,10 +59,8 @@ DEFAULT_WINDOW = 64
 FIXED_FIGURE_WIDTH = 17.0
 # Sharded/incremental run (without-replacement docs, ~1/sqrt(N) noise); written by
 # run_persistent_window_nll.sh. Previous (noisier, n=256, with-replacement) root was
-# "outputs/persistent_window_nll_analysis/xs_s_m_l_w64_only_n256_bins64_pw64_256".
-DEFAULT_PERSISTENT_ROOT = Path(
-    "outputs/persistent_window_nll_analysis/xs_s_m_l_xl_w64_sharded_pw64"
-)
+# "../sps-artifacts/outputs/persistent_window_nll_analysis/xs_s_m_l_w64_only_n256_bins64_pw64_256".
+DEFAULT_PERSISTENT_ROOT = OUTPUT_ROOT / "persistent_window_nll_analysis/xs_s_m_l_xl_w64_sharded_pw64"
 DEFAULT_OUTPUT_PATH = Path("figures/analysis_plot.png")
 PERSISTENT_METHODS: tuple[tuple[str, int], ...] = (
     ("sps", DEFAULT_WINDOW),

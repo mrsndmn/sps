@@ -35,7 +35,7 @@ ACCOUNT=<slurm-account> GRES=<gres-type> \  # omit ACCOUNT if unused; GRES e.g. 
 bash scripts/benchmark/run.sh
 ```
 
-Output lands in `outputs/generation_timing_correctness/<benchmark>_<scales>_<gres>/`
+Output lands in `../sps-artifacts/outputs/generation_timing_correctness/<benchmark>_<scales>_<gres>/`
 (`results.json`, `results_summary.tsv`, `driver_args.txt`).
 
 | Var | | Meaning |
@@ -54,7 +54,7 @@ scheme, edit the `run_name` templates in `conf/benchmark/speed.yaml`.
 
 ```bash
 uv run python scripts/tables/export_main_results_table.py \
-  --results-json outputs/generation_timing_correctness/<your run dir>/results.json
+  --results-json ../sps-artifacts/outputs/generation_timing_correctness/<your run dir>/results.json
 ```
 
 Omit `--results-json` to use the committed default.

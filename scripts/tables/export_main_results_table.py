@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
+from plotting.output_paths import OUTPUT_ROOT
+
 from plotting.methods import MAIN_METHOD_SPECS, MainMethodSpec, main_run_name
 from plotting.eval_data import (
     CLASSIC_DEFAULT_TASKS,
@@ -35,18 +37,16 @@ from plotting.style import TRAINING_METRIC_KEY
 from plotting.wandb_runs import (
     DEFAULT_WANDB_PROJECT,
     _parse_created_at,
-    _repo_root,
     normalize_history,
 )
 
 
 DEFAULT_SCALES = ("xs", "s", "m", "l", "xl")
-DEFAULT_OUTPUT = _repo_root() / "outputs" / "tables" / "main_results_table.tex"
+DEFAULT_OUTPUT = OUTPUT_ROOT / "tables" / "main_results_table.tex"
 # Both speed columns of the compact table (Throughput and Peak Memory) are derived from
 # this single benchmark run's results.json -- see scripts/benchmark/REPRODUCE.md.
 DEFAULT_RESULTS = (
-    _repo_root()
-    / "outputs"
+    OUTPUT_ROOT
     / "generation_timing_correctness"
     / "THROUGHPUT_b16_all5_h100"
     / "results.json"

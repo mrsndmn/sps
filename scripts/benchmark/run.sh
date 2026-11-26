@@ -19,6 +19,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SHARED_OUTPUTS="$(python3 "$ROOT_DIR/src/plotting/output_paths.py")"
 
 # ---- Required (cluster-specific) ----
 OUT_ROOT="${OUT_ROOT:?Set OUT_ROOT to your checkpoint root (contains <run_name>/<ckpt>)}"
@@ -52,7 +53,7 @@ DRY_RUN="${DRY_RUN:-0}"
 scale_tag() {
   if [[ -n "$SCALES" ]]; then echo "$SCALES" | tr ' ' '_'; else echo "default"; fi
 }
-RESULT_ROOT="${RESULT_ROOT:-$ROOT_DIR/outputs/generation_timing_correctness/${BENCHMARK}_$(scale_tag)_$(echo "${GRES:-$PARTITION}" | tr -cd '[:alnum:]_')}"
+RESULT_ROOT="${RESULT_ROOT:-$SHARED_OUTPUTS/generation_timing_correctness/${BENCHMARK}_$(scale_tag)_$(echo "${GRES:-$PARTITION}" | tr -cd '[:alnum:]_')}"
 OUTPUT_JSON="$RESULT_ROOT/results.json"
 DRIVER_ARGS_FILE="$RESULT_ROOT/driver_args.txt"
 
