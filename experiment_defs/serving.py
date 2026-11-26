@@ -3,6 +3,11 @@
 from experiment_defs.standalone import job, load
 
 
+def shared_training_settings(source):
+    fields = ("CONTEXT", "EMBED_LR", "FULL_LR", "BETAS", "WEIGHT_DECAY", "CLIP")
+    return {field: getattr(source, field) for field in fields}
+
+
 def serving(family):
     module = load(family)
     if family in {"draft_sweep", "serving_graphs"}:
@@ -27,7 +32,8 @@ def serving(family):
                 phase,
                 "--filter",
                 run.name,
-                config=(config.source, config)
+                config=config,
+                parameters=shared_training_settings(config.source)
                 if phase in {"train", "probe"}
-                else config,
+                else None,
             )

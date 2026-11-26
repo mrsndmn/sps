@@ -190,7 +190,8 @@ def test_provenance_preview_uses_evaluation_generation(mode):
         ("qwen3-instruct-real-readout-mtp", "qwen3_real_readout_mtp"),
     ],
 )
-def test_named_train_preview_includes_shared_optimizer_and_context(family, run):
+@pytest.mark.parametrize("phase", ["train", "probe"])
+def test_named_train_preview_includes_shared_optimizer_and_context(family, run, phase):
     from scripts import vllm_sps_train
 
     out = subprocess.check_output(
@@ -200,13 +201,14 @@ def test_named_train_preview_includes_shared_optimizer_and_context(family, run):
             "--experiment",
             family + "/" + run,
             "--phase",
-            "train",
+            phase,
             "--dry",
         ],
         text=True,
     )
     plan, _ = json.JSONDecoder().raw_decode(out)
     actual = plan["settings"]
+    assert "GPU_HOURS" not in actual and "EVAL_MAX_HOURS" not in actual
     for field in ("CONTEXT", "EMBED_LR", "FULL_LR", "BETAS", "WEIGHT_DECAY", "CLIP"):
         expected = getattr(vllm_sps_train.source, field)
         assert actual[field] == (

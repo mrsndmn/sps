@@ -3,7 +3,7 @@
 from functools import partial
 from experiment_defs.distillation import dflash, qwen4b
 from experiment_defs.instruction import ifeval, schedules
-from experiment_defs.serving import serving
+from experiment_defs.serving import serving, shared_training_settings
 from experiment_defs.standalone import builds, job, load
 from scripts.suite_registry import INSTRUCT_SUITE
 
@@ -36,7 +36,14 @@ def base50():
 def readout():
     module = load("real_readout_run")
     for phase in ("probe", "train"):
-        yield job(module, phase, module.ARM, phase, config=(module.c.source, module.c))
+        yield job(
+            module,
+            phase,
+            module.ARM,
+            phase,
+            config=module.c,
+            parameters=shared_training_settings(module.c.source),
+        )
     for workload in ("eval", "mmlu", "gsm8k", "humaneval", "serving"):
         module = load("real_readout_" + workload)
         for exp in module.experiment_configs:
