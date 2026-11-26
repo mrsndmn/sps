@@ -6,7 +6,7 @@ from pathlib import Path
 from scripts import sched_config as c
 from scripts.design_compatibility import rerun_signature
 os.environ.setdefault('SPS_EXPERIMENT_SUITE', c.SOURCE_SUITE)
-import experiments as e
+from scripts import experiment_suite as e
 
 
 def signature():

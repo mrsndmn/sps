@@ -5,7 +5,7 @@ import json
 import numpy as np
 import torch
 
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import ar_sps_config as c
 from scripts.ar_sps_common import load_model, restore, nll
 from scripts.ar_sps_data import rows

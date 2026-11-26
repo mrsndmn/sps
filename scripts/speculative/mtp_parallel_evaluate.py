@@ -4,7 +4,8 @@ import json
 import signal
 
 import torch
-import experiments as e
+from src.experiments import mtp
+from scripts import experiment_suite as e
 from scripts.mtp_common import (load_mtp,load_reference,TokenSequences,
     validation_starts,validate_evaluation_inputs,warmstart_checkpoint,file_sha256)
 from scripts.mtp_evaluate import (benchmark_reference,benchmark_speculative,
@@ -17,9 +18,9 @@ from modeling.models.sps.parallel_verify import ParallelPrefixVerifier
 def audit(reference,prompts):
     """Independent native comparisons, including EOS and rejected-branch recovery."""
     maximum=0.;logit_error=0.;argmax_mismatches=0;rows=0
-    for prefix in prompts[:e.MTP_PARALLEL_AUDIT_PROMPTS]:
-        parallel=ParallelPrefixVerifier(reference,e.MTP_NEW_TOKENS)
-        native=NativePrefixVerifier(reference,e.MTP_NEW_TOKENS)
+    for prefix in prompts[:mtp.MTP_PARALLEL_AUDIT_PROMPTS]:
+        parallel=ParallelPrefixVerifier(reference,mtp.MTP_NEW_TOKENS)
+        native=NativePrefixVerifier(reference,mtp.MTP_NEW_TOKENS)
         # Include a document reset inside a block, followed by rejection before it.
         draft=torch.tensor([262,reference.config.eos_token_id,198,257],device=prefix.device)
         for current in (prefix,torch.cat((prefix,draft[:1],draft.new_tensor([13])))):
@@ -29,11 +30,11 @@ def audit(reference,prompts):
             logit_error=max(logit_error,float((p-q).abs().max()))
             argmax_mismatches+=int((p.argmax(-1)!=q.argmax(-1)).sum())
             rows+=p.shape[0]
-    if maximum > e.MTP_PARALLEL_PROB_ATOL:
+    if maximum > mtp.MTP_PARALLEL_PROB_ATOL:
         raise RuntimeError(f'Parallel/native probability drift {maximum} exceeds audit tolerance')
     return dict(max_probability_error=maximum,max_logit_error=logit_error,
         audited_rows=rows,argmax_mismatches=argmax_mismatches,
-        probability_atol=e.MTP_PARALLEL_PROB_ATOL,
+        probability_atol=mtp.MTP_PARALLEL_PROB_ATOL,
         bitwise_native_equivalent=logit_error==0.)
 
 
@@ -62,27 +63,27 @@ def evaluate(exp):
         raise RuntimeError('Completed checkpoint identity mismatch')
     del state
     reference=load_reference('cuda').eval().requires_grad_(False)
-    data=TokenSequences('val',e.MTP_PROMPT_TOKENS,exp.horizons)
-    starts=validation_starts(len(data.tokens),e.MTP_PROMPT_TOKENS,e.MTP_EVAL_PROMPTS)
-    prompts=[data[i][:e.MTP_PROMPT_TOKENS].cuda() for i in starts]
+    data=TokenSequences('val',mtp.MTP_PROMPT_TOKENS,exp.horizons)
+    starts=validation_starts(len(data.tokens),mtp.MTP_PROMPT_TOKENS,mtp.MTP_EVAL_PROMPTS)
+    prompts=[data[i][:mtp.MTP_PROMPT_TOKENS].cuda() for i in starts]
     report=dict(verifier_backend='parallel_q2',checkpoint=checkpoint,
         checkpoint_sha256=file_sha256(checkpoint),source_sha256=trained['source_sha256'],
         data_manifest_sha256=trained['data_manifest_sha256'],horizons=exp.horizons,
-        settings=dict(prompts=len(prompts),prompt_tokens=e.MTP_PROMPT_TOKENS,
-            max_new_tokens=e.MTP_NEW_TOKENS,temperature=e.MTP_TEMPERATURE,seed=e.MTP_SEED,batch_size=1),
+        settings=dict(prompts=len(prompts),prompt_tokens=mtp.MTP_PROMPT_TOKENS,
+            max_new_tokens=mtp.MTP_NEW_TOKENS,temperature=mtp.MTP_TEMPERATURE,seed=mtp.MTP_SEED,batch_size=1),
         limitations=['Exact acceptance/residual correction relative to computed block probabilities; floating point block GEMMs can differ from native single-token decoding. Native sampling distribution is not claimed bitwise identical.',
             'One seed/workload; timings include proposal, prefill, verification, cache reconciliation and probability/acceptance logic.'],
         numerical_audit=audit(reference,prompts),baseline={})
     for mode in ('greedy','sample'):
         benchmark_reference(reference,prompts[0],mode=mode)
-        report['baseline'][mode]=[benchmark_reference(reference,p,mode=mode,seed=e.MTP_SEED+i) for i,p in enumerate(prompts)]
+        report['baseline'][mode]=[benchmark_reference(reference,p,mode=mode,seed=mtp.MTP_SEED+i) for i,p in enumerate(prompts)]
     all_equal=True
     for phase,path in [('before',warmstart_checkpoint(exp.horizons)),('after',checkpoint)]:
-        model=load_mtp(exp.horizons,'cuda',path,backend=e.MTP_INFERENCE_BACKEND).eval()
+        model=load_mtp(exp.horizons,'cuda',path,backend=mtp.MTP_INFERENCE_BACKEND).eval()
         report[phase]=dict(checkpoint=str(path),checkpoint_sha256=file_sha256(path),generation={})
         for mode in ('greedy','sample'):
             benchmark_speculative(model,prompts[0],mode=mode,reference=reference,verifier_factory=ParallelPrefixVerifier)
-            rows=[benchmark_speculative(model,p,mode=mode,seed=e.MTP_SEED+i,reference=reference,
+            rows=[benchmark_speculative(model,p,mode=mode,seed=mtp.MTP_SEED+i,reference=reference,
                 verifier_factory=ParallelPrefixVerifier) for i,p in enumerate(prompts)]
             result=aggregate(rows,report['baseline'][mode],exp.horizons)
             if mode=='greedy':
@@ -113,7 +114,7 @@ def main():
     def expired(signum, frame):
         raise TimeoutError('Parallel evaluation exceeded its configured time limit')
     signal.signal(signal.SIGALRM,expired)
-    signal.alarm(e.MTP_PARALLEL_TIMEOUT_SECONDS)
+    signal.alarm(mtp.MTP_PARALLEL_TIMEOUT_SECONDS)
     try:
         evaluate(matches[0])
     finally:

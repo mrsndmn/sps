@@ -8,7 +8,7 @@ import math
 import subprocess
 import time
 
-from experiments import (ARTIFACTS_ROOT, RUN_ROOT, SANITY_ROOT, MAX_HOURS, TASKS, collect_experiments,
+from scripts.experiment_suite import (ARTIFACTS_ROOT, RUN_ROOT, SANITY_ROOT, MAX_HOURS, TASKS, collect_experiments,
                         train_command, eval_command, output_dir, design_signature,
                         COMMON_ROOT, RUNTIME_SAFETY_FACTOR)
 
@@ -98,7 +98,7 @@ def prepare():
         raise RuntimeError(f'Preparation/probe job requires {required_gpus} visible GPUs')
     from scripts.pilot_headers import prepare as prepare_headers
     prepare_headers()
-    from experiments import PYTHON
+    from src.experiments.environment import PYTHON
     run_logged([str(PYTHON), '-m', 'pytest', '-q',
                 'src/modeling/tests/attention/triton/test_sps_attention.py',
                 '-k', 'sliding_matches'], SANITY_ROOT / 'mask-tests.log', timeout=1800)

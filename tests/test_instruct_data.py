@@ -97,12 +97,13 @@ def _load_worker(monkeypatch):
         setattr(config, name, value)
     exps = [types.SimpleNamespace(name='ce', recipe='staged_sps', trainable=True),
             types.SimpleNamespace(name='ar', recipe='continued_ar', trainable=True)]
-    registry = types.ModuleType('experiments')
+    registry = types.ModuleType('scripts.experiment_suite')
     registry.collect_experiments = lambda: exps
     registry.design_signature = lambda: 'sig'
-    monkeypatch.setitem(sys.modules, 'experiments', registry)
+    monkeypatch.setitem(sys.modules, 'scripts.experiment_suite', registry)
     monkeypatch.setitem(sys.modules, 'scripts.instruct_config', config)
     import scripts
+    monkeypatch.setattr(scripts, 'experiment_suite', registry, raising=False)
     monkeypatch.setattr(scripts, 'instruct_config', config, raising=False)
     launcher = types.ModuleType('scripts.mlspace_launch')
     launcher.store_json = lambda *_: None

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import shutil
 
-from experiments import (DATASET_REPO, DATASET_REVISION, DATA_FILES,
+from scripts.experiment_suite import (DATASET_REPO, DATASET_REVISION, DATA_FILES,
                         EXISTING_HF_CACHES, HF_HOME, RUN_ROOT, VAL_FRACTION, VAL_SEED,
                         collect_experiments, MIN_FREE_BYTES)
 

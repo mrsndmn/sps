@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import time
 
+from scripts.source_compatibility import source_hash
 from scripts import real_readout_eval as quality
 from scripts import real_readout_run as train
 from scripts import serving_graphs as graphs
@@ -17,21 +18,24 @@ from scripts import serving_runtime as runtime
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts import mlspace_launch as launch
+from src.experiments.real_readout_serving import (
+    ROOT,
+    experiment_configs,
+    LAYOUTS,
+    AUDIT_PREFIXES,
+)
 
-ROOT = train.ROOT / "serving"
+
 PATCH = Path(__file__).with_name("real_readout_vllm.patch")
-experiment_configs = [c.Experiment(f"serving-{arm}", arm) for arm in ("A", "B")]
-LAYOUTS = ("sps", "sps_mtp")
-AUDIT_PREFIXES = 8
 
 
 def signature(exp, marker):
     return dict(arm=exp.arm, checkpoint=marker["checkpoint_sha256"],
                 model_sources=quality.model_sources(exp),
                 graphs=graphs.protocol_signature(),
-                evaluator=common.file_hash(Path(__file__)), patch=common.file_hash(PATCH),
-                loader=common.file_hash(Path(quality.__file__)),
-                analysis={name: common.file_hash(Path(__file__).with_name(name + ".py"))
+                evaluator=source_hash(__file__), patch=common.file_hash(PATCH),
+                loader=source_hash(quality.__file__),
+                analysis={name: source_hash(Path(__file__).with_name(name + ".py"))
                           for name in ("draft_sweep", "instruct_generation", "report_mmlu_stem")})
 
 

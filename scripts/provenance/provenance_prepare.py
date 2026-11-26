@@ -6,7 +6,6 @@ This stage reports actual token budgets before training configurations are fixed
 """
 import argparse
 from collections import Counter
-from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -14,6 +13,7 @@ import shlex
 import time
 from unittest.mock import patch
 
+from scripts.source_compatibility import source_hash
 from scripts import instruct_config as c
 from scripts import instruct_data as data
 from scripts import mlspace_launch as launch
@@ -21,28 +21,22 @@ from scripts import serving_benchmark as bench
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as source
 
+from src.experiments.provenance_prepare import (
+    SPLITS,
+    GENERATION,
+    MIN_PAIRED_FRACTION,
+    Experiment,
+    experiment_configs,
+)
+
 ROOT = source.ROOT.parent/'instruct-response-provenance'
-SPLITS = ('train','val','test')
-GENERATION = dict(temperature=c.GENERATION['nonthinking']['temperature'],
-                  top_p=c.GENERATION['nonthinking']['top_p'],
-                  top_k=c.GENERATION['nonthinking']['top_k'],
-                  max_new_tokens=c.TEACHER_MAX_NEW_TOKENS)
-MIN_PAIRED_FRACTION = .8
-
-@dataclass(frozen=True)
-class Experiment:
-    name: str = 'paired-response-preparation'
-    num_gpus: int = 4
-    hours: int = 12
-
-experiment_configs = [Experiment()]
 
 
 def signature():
-    return data.digest(dict(code=common.file_hash(Path(__file__)),
-        encoder=common.file_hash(Path(data.__file__)),
-        source_config=common.file_hash(Path(c.__file__)),
-        source_reader=common.file_hash(Path(common.__file__)), source_signature=source.SOURCE_SIGNATURE,
+    return data.digest(dict(code=source_hash(__file__),
+        encoder=source_hash(data.__file__),
+        source_config=source_hash(c.__file__),
+        source_reader=source_hash(common.__file__), source_signature=source.SOURCE_SIGNATURE,
         generation=GENERATION, model=c.MODEL, revision=c.REVISION))
 
 

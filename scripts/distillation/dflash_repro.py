@@ -9,7 +9,7 @@ from unittest.mock import patch
 from scripts import dflash_repro_eval as evaluation, dflash_repro_train as training
 from scripts import mlspace_launch as launch, qwen4b_drafter_train as previous
 
-TIMEOUTS = {"probe": "90m", "train": "48h", "eval": "12h"}
+from src.experiments.dflash_repro import TIMEOUTS
 
 
 def final_step():

@@ -14,20 +14,21 @@ from torch.nn import functional as F
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.checkpoint import checkpoint
 
-from experiments import COMMON_ROOT
+from src.experiments.environment import COMMON_ROOT
+from scripts.design_compatibility import canonical_signature
+from scripts.source_compatibility import source_hash
 from scripts import dflash_repro_train as hard, mlspace_launch as launch
-
-ROOT = COMMON_ROOT / "dflash-kd"
-TEMPERATURE = 1.0
-experiment_configs = [
-    replace(hard.EXPERIMENT, name="qwen3-4b-dflash-b16-soft-kd", num_gpus=8),
-]
-EXPERIMENT, = experiment_configs
+from src.experiments.dflash_kd_train import (
+    ROOT,
+    TEMPERATURE,
+    experiment_configs,
+    EXPERIMENT,
+)
 
 
 def signature():
     base = hard.signature().encode()
-    return sha256(base + Path(__file__).read_bytes()).hexdigest()
+    return canonical_signature(sha256(base + bytes.fromhex(source_hash(__file__))).hexdigest())
 
 
 def run_root():

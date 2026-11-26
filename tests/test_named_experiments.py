@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from experiment_defs.registry import named_runs, resolve
+from scripts.named.registry import named_runs, resolve
 from scripts.suite_registry import WORKER_MODULES
 
 
@@ -64,12 +64,12 @@ def test_inherited_mtp_settings_invalidate_markers(suite):
     code = """
 from pathlib import Path
 from unittest.mock import patch
-import experiments as registry
+from scripts import experiment_suite as registry
 original = Path.read_bytes
 previous = registry.design_signature()
 def changed(path):
     data = original(path)
-    if path.parts[-2:] == ('experiment_defs', 'mtp.py'):
+    if path.parts[-2:] == ('experiments', 'mtp_design.py'):
         return data + b'changed source'
     return data
 with patch.object(Path, 'read_bytes', changed):
@@ -83,9 +83,9 @@ with patch.object(Path, 'read_bytes', changed):
 
 
 def test_named_mask_ablation_selects_submission_mode(monkeypatch):
-    from experiment_defs import cli
+    from scripts.named import cli
     from types import SimpleNamespace
-    from experiment_defs import special_families
+    from scripts.named import special_families
 
     monkeypatch.setattr(
         special_families,
@@ -110,7 +110,7 @@ def test_named_mask_ablation_selects_submission_mode(monkeypatch):
 
 
 def test_pilot_signature_tracks_final_evaluation_arguments(monkeypatch):
-    import experiments
+    from scripts import experiment_suite as experiments
 
     original = experiments.eval_command
     previous = experiments.design_signature()
@@ -123,7 +123,7 @@ def test_pilot_signature_tracks_final_evaluation_arguments(monkeypatch):
 
 
 def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
-    from experiment_defs import cap_jobs
+    from scripts.named import cap_jobs
 
     monkeypatch.setattr(cap_jobs.compare, "ROOT", tmp_path)
     prompts = tmp_path / "cohort.json"
@@ -138,10 +138,21 @@ def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
     assert descriptions[0] != descriptions[2]
 
 
+def test_teacher_cap_receipt_uses_worker_report_identity(monkeypatch, capsys):
+    from hashlib import sha256
+    from scripts.named import cap_jobs
+
+    monkeypatch.setattr(sys, "argv", ["cap_jobs", "teacher", "--dry"])
+    cap_jobs.main()
+    path = f"{cap_jobs.teacher.source_hash(cap_jobs.teacher.__file__)}/report.json"
+    identity = sha256(path.encode()).hexdigest()
+    assert identity in json.loads(capsys.readouterr().out)["job_desc"]
+
+
 def test_unprepared_drafter_prints_worker_command(tmp_path):
     from types import SimpleNamespace
-    from experiment_defs.distillation import preview_drafter
-    from experiment_defs.standalone import Job
+    from scripts.named.distillation import preview_drafter
+    from scripts.named.standalone import Job
 
     module = SimpleNamespace(
         __name__="scripts.distillation.qwen4b_drafter",
@@ -170,7 +181,7 @@ def test_unprepared_drafter_prints_worker_command(tmp_path):
 
 @pytest.mark.parametrize("mode", ["thinking", "nonthinking"])
 def test_provenance_preview_uses_evaluation_generation(mode):
-    from experiment_defs.special_families import provenance
+    from scripts.named.special_families import provenance
     from scripts import provenance_evaluate, provenance_prepare
 
     plans = list(provenance())

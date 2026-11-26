@@ -6,16 +6,13 @@ import json
 from pathlib import Path
 import random
 
-from experiments import HF_HOME
+from src.experiments.environment import HF_HOME
+from scripts.source_compatibility import source_hash
 from scripts import dflash_mask_ablation as reference, instruct_config, instruct_data
 from scripts.report_mmlu_stem import STEM_SUBJECTS
 
-NAME = "dflash-100k"
-REPO = "jiamingshan/qwen3-4b-dflash-official100k-prepared"
-REVISION = "948e343b5ccc06e21794d195f2a34872ed180b9b"
-SOURCE_ROWS = 100_000
-MMLU_TEST_FILE = "all/test-00000-of-00001.parquet"
-MIN_LOSS_TOKENS = 128
+from src.experiments.qwen4b_drafter_train import PREPARED_DATASET as NAME
+from src.experiments.qwen4b_drafter_data import REPO, REVISION, SOURCE_ROWS, MMLU_TEST_FILE, MIN_LOSS_TOKENS
 
 
 def open_dataset():
@@ -45,7 +42,7 @@ def selection_path(root, context, horizon, validation, accumulation, seed):
     design = (
         REVISION, reference.TARGET_REVISION, instruct_config.MMLU_REVISION,
         sorted(STEM_SUBJECTS), context, horizon, validation, accumulation, seed,
-        instruct_data.file_hash(Path(__file__)), instruct_data.file_hash(Path(instruct_data.__file__)),
+        source_hash(__file__), source_hash(instruct_data.__file__),
     )
     identity = sha256(json.dumps(design).encode()).hexdigest()[:16]
     return root / "data" / NAME / f"{identity}.json"

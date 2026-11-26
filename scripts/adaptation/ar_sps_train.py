@@ -10,7 +10,7 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import ar_sps_config as c
 from scripts.ar_sps_common import load_model, load_teacher, loss, nll, save, restore, read_plan
 from scripts.ar_sps_data import rows

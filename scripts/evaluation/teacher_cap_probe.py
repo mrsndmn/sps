@@ -2,24 +2,20 @@
 import hashlib
 import json
 from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.source_compatibility import source_hash
 from scripts import instruct_config as c
 from scripts import instruct_data as data
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as source
 from scripts import mlspace_launch as launch
+from src.experiments.teacher_cap_probe import (
+    Probe,
+    experiment_configs,
+)
 
 
-@dataclass(frozen=True)
-class Probe:
-    caps: tuple = (1024, 1536, 2048, 3072, 4096, 6144, 8192)
-    per_source: int = 12
-    retention: float = .95
-
-
-experiment_configs = [Probe()]
 ROOT = source.ROOT.parent / 'qwen3-teacher-cap-probe'
 ARCHIVE = source.SOURCE_ROOT / 'runs/data'
 
@@ -75,7 +71,7 @@ def sample(config):
 # Published one-GPU pilot to which these helpers contribute. Keep its immutable
 # source as the protocol authority whenever an assistant shard is requested.
 PILOT_HASH = '5bb50eb67bff7ec297e740ea8bffdce6d220f9bf5051cc47d67a5755634f82c5'
-SHARDS = 8
+from src.experiments.teacher_cap_probe import SHARDS
 
 
 def run(shard=None):
@@ -96,7 +92,7 @@ def run(shard=None):
         torch_dtype=torch.bfloat16, attn_implementation='sdpa').to('cuda').eval()
     eos = model.generation_config.eos_token_id
     eos = {eos} if isinstance(eos, int) else set(eos)
-    folder = ROOT / (PILOT_HASH if shard is not None else common.file_hash(Path(__file__)))
+    folder = ROOT / (PILOT_HASH if shard is not None else source_hash(__file__))
     results = []
     for domain, population, row, archive in selected:
         key = row['source_id']

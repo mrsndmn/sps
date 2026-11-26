@@ -6,7 +6,7 @@ import os
 import subprocess
 import time
 
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import ar_sps_config as c
 from scripts.mlspace_launch import store_json
 

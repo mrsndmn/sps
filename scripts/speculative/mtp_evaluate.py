@@ -13,9 +13,10 @@ import time
 import torch
 from torch.nn import functional as F
 
-from experiments import (MTP_INFERENCE_BACKEND, MTP_CONTEXT, MTP_EVAL_PROMPTS,
+from src.experiments.mtp import (MTP_INFERENCE_BACKEND, MTP_CONTEXT, MTP_EVAL_PROMPTS,
     MTP_NEW_TOKENS, MTP_PROMPT_TOKENS, MTP_SEED, MTP_SOURCE,
-    MTP_TEMPERATURE, MTP_VAL_TOKENS, output_dir)
+    MTP_TEMPERATURE, MTP_VAL_TOKENS)
+from scripts.experiment_suite import output_dir
 from scripts.mtp_common import (TokenSequences, load_mtp, shifted_targets,
                                 validation_starts, restore_draft, load_reference)
 from modeling.models.sps.mtp import truncate_cache
@@ -401,7 +402,7 @@ def evaluate(exp, checkpoint_path):
 def main(argv=None):
     import argparse
     from pathlib import Path
-    import experiments
+    from scripts import experiment_suite as experiments
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--filter', required=True)
     args = parser.parse_args(argv)

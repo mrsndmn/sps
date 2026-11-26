@@ -3,7 +3,7 @@ import json
 import torch
 from torch.nn import functional as F
 
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import ar_sps_config as c
 from modeling.models.sps.pretrained import PretrainedSPS
 

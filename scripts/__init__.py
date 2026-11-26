@@ -1,6 +1,6 @@
 """Experiment scripts, including the original flat module names used by jobs."""
 from importlib import import_module
-from importlib.util import spec_from_file_location, spec_from_loader
+from importlib.util import find_spec, spec_from_file_location, spec_from_loader
 from pathlib import Path
 import sys
 
@@ -8,6 +8,15 @@ import sys
 _GROUPS = ('adaptation', 'distillation', 'evaluation', 'instruction', 'pilot',
            'provenance', 'readout', 'serving', 'speculative')
 _ROOT = Path(__file__).parent
+_MOVED_CONFIGS = {
+    'ar_sps_config': 'adaptation',
+    'extend_config': 'instruction',
+    'ifeval_config': 'instruction',
+    'instruct_config': '',
+    'mmlu_config': 'evaluation',
+    'sched_config': 'instruction',
+    'vllm_sps_config': 'serving',
+}
 
 
 class _LegacyScript:
@@ -29,6 +38,9 @@ class _LegacyScript:
 class _LegacyScriptFinder:
     def find_spec(self, fullname, path=None, target=None):
         package, _, name = fullname.rpartition('.')
+        if name in _MOVED_CONFIGS and package in (__name__, f'{__name__}.{_MOVED_CONFIGS[name]}'):
+            config = find_spec(f'src.experiments.{name}')
+            return spec_from_loader(fullname, _LegacyScript(config), origin=config.origin)
         if package != __name__:
             return None
         for group in _GROUPS:

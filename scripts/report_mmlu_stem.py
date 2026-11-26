@@ -65,7 +65,7 @@ def main():
     args = parser.parse_args()
     os.environ['SPS_EXPERIMENT_SUITE'] = args.suite
     from datasets import load_dataset
-    from experiments import COMMON_ROOT
+    from src.experiments.environment import COMMON_ROOT
     from scripts.mmlu_config import DATASET, REVISION, experiment_configs
     dataset = list(load_dataset(DATASET, 'all', revision=REVISION, split='test'))
     root = COMMON_ROOT / args.suite

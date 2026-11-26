@@ -9,11 +9,12 @@ import torch
 
 def test_unfreeze_registry_and_matched_continuation():
     code='''
-import experiments as e,json
+from scripts import experiment_suite as e
+import json
 from scripts.mlspace_launch import payload
 print(json.dumps(dict(names=[x.name for x in e.collect_experiments()],horizons=[x.horizons for x in e.collect_experiments()],
- root=str(e.ARTIFACTS_ROOT),steps=e.MTP_TRAIN_STEPS,budget=e.TRAIN_TOKENS,parent=e.MTP_PARENT_INPUT_TOKENS,
- lr=e.MTP_LR,emb_lr=e.MTP_EMBED_LR,cmd=e.train_command(e.collect_experiments()[0]),
+ root=str(e.ARTIFACTS_ROOT),steps=e.mtp.MTP_TRAIN_STEPS,budget=e.TRAIN_TOKENS,parent=e.mtp.MTP_PARENT_INPUT_TOKENS,
+ lr=e.mtp.MTP_LR,emb_lr=e.mtp.MTP_EMBED_LR,cmd=e.train_command(e.collect_experiments()[0]),
  payload=payload('prepare','data-and-probes',e.STAGING_ROOT,'a','b'))))
 '''
     d=json.loads(subprocess.check_output([sys.executable,'-c',code],text=True,env=dict(os.environ,SPS_EXPERIMENT_SUITE='mtp-unfreeze')))
@@ -42,7 +43,7 @@ def test_plain_ce_includes_first_horizon_and_padding():
 
 def test_optimizer_deduplicates_tied_embeddings_and_preserves_lr_ratio(monkeypatch):
     from scripts.mtp_train import optimizer_groups
-    import experiments as e
+    from scripts import experiment_suite as e
     from types import SimpleNamespace
     class Draft(torch.nn.Module):
         def __init__(self):
@@ -54,9 +55,9 @@ def test_optimizer_deduplicates_tied_embeddings_and_preserves_lr_ratio(monkeypat
             self.reference.lm_head.weight=self.reference.transformer.wte.weight
             self.reference.block=torch.nn.Linear(4,4)
             self.new_embeddings=torch.nn.Parameter(torch.ones(2,4))
-    monkeypatch.setattr(e,'MTP_UNFREEZE',True)
-    monkeypatch.setattr(e,'MTP_LR',1e-5)
-    monkeypatch.setattr(e,'MTP_EMBED_LR',1e-4)
+    monkeypatch.setattr(e.mtp,'MTP_UNFREEZE',True)
+    monkeypatch.setattr(e.mtp,'MTP_LR',1e-5)
+    monkeypatch.setattr(e.mtp,'MTP_EMBED_LR',1e-4)
     model=Draft();groups=optimizer_groups(model)
     params=[p for g in groups for p in g['params']]
     assert len(params)==len({id(p) for p in params})==len(list(model.parameters()))
@@ -69,7 +70,7 @@ def test_optimizer_deduplicates_tied_embeddings_and_preserves_lr_ratio(monkeypat
 
 
 def test_full_checkpoint_restores_backbone_and_tied_weights(tmp_path,monkeypatch):
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts.mtp_train import save_checkpoint
     from scripts.mtp_common import restore_draft
     class Draft(torch.nn.Module):
@@ -80,7 +81,7 @@ def test_full_checkpoint_restores_backbone_and_tied_weights(tmp_path,monkeypatch
             self.reference.transformer.wte=torch.nn.Embedding(9,4)
             self.reference.lm_head=torch.nn.Linear(4,9,bias=False)
             self.reference.lm_head.weight=self.reference.transformer.wte.weight
-    monkeypatch.setattr(e,'MTP_UNFREEZE',True)
+    monkeypatch.setattr(e.mtp,'MTP_UNFREEZE',True)
     model=Draft();optimizer=torch.optim.AdamW(model.parameters())
     before={n:p.detach().clone() for n,p in model.named_parameters()}
     path=tmp_path/'full.pt';save_checkpoint(path,model,optimizer,3,'sig')

@@ -110,7 +110,7 @@ def nll(model, data, device):
 
 
 def save(path, model, optimizer, step, best, stage, plan):
-    import experiments as e
+    from scripts import experiment_suite as e
     c = configuration()
     temporary = path.with_suffix('.tmp')
     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), step=step,
@@ -120,7 +120,7 @@ def save(path, model, optimizer, step, best, stage, plan):
 
 
 def restore(path, model, device):
-    import experiments as e
+    from scripts import experiment_suite as e
     c = configuration()
     state = torch.load(path, map_location='cpu', weights_only=False)
     if (state['design_signature'] != e.design_signature() or state['source'] != c.MODEL
@@ -131,7 +131,7 @@ def restore(path, model, device):
 
 
 def read_plan():
-    import experiments as e
+    from scripts import experiment_suite as e
     plan = json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
     if plan['design_signature'] != e.design_signature():
         raise RuntimeError('Stale preparation plan')
@@ -140,7 +140,7 @@ def read_plan():
 
 def validate_final(path, plan):
     """Validate terminal metadata without allocating the model/optimizer tensors."""
-    import experiments as e
+    from scripts import experiment_suite as e
     c = configuration()
     state = torch.load(path, map_location='meta', mmap=True, weights_only=False)
     if (state['design_signature'] != e.design_signature() or state['source'] != c.MODEL

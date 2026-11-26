@@ -1,7 +1,6 @@
 """Train a DFlash-b16 drafter from random weights on the prepared 100K corpus."""
 
 from contextlib import nullcontext
-from dataclasses import dataclass
 from hashlib import sha256
 import os
 from pathlib import Path
@@ -18,41 +17,34 @@ from torch.nn.attention.flex_attention import create_block_mask, flex_attention
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.checkpoint import checkpoint
 
-from experiments import COMMON_ROOT
+from src.experiments.environment import COMMON_ROOT
+from scripts.source_compatibility import source_hash
 from scripts import dflash_mask_ablation as reference, instruct_data, mlspace_launch as launch
 from scripts import qwen4b_drafter_data as prepared, qwen4b_drafter_train as previous
-
-ROOT = COMMON_ROOT / "dflash-repro"
-PROPOSALS = 15
-WIDTH = PROPOSALS + 1
-MAX_ANCHORS = 512
-HEAD_CHUNK = 256
-QUERY_BLOCK = 128
-LR = 6e-4
-WARMUP = 0.04
-GAMMA = 7.0
-SEED = previous.SEED
-PROBE_WARMUP = 6
-PROBE_STEPS = 24
-MILESTONES = (5000, 10000)
-
-
-@dataclass(frozen=True)
-class Experiment:
-    name: str
-    epochs: int
-    global_batch: int
-    num_gpus: int
-
-
-experiment_configs = [Experiment("qwen3-4b-dflash-b16-scratch", 3, 24, 4)]
-EXPERIMENT, = experiment_configs
+from src.experiments.dflash_repro_train import (
+    ROOT,
+    PROPOSALS,
+    WIDTH,
+    MAX_ANCHORS,
+    HEAD_CHUNK,
+    QUERY_BLOCK,
+    LR,
+    WARMUP,
+    GAMMA,
+    SEED,
+    PROBE_WARMUP,
+    PROBE_STEPS,
+    MILESTONES,
+    Experiment,
+    experiment_configs,
+    EXPERIMENT,
+)
 
 
 def signature():
     sources = (Path(__file__), Path(previous.__file__), Path(prepared.__file__),
                Path(reference.__file__), previous.selection_path())
-    return sha256("".join(instruct_data.file_hash(path) for path in sources).encode()).hexdigest()
+    return sha256("".join(source_hash(path) for path in sources).encode()).hexdigest()
 
 
 def run_root():

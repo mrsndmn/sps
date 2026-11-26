@@ -7,7 +7,7 @@ prediction tokens.
 
 ## Setup
 Training function: `scripts.pilot_run.train`; experiment definitions and launch
-arguments live in `experiments.py` (`experiment_configs`).
+arguments live in `src/experiments/pilot.py` (`experiment_configs`).
 
 ## Results
 Both training jobs completed. Final held-out NLL is 3.33603 for Standard and

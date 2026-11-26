@@ -5,7 +5,6 @@ Capture divergent histories and compare with cold full-prefix evaluation. The
 original failed correctness gate is immutable; instrumentation is not a benchmark.
 """
 import argparse
-from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
@@ -14,31 +13,24 @@ import time
 from unittest.mock import patch
 
 import numpy as np
+from scripts.source_compatibility import source_hash
 from scripts import sampling_precision as precision
 from scripts import sampling_audit as audit
 from scripts import sampling_trace as trace
 from scripts import mlspace_launch as launch
 
+from src.experiments.sampling_cache_trace import (
+    Experiment,
+    experiment_configs,
+    Job,
+    job_configs,
+)
+
 ROOT = precision.ROOT.parent / 'sps-sampling-cache-trace'
 SOURCE = precision.root()
 BASE_IDENTITY = precision.recorded_identity
 
-@dataclass(frozen=True)
-class Experiment:
-    name: str
-    arm: str
-    cold: bool = False
 
-experiment_configs = [Experiment('sequential', 'sps'), Experiment('speculative', 'sps_mtp'),
-                      Experiment('cold', 'sps', True)]
-
-@dataclass(frozen=True)
-class Job:
-    name: str = 'target-logits'
-    num_gpus: int = 1
-    hours: int = 2
-
-job_configs = [Job()]
 LIMIT = max(audit.OUTPUT_LENGTHS)
 
 
@@ -57,7 +49,7 @@ def identity():
     files = [SOURCE / 'report.json', SOURCE / 'identity.json',
              SOURCE / 'fp32head-four/decode/sps-eager.json',
              SOURCE / 'fp32head-mtp/decode/sps_mtp-eager.json']
-    return dict(precision=prior, code=audit.common.file_hash(Path(__file__)),
+    return dict(precision=prior, code=source_hash(__file__),
                 evidence={str(p): audit.common.file_hash(p) for p in files})
 
 

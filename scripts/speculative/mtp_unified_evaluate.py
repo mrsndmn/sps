@@ -1,7 +1,8 @@
 """Single-checkpoint self-speculation, paired with its own native P1 generator."""
 import argparse,json,signal,time
 import torch
-import experiments as e
+from src.experiments import mtp, mtp_unified
+from scripts import experiment_suite as e
 from scripts.mtp_common import load_mtp,TokenSequences,validation_starts,file_sha256
 from scripts.spec_baseline_common import checked_state,identities
 from scripts.mtp_evaluate import probabilities,benchmark_reference,NativePrefixVerifier
@@ -44,7 +45,7 @@ def generate(model,prefix,budget,mode,seed):
 @torch.inference_mode()
 def benchmark(model,prefix,mode,seed):
     torch.cuda.synchronize();start=time.perf_counter()
-    ids,result,engine,proposal,verification=generate(model,prefix,e.UNIFIED_NEW_TOKENS,mode,seed)
+    ids,result,engine,proposal,verification=generate(model,prefix,mtp_unified.UNIFIED_NEW_TOKENS,mode,seed)
     torch.cuda.synchronize();elapsed=time.perf_counter()-start
     n=model.horizons-1
     return dict(token_ids=ids.tolist(),tokens=ids.numel(),initial_target_tokens=1,total_seconds=elapsed,
@@ -58,21 +59,21 @@ def benchmark(model,prefix,mode,seed):
 @torch.inference_mode()
 def audit(model,prompts):
     maximum=0.;logit_error=0.;mismatches=0;rows=0;horizon_error=0.
-    for prefix in prompts[:e.MTP_PARALLEL_AUDIT_PROMPTS]:
+    for prefix in prompts[:mtp.MTP_PARALLEL_AUDIT_PROMPTS]:
         engine=UnifiedSPS(model);engine.ensure(prefix)
         draft=prefix.new_tensor([262,model.config.eos_token_id,198,257])
         cache,got=unified_block(model,engine.cache,draft)
         ids=torch.cat((prefix,draft))
         _,want=model.encode(ids[None],positions=torch.arange(prefix.numel(),ids.numel(),device=prefix.device))
         horizon_error=max(horizon_error,float((probabilities(got,model.config)-probabilities(want[0],model.config)).abs().max()))
-        native=NativePrefixVerifier(model.reference,e.UNIFIED_NEW_TOKENS)
+        native=NativePrefixVerifier(model.reference,mtp_unified.UNIFIED_NEW_TOKENS)
         native.ensure(prefix)
         # The returned rows include the initial prefix; fused rows start after draft[0].
         expected=native.verify_logits(prefix,draft)[1:]
         p=probabilities(expected,model.config);q=probabilities(got[:,0],model.config)
         maximum=max(maximum,float((p-q).abs().max()));logit_error=max(logit_error,float((expected-got[:,0]).abs().max()))
         mismatches+=int((p.argmax(-1)!=q.argmax(-1)).sum());rows+=got.shape[0]
-    if max(maximum,horizon_error)>e.MTP_PARALLEL_PROB_ATOL:raise RuntimeError('Unified numerical audit failed')
+    if max(maximum,horizon_error)>mtp.MTP_PARALLEL_PROB_ATOL:raise RuntimeError('Unified numerical audit failed')
     return dict(max_probability_error=maximum,max_logit_error=logit_error,argmax_mismatches=mismatches,
         audited_rows=rows,all_horizon_probability_error=horizon_error,bitwise_native_equivalent=False)
 
@@ -81,27 +82,27 @@ def evaluate(exp):
     if torch.cuda.device_count()!=e.EVAL_NUM_GPUS:raise RuntimeError('Expected one visible evaluation GPU')
     trained,_=checked_state(exp);checkpoint=trained['checkpoint']
     model=load_mtp(exp.horizons,'cuda',checkpoint,backend='sdpa').eval()
-    data=TokenSequences('val',e.UNIFIED_PROMPT_TOKENS,exp.horizons)
-    starts=validation_starts(len(data.tokens),e.UNIFIED_PROMPT_TOKENS,e.UNIFIED_PROMPTS)
-    prompts=[data[i][:e.UNIFIED_PROMPT_TOKENS].cuda() for i in starts]
+    data=TokenSequences('val',mtp_unified.UNIFIED_PROMPT_TOKENS,exp.horizons)
+    starts=validation_starts(len(data.tokens),mtp_unified.UNIFIED_PROMPT_TOKENS,mtp_unified.UNIFIED_PROMPTS)
+    prompts=[data[i][:mtp_unified.UNIFIED_PROMPT_TOKENS].cuda() for i in starts]
     report=dict(name=exp.name,design_signature=e.design_signature(),**identities(),checkpoint=checkpoint,
         checkpoint_sha256=file_sha256(checkpoint),target='P1 of the same adapted checkpoint',
         prediction_horizons=exp.horizons,proposal_horizons=list(range(2,exp.horizons+1)),
         numerical_audit=audit(model,prompts),baseline={},variants={},
-        settings=dict(prompts=e.UNIFIED_PROMPTS,prompt_tokens=e.UNIFIED_PROMPT_TOKENS,
-            new_tokens=e.UNIFIED_NEW_TOKENS,warmup_passes=e.UNIFIED_WARMUP_PASSES,seed=e.MTP_SEED),
+        settings=dict(prompts=mtp_unified.UNIFIED_PROMPTS,prompt_tokens=mtp_unified.UNIFIED_PROMPT_TOKENS,
+            new_tokens=mtp_unified.UNIFIED_NEW_TOKENS,warmup_passes=mtp_unified.UNIFIED_WARMUP_PASSES,seed=mtp.MTP_SEED),
         limitations=['Target differs from the original SPS-10B after full continuation.',
             'Block and native floating point outputs need not match bitwise.',
             'One measured workload per mode after full-workload warmup; repeatability interval not estimated.'])
     report['variants'][str(exp.horizons-1)]={}
     for mode in ('greedy','sample'):
-        for _ in range(e.UNIFIED_WARMUP_PASSES):
+        for _ in range(mtp_unified.UNIFIED_WARMUP_PASSES):
             for i,p in enumerate(prompts):
-                benchmark_reference(model.reference,p,mode=mode,seed=e.MTP_SEED+i,max_new_tokens=e.UNIFIED_NEW_TOKENS)
-                benchmark(model,p,mode,e.MTP_SEED+i)
-        base=[benchmark_reference(model.reference,p,mode=mode,seed=e.MTP_SEED+i,max_new_tokens=e.UNIFIED_NEW_TOKENS)
+                benchmark_reference(model.reference,p,mode=mode,seed=mtp.MTP_SEED+i,max_new_tokens=mtp_unified.UNIFIED_NEW_TOKENS)
+                benchmark(model,p,mode,mtp.MTP_SEED+i)
+        base=[benchmark_reference(model.reference,p,mode=mode,seed=mtp.MTP_SEED+i,max_new_tokens=mtp_unified.UNIFIED_NEW_TOKENS)
               for i,p in enumerate(prompts)]
-        runs=[benchmark(model,p,mode,e.MTP_SEED+i) for i,p in enumerate(prompts)]
+        runs=[benchmark(model,p,mode,mtp.MTP_SEED+i) for i,p in enumerate(prompts)]
         report['baseline'][mode]=base
         report['variants'][str(exp.horizons-1)][mode]=summarize(runs,base,exp.horizons-1,mode)
         write_json(e.output_dir(exp)/'evaluation.partial.json',report)
@@ -115,7 +116,7 @@ def main():
     matches=e.collect_experiments(a.filter)
     if len(matches)!=1:raise ValueError('Select one unified model')
     def expired(*args):raise TimeoutError('Unified evaluation time cap')
-    signal.signal(signal.SIGALRM,expired);signal.alarm(e.UNIFIED_TIMEOUT)
+    signal.signal(signal.SIGALRM,expired);signal.alarm(mtp_unified.UNIFIED_TIMEOUT)
     try:evaluate(matches[0])
     finally:signal.alarm(0)
 

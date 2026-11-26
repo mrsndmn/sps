@@ -4,7 +4,6 @@ Preserves both previous experiments. Completion means diagnostics collected, not
 that the original sampling gate passed. No serving speed claims are made here.
 """
 import argparse
-from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -12,32 +11,21 @@ import shlex
 import time
 from unittest.mock import patch
 import numpy as np
+from scripts.source_compatibility import source_hash
 from scripts import sampling_audit as audit
 from scripts import sampling_trace as trace
 from scripts import mlspace_launch as launch
 
+from src.experiments.sampling_precision import (
+    Experiment,
+    experiment_configs,
+    Job,
+    job_configs,
+)
+
 ROOT=audit.ROOT.parent/'sps-sampling-precision'
 AUDIT_SOURCE=audit.output_dir()
 TRACE_SOURCE=trace.output_dir()
-
-@dataclass(frozen=True)
-class Experiment:
-    name: str
-    arm: str
-    fp32_head: bool
-
-experiment_configs=[Experiment('bf16-four','sps_four_slots',False),
-                    Experiment('fp32head-one','sps',True),
-                    Experiment('fp32head-four','sps_four_slots',True),
-                    Experiment('fp32head-mtp','sps_mtp',True)]
-
-@dataclass(frozen=True)
-class Job:
-    name: str='matched-slots-and-head'
-    num_gpus: int=1
-    hours: int=2
-
-job_configs=[Job()]
 
 
 def root():return ROOT/'runs/out'/job_configs[0].name
@@ -52,7 +40,7 @@ def identity():
     files=[TRACE_SOURCE/'identity.json',TRACE_SOURCE/'cases.json']
     files += [TRACE_SOURCE/f'{arm}.{suffix}' for arm in (*trace.ARMS,*trace.NATIVE_ARMS) for suffix in ('npz','json')]
     files += [AUDIT_SOURCE/'prefixes.json',AUDIT_SOURCE/'sps-eager.json',AUDIT_SOURCE/'sps_mtp-eager.json']
-    return dict(audit=current,code={p.name:audit.common.file_hash(p) for p in (Path(__file__),Path(trace.__file__))},
+    return dict(audit=current,code={p.name:source_hash(p) for p in (Path(__file__),Path(trace.__file__))},
                 evidence={str(p):audit.common.file_hash(p) for p in files})
 
 

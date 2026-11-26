@@ -59,11 +59,13 @@ def test_shared_rerun_code_matches_archived_design_and_tracks_changes(tmp_path, 
     from scripts.design_compatibility import rerun_signature
 
     folder = Path(sc.__file__).parent
-    for source in [*folder.glob(f"{family}_*.py"), folder / "rerun_jobs.py", folder / "rerun_eval.py"]:
+    assert rerun_signature(family, c.SOURCE_SIGNATURE, folder) == archived
+    for source in [*folder.glob(f"{family}_*.py"), folder / "rerun_jobs.py", folder / "rerun_eval.py",
+                   folder.parents[1] / "src/experiments" / f"{family}_config.py"]:
         (tmp_path / source.name).write_bytes(source.read_bytes())
-    assert rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path) == archived
+    migrated = rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path)
     (tmp_path / "rerun_eval.py").write_text("changed")
-    assert rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path) != archived
+    assert rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path) != migrated
 
 
 @pytest.mark.parametrize('total',[102,410,512])

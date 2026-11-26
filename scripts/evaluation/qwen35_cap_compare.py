@@ -5,19 +5,15 @@ import json
 from pathlib import Path
 import subprocess
 
+from scripts.source_compatibility import source_hash
 from scripts import instruct_config as c
 from scripts import instruct_data as data
 from scripts import serving_runtime as runtime
 from scripts import teacher_cap_probe as pilot
 from scripts import mlspace_launch as launch
+from src.experiments.qwen35_cap_compare import BATCH, CAPS, experiment_configs
 
 ROOT = pilot.ROOT.parent / 'qwen35-unloop-cap-compare'
-experiment_configs = {
-    'original': ('Qwen/Qwen3.5-2B', '15852e8c16360a2fea060d615a32b45270f8a8fc'),
-    'unloop': ('occ-ai/Qwen3.5-2B-Unloop', '3685440c358eef53ab2183f348b5ec9e9c37b12c'),
-}
-CAPS = pilot.Probe().caps
-BATCH = 32
 PROMPTS = ROOT / 'cohort.json'
 
 
@@ -38,11 +34,12 @@ def prepare():
 
 
 def folder(arm):
-    return ROOT / pilot.common.file_hash(Path(__file__)) / data.digest(json.loads(PROMPTS.read_bytes())) / arm
+    return ROOT / source_hash(__file__) / data.digest(json.loads(PROMPTS.read_bytes())) / arm
 
 
 def weights_path(arm):
-    repo, revision = experiment_configs[arm]
+    experiment = experiment_configs[arm]
+    repo, revision = experiment.model, experiment.revision
     return launch.HF_HOME / 'hub' / ('models--' + repo.replace('/', '--')) / 'snapshots' / revision
 
 
@@ -84,7 +81,7 @@ def generate(arm):
             # Qwen3.5 puts the opening tag inside the prompt. Preserve generated closing tags.
             clean = ids[:-1] if ids and ids[-1] in end_ids else ids
             text = tokenizer.decode(clean, skip_special_tokens=False)
-            data.atomic_json(out_dir/(r['id']+'.json'),dict(id=r['id'],revision=experiment_configs[arm][1],
+            data.atomic_json(out_dir/(r['id']+'.json'),dict(id=r['id'],revision=experiment_configs[arm].revision,
                 seed=r['seed'],prompt_hash=data.digest(prompts[r['id']]),ids=ids,text=text,stop=out.finish_reason))
 
 
@@ -111,7 +108,7 @@ def summarize(arm):
     totals = {cap: Counter() for cap in CAPS}
     for r in rows:
         item = json.loads((folder(arm)/(r['id']+'.json')).read_bytes())
-        assert (item['id'], item['seed'], item['revision']) == (r['id'], r['seed'], experiment_configs[arm][1])
+        assert (item['id'], item['seed'], item['revision']) == (r['id'], r['seed'], experiment_configs[arm].revision)
         ids = item['ids']
         answer = completed_answer(item['text'], item['stop'])
         fits = False

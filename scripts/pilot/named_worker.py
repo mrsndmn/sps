@@ -8,7 +8,7 @@ from omegaconf import OmegaConf
 
 import hydra
 from hydra.core.config_store import ConfigStore
-from experiments import RUN_ROOT, SANITY_ROOT, collect_experiments
+from scripts.experiment_suite import RUN_ROOT, SANITY_ROOT, collect_experiments
 
 
 def main():

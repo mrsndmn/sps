@@ -113,7 +113,7 @@ def test_empty_or_invalid_mask_fails():
 
 
 def test_checkpoint_provenance_and_stage_metadata(tmp_path, monkeypatch):
-    import experiments as e
+    from scripts import experiment_suite as e
     from types import SimpleNamespace
     from scripts import instruct_common as common
     monkeypatch.setattr(common, 'configuration', lambda: SimpleNamespace(MODEL='test/model', REVISION='pinned'))

@@ -11,7 +11,7 @@ from scripts import qwen4b_drafter_data as prepared
 from scripts import qwen4b_drafter_eval as evaluation
 from scripts import qwen4b_drafter_train as training
 
-PHASE_TIMEOUT = {"probe": "40m", "train": "6h", "eval": "3h"}
+from src.experiments.qwen4b_drafter import PHASE_TIMEOUT
 PREPARED_TRAIN_TIMEOUT = "24h"
 ARCHIVE = "smoltalk-2048"
 ARCHIVE_TRAIN = "b0088cb54b3bd646"

@@ -8,7 +8,49 @@ different key and pass through.
 import hashlib
 import json
 
+from scripts.source_compatibility import source_hash
+
 _COMPATIBLE_DESIGNS = {
+    # Named CLI and typed layouts combined after comparing effective worker settings.
+    # 10b
+    "a14be3fa8e6cccc4e8239583d6864b68ca915cc9d329aab40f9178047406e186": "6b63ec67fa74e417455a4e44955105dce9247d8dc4649d402f5a815f0d5447b8",
+    # 1b
+    "b4cdda1a481137c5d1fd88075d05570cfcbaf105d8cfe2080607cb8aa0d45c65": "344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f",
+    # ar-sps
+    "ea40562d2172ed75698a4ab536f451cb38c6d02aab4007722a696e2bdbc172b6": "58079b749a5ebe8c5d59e041438ef590919a73ecbf5a0a1ba3fa9ea510d51df7",
+    # ar-sps-1.7b-ce
+    "39994e7c54b40e8eff1fe4dbffbbbfffe66532b9cfccc778a4828a2408b2278c": "59b62831e85f49d241e53f541c4d3166b2e5c789d0d9a3de8a0613abb8399fa8",
+    # ar-sps-1.7b-kd
+    "c387372ef5f4d7f319078318cbccdd3e9c6ea24f7f81f124a7d631cb3358b40b": "93fb2508e012dc9cdcb2f2107802dc5fea2eade1d136f3c6d3a0f04087dd9001",
+    # ar-sps-360m-ce
+    "6aa7fae2aaaead7aa40d78fdd8a3fe0d72294da2fb62b9ab7de65193d2758a47": "3e4604921c3e8c3b2dadc3def1bae1d772d1d4420988d8dbf9a6ec603ae90b99",
+    # ar-sps-360m-kd
+    "f3f55bbe9144ec764f3f4dc402db26c6bf4d83d817acd8b3f7c43b87f1b378f3": "5f703ff776f4354784bf81546e0be0d0955df7f449d8b2183660ac523dfd01f5",
+    # ar-sps-kd
+    "b94c6fad95e3c719f095bff51e8c279092e56a3f8fc60b477dda1f44042e62a9": "0c7f96387ea7bc814c1fb13aeca79ecd6f99d76fbaadf373f658b1678f88f149",
+    # ar-sps-qwen3-0.6b
+    "720428e31e344c7d9839a71dcf3fe678ecbe066fe5df040a1f3e858c07e55977": "065388611d07ccba134b38ae99df13ceee1ad3d46a25159289364e1878f6cc67",
+    # ar-sps-qwen3-1.7b
+    "0d2858a860c1703654a76732ad464c05768b263ef055ae43ba7f5e08323c396b": "b31e4559f6fc2603287161ea696b299304643e662f8f66c4db0150d451476b41",
+    # ar-sps-qwen3-1.7b-instruct
+    "a1f1d9dea35acf3d44e37e60e78d2874230953f81b1b599b9d20a612053e0f8a": "8386a4caf4ed6ac6c20a8eff5c71e01b5f72b5abeb5c5ac6d67158125e3a30b1",
+    # mmlu-full-resume
+    "cd02be18c51759d4db8e9f5bd9c9a8cd95f919717d3dd4e75027ab6cdf243737": "60d5cf5718586eab81588845111dc96e6ccefbf36c33fc847f542c4ac1af8e9e",
+    # mmlu-generation
+    "36f9acbecfd255a4bc2acf7cf279c623f1095ef46d4f7a228f2c7d8924fd6a4b": "f37b2a2a4722048d235d5136b77361e236ec635b6d91451abd29896a0eb06776",
+    # mmlu-stem-generation
+    "1804abdef066ae9398e3d7fd6500bdcf1fe0a8adf13d871bb6a58c7e8bc3933b": "5589783df10841467856827e573ff377de20397a16ca6560c7661bd37d7c312e",
+    # mtp
+    "13fd65f514b31d7936585e18139167fe0eeab8ef1ab797637e647f245cfb84d6": "dc157d2767c66adeed12e31d5b2c25d8114e75d042ee73a21548b2cada5fbc25",
+    # mtp-parallel
+    "eb84bfd2e7abdb4187109965f714a34b1caabbb5fc57ad332e1ba99f38ca9564": "f0bd5cede0e81ca693ed39618879bde412bf0670c1bd59b249dc5cd8c82f337a",
+    # mtp-unfreeze
+    "f33d306a6a9e503eec3b8d87c56c41e59673c7556ea48a79147553e859938eee": "f0bd5cede0e81ca693ed39618879bde412bf0670c1bd59b249dc5cd8c82f337a",
+    # mtp-unified
+    "e9dfa3afb642f10337459a7f197ad29975028c5c59965bc7d834ac4bafd26805": "a0c24f175df79cd6ab5ecf3a08159018ca7171c41ff9154cee2651ddebe93087",
+    # spec-baselines
+    "ce6cd1a24faee1814bae9d8e284cdcdf0617d3e7bd05b6b6e37875f836f6bdce": "c4e978edfe22a6ba2057eac7aea15eb1a92ba5ed2ab6662f90cb376dcc234823",
+
     # Python family definitions with verified pre-migration worker settings.
     "23a562e399305223661e86380122ffddde6ea53b469d00c722971ec51b39a3ba":
         "6b63ec67fa74e417455a4e44955105dce9247d8dc4649d402f5a815f0d5447b8",  # 10b
@@ -49,6 +91,48 @@ _COMPATIBLE_DESIGNS = {
     "de8d1561450d73ae624f2e187a3bccaf22a26a0ff7d55b47a16cbe47297b86d3":
         "c4e978edfe22a6ba2057eac7aea15eb1a92ba5ed2ab6662f90cb376dcc234823",  # spec-baselines
 
+    # Instruct rerun launchers and evaluators consolidated without changing their protocols.
+    # Relocation of typed experiment definitions from the repository root.
+    # 10b
+    "ddd9a70e6f8c48584239f47b3f6a73e6a27abba234dff8ceb9f05a524d7c6968": "6b63ec67fa74e417455a4e44955105dce9247d8dc4649d402f5a815f0d5447b8",
+    # 1b
+    "d1c573847addb729c760f20212b0f4adcbdba31f0a9527cd84087472923e15aa": "344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f",
+    # ar-sps
+    "bc6c18b9fd21689dc1cbe25846ffa6d220f491e600be6177eca921fe9d04c6d8": "58079b749a5ebe8c5d59e041438ef590919a73ecbf5a0a1ba3fa9ea510d51df7",
+    # ar-sps-1.7b-ce
+    "df0842706162f23b68cac6790b42409d97c1ff10080db6da5d6b70d67c9a9fb2": "59b62831e85f49d241e53f541c4d3166b2e5c789d0d9a3de8a0613abb8399fa8",
+    # ar-sps-1.7b-kd
+    "f2993a25497bfc7be42654cc9d81ccf11ef6553321d84c79e1511a6bd42cc1d5": "93fb2508e012dc9cdcb2f2107802dc5fea2eade1d136f3c6d3a0f04087dd9001",
+    # ar-sps-360m-ce
+    "0dc258978d9144c3f19d09a7a70f07a78ec0c42e11a6c9a2f265afd0045e428b": "3e4604921c3e8c3b2dadc3def1bae1d772d1d4420988d8dbf9a6ec603ae90b99",
+    # ar-sps-360m-kd
+    "413b177cbcef97d545aabff283524ab7fec4e2ee0471640b23afc5727620b57f": "5f703ff776f4354784bf81546e0be0d0955df7f449d8b2183660ac523dfd01f5",
+    # ar-sps-kd
+    "96d6622fc7286c2134c4d6ece6e21bb72c76b98d6d4f83cff1c7f128d2c9e101": "0c7f96387ea7bc814c1fb13aeca79ecd6f99d76fbaadf373f658b1678f88f149",
+    # ar-sps-qwen3-0.6b
+    "111d199f679fbedbca7180b143fd8be07082a1314fe6bf0dfa488b13dc04464b": "065388611d07ccba134b38ae99df13ceee1ad3d46a25159289364e1878f6cc67",
+    # ar-sps-qwen3-1.7b
+    "8356a5beb63b3e10aac1d64bc71616b21b1ec018c5d292d9d2b18d2e2032b495": "b31e4559f6fc2603287161ea696b299304643e662f8f66c4db0150d451476b41",
+    # ar-sps-qwen3-1.7b-instruct
+    "94b3974483432170a957606770658adea90459b97361c9b2205a08ed13f8016d": "8386a4caf4ed6ac6c20a8eff5c71e01b5f72b5abeb5c5ac6d67158125e3a30b1",
+    # mmlu-full-resume
+    "a850a0f39eb7e48873a625c16c4290319eed6de6f1bd8271d52a141810567424": "60d5cf5718586eab81588845111dc96e6ccefbf36c33fc847f542c4ac1af8e9e",
+    # mmlu-generation
+    "e1770133b67a5a7d8cf280b739684c4724f1ba094c5fe675dcecb945714104d6": "f37b2a2a4722048d235d5136b77361e236ec635b6d91451abd29896a0eb06776",
+    # mmlu-stem-generation
+    "7f8c2a2582e35ec2733c7a314faabc40b0daeecc78c76daf80eefefa48003133": "5589783df10841467856827e573ff377de20397a16ca6560c7661bd37d7c312e",
+    # mtp
+    "9bb23165d699f7574a94efbcbe02f335c9b0843fea3a7f5d65fad5c76c6d16ea": "dc157d2767c66adeed12e31d5b2c25d8114e75d042ee73a21548b2cada5fbc25",
+    # mtp-parallel
+    "b6437a134e4cea648f2919631e8908d8901a83d627ead061289150f22dec44bb": "f0bd5cede0e81ca693ed39618879bde412bf0670c1bd59b249dc5cd8c82f337a",
+    # mtp-unfreeze
+    "279a6ddd2729cabe1a2b438fc1d665420e384003e19088227dc6f0011fc310cb": "f0bd5cede0e81ca693ed39618879bde412bf0670c1bd59b249dc5cd8c82f337a",
+    # mtp-unified
+    "3932cad9011896ea910b219890c9eebf69b01557de1a9d1785260b5390deb853": "a0c24f175df79cd6ab5ecf3a08159018ca7171c41ff9154cee2651ddebe93087",
+    # spec-baselines
+    "fee36f2220077d489dd80a26cae945f1cdd45651817a9e997a57ffc2b9fa55e4": "c4e978edfe22a6ba2057eac7aea15eb1a92ba5ed2ab6662f90cb376dcc234823",
+    # DFlash soft distillation training definitions.
+    "c5326db67f96cdcb7adb99a9705af1e9116cae3b138e949166b208554a8e5fd6": "45d1905c50658e4552dcb7fc3ba019d2056cb23d3bd7f10b6c026634d064eda5",
     # Instruct rerun launchers and evaluators consolidated without changing their protocols.
     "6a7b36957942598e7fb234779ddf5662415461ec72910ecae9dd97124240ac54":
         "7408b3ccf0455895e306d0d5272e2fad41d3e70ae8c6fbb5612210d6d18347ae",
@@ -158,7 +242,10 @@ def canonical_signature(digest):
 
 def rerun_signature(family, source_signature, folder):
     paths = [*folder.glob(f"{family}_*.py"), folder / "rerun_jobs.py", folder / "rerun_eval.py"]
-    files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+    config_name = f"{family}_config.py"
+    if not any(path.name == config_name for path in paths):
+        paths.append(folder.parents[1] / "src/experiments" / config_name)
+    files = {path.name: source_hash(path) for path in paths}
     design = {"source": source_signature, "files": files}
     digest = hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
     return canonical_signature(digest)

@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 import subprocess
 
-from experiments import COMMON_ROOT
+from src.experiments.environment import COMMON_ROOT
 
 HEADER_ROOT = COMMON_ROOT / 'toolchain' / 'python310'
 HEADER_URL = ('https://archive.ubuntu.com/ubuntu/pool/main/p/python3.10/'

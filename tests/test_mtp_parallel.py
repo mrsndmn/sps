@@ -86,7 +86,8 @@ def test_cuda_block_native_logits_and_eos_recovery():
 def test_parallel_evaluation_registry_is_isolated():
     import subprocess,sys,json,os
     env=dict(os.environ,SPS_EXPERIMENT_SUITE='mtp-parallel')
-    code='''import experiments as e,json
+    code='''from scripts import experiment_suite as e
+import json
 from scripts.mlspace_launch import payload
 print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),models=[x.horizons for x in e.experiment_configs],parents=[str(e.training_marker(x)) for x in e.experiment_configs],payload=payload('eval',e.experiment_configs[0].name,e.STAGING_ROOT/'test','a','b'))))'''
     a=json.loads(subprocess.check_output([sys.executable,'-c',code],env=env,text=True))

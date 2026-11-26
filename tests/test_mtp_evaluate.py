@@ -160,7 +160,7 @@ def test_timed_speculation_records_actual_emitted_tokens_and_counters():
 
 def test_cli_uses_validated_trained_marker_checkpoint(monkeypatch, tmp_path):
     import json
-    import experiments
+    from scripts import experiment_suite as experiments
     exp = SimpleNamespace(name='chosen', horizons=3)
     checkpoint = tmp_path/'adaptation_final.pt'
     checkpoint.touch()

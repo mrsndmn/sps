@@ -4,7 +4,7 @@ import pytest
 pytest.importorskip('torch')
 
 from scripts import pilot_run
-from experiment_defs.zero_window import zero_window_longer_training
+from src.experiments.pilot import zero_window_longer_training
 
 
 def test_old_corpus_cannot_be_cycled_to_claim_a_tenfold_data_budget(monkeypatch):

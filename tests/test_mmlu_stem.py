@@ -76,7 +76,8 @@ def test_merge_full_stem_deduplicates_and_rejects_conflicts(tmp_path):
 def test_historical_stem_report_ignores_current_evaluator_signature(tmp_path, monkeypatch):
     import sys
     from types import SimpleNamespace
-    import experiments as e
+    from scripts import experiment_suite as e
+    from src.experiments import environment
     from scripts import report_mmlu_stem as report
     from scripts.mmlu_config import experiment_configs
     data = [dict(subject='astronomy', answer=0)]
@@ -86,7 +87,7 @@ def test_historical_stem_report_ignores_current_evaluator_signature(tmp_path, mo
     meta = dict(design_signature=report.STEM_SIGNATURE, limit=None, experiment=exp.__dict__)
     (folder/'manifest.json').write_text(json.dumps(meta))
     (folder/'samples.jsonl').write_text(json.dumps(sample(0, data[0], 'A'))+'\n')
-    monkeypatch.setattr(e, 'COMMON_ROOT', tmp_path)
+    monkeypatch.setattr(environment, 'COMMON_ROOT', tmp_path)
     monkeypatch.setattr(e, 'design_signature', lambda: 'changed-evaluator')
     monkeypatch.setitem(sys.modules, 'datasets', SimpleNamespace(load_dataset=lambda *a, **kw: data))
     monkeypatch.setattr(sys, 'argv', ['report', '--suite', 'mmlu-stem-generation'])

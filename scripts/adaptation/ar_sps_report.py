@@ -1,7 +1,7 @@
 """Strict observed retention with paired, per-task bootstrap uncertainty."""
 import json
 import numpy as np
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import ar_sps_config as c
 
 

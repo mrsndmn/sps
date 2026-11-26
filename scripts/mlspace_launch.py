@@ -14,7 +14,7 @@ from contextlib import contextmanager
 import socket
 import time
 
-from experiments import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
+from scripts.experiment_suite import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
                         collect_experiments, output_dir, design_signature, SUITE, training_marker, EVAL_NUM_GPUS)
 from scripts.pilot_headers import HEADER_ROOT
@@ -239,8 +239,8 @@ def submit(args):
             runs = collect_experiments() if args.phase == 'prepare' else [
                 run for run in collect_experiments() if run.name == name]
             preview = payload(args.phase, name, staged, args.author_name, args.telegram_nick, **resources)
-            from experiments import SANITY_ROOT
-            from experiment_defs.registry import effective_settings
+            from scripts.experiment_suite import SANITY_ROOT
+            from scripts.named.registry import effective_settings
             probe = args.phase == 'prepare'
             settings = {run.name: effective_settings(SUITE, run, SANITY_ROOT if probe else RUN_ROOT, args.phase)
                         for run in runs}

@@ -9,6 +9,7 @@ import shlex
 import subprocess
 import tempfile
 
+from scripts.source_compatibility import source_hash
 from scripts import instruct_config as source
 from scripts import mlspace_launch as launch
 from scripts import real_readout_eval as quality
@@ -16,16 +17,17 @@ from scripts import real_readout_serving as serving
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts.readout.readout_archive import compatible_identity
-
-ROOT = quality.train.ROOT / "full-mmlu-generation"
-HOURS = 72
-COUNT, SUBJECTS = 14042, 57
-experiment_configs = [c.Experiment(f"{arm}-{mode}", arm, mode) for arm in ("A", "B")
-                      for mode in c.GENERATION]
+from src.experiments.real_readout_mmlu import (
+    ROOT,
+    HOURS,
+    COUNT,
+    SUBJECTS,
+    experiment_configs,
+)
 
 
 def dataset():
-    from experiments import HF_HOME
+    from src.experiments.environment import HF_HOME
     from huggingface_hub import hf_hub_download
     from pyarrow.parquet import read_table
     path = hf_hub_download(source.MMLU_DATASET, "all/test-00000-of-00001.parquet",
@@ -41,7 +43,7 @@ def identity(exp, marker, digest):
     return dict(serving=serving.signature(exp, marker), mode=exp.mode, layout="sequential",
                 model=c.MODEL, revision=c.REVISION, seed=c.SEED, settings=c.GENERATION[exp.mode],
                 dataset=source.MMLU_DATASET, dataset_revision=source.MMLU_REVISION,
-                split="all/test", dataset_sha256=digest, code=common.file_hash(Path(__file__)))
+                split="all/test", dataset_sha256=digest, code=source_hash(__file__))
 
 
 def score(row, index, doc, mode, stats):

@@ -17,7 +17,7 @@ def test_separate_ifeval_dry_plan_preserves_pre_migration_design(tmp_path):
     # The parent of the catalog migration already differed from the archived
     # instruct run. Preserve its actual signature and the source-identity gate.
     code = """
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import ifeval_run
 assert e.design_signature() == '8386a4caf4ed6ac6c20a8eff5c71e01b5f72b5abeb5c5ac6d67158125e3a30b1'
 try:

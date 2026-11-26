@@ -10,7 +10,7 @@ import pytest
 def test_mtp_registry_isolated_and_four_gpu_dry():
     script = '''
 import json
-import experiments as e
+from scripts import experiment_suite as e
 from scripts.mlspace_launch import payload
 print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT), names=[x.name for x in e.collect_experiments()],
  horizons=[x.horizons for x in e.collect_experiments()],budget=e.TRAIN_TOKENS,
@@ -59,10 +59,10 @@ def test_new_horizon_loss_ignores_original_predict_and_masked_targets():
 
 
 def test_mtp_forecast_excludes_compilation_and_enforces_full_budget(tmp_path,monkeypatch):
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts import mtp_run
     monkeypatch.setattr(e,'SANITY_ROOT',tmp_path)
-    monkeypatch.setattr(e,'MTP_TRAIN_STEPS',100)
+    monkeypatch.setattr(e.mtp,'MTP_TRAIN_STEPS',100)
     exp=e.ExperimentConfig('mtp','sps',horizons=4)
     p=tmp_path/'out/mtp/metrics.jsonl';p.parent.mkdir(parents=True)
     p.write_text('\n'.join(json.dumps(dict(event='train',step_seconds=x)) for x in [10000,10000]+[2]*8))
@@ -75,7 +75,7 @@ def test_mtp_forecast_excludes_compilation_and_enforces_full_budget(tmp_path,mon
 @pytest.mark.parametrize('changed',['source','data'])
 def test_evaluation_refuses_changed_inputs_before_start(tmp_path,monkeypatch,changed):
     import hashlib
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts import mtp_common,mtp_run,mtp_evaluate
     source=tmp_path/'source.pt';source.write_bytes(b'original source')
     data=tmp_path/'data';data.mkdir();manifest=data/'manifest.json';manifest.write_bytes(b'original data')

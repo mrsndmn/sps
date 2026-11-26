@@ -6,7 +6,7 @@ when the same adapted model proposes and verifies its own predictions.
 
 ## Setup
 Evaluation function: `scripts.mtp_unified_evaluate.evaluate`. The evaluation-only
-registry in `experiments.py` consumes completed full MTP continuation checkpoints.
+registry in `src/experiments/mtp_unified.py` consumes completed full MTP continuation checkpoints.
 P1 defines the target distribution; later prediction slots propose after a
 pending target anchor. Real states and all prediction groups are computed in a
 single layer traversal during verification. Predictions retain their training

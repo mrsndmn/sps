@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import ar_sps_config as c
 
 

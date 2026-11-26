@@ -30,7 +30,7 @@ OVERLAY = (
     "vllm/v1/attention/ops/sps_prediction.py",
     "vllm/v1/spec_decode/sps_proposer.py",
 )
-experiment_configs = [{"name": "vllm-sps-main-py312-cu130", "num_gpus": 1, "hours": 2}]
+from src.experiments.serving_runtime import experiment_configs
 
 
 def identity():
@@ -276,10 +276,10 @@ print(json.dumps(dict(torch=torch.__version__, cuda=torch.version.cuda,
 
 def payload(staged):
     exp = experiment_configs[0]
-    body = launch.payload("prepare", exp["name"], staged, "d.tarasov", "mrsndmn")
+    body = launch.payload("prepare", exp.name, staged, "d.tarasov", "mrsndmn")
     body.update(
-        instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[exp["num_gpus"]],
-        job_desc=f"sps-serving-runtime prepare {exp['name']} #d.tarasov @mrsndmn",
+        instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus],
+        job_desc=f"sps-serving-runtime prepare {exp.name} #d.tarasov @mrsndmn",
     )
     body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(
         [str(launch.PYTHON), "-m", "scripts.serving_runtime", "--worker"]
@@ -328,7 +328,7 @@ def submit(dry):
     body = payload(staged)
     body["region"] = options["region"]
     job = launch.submit_payload(
-        client, body, "prepare", experiment_configs[0]["name"], commit
+        client, body, "prepare", experiment_configs[0].name, commit
     )
     print(json.dumps(job), flush=True)
 
@@ -347,7 +347,7 @@ def main():
             start_new_session=True,
         )
         try:
-            code = process.wait(timeout=experiment_configs[0]["hours"] * 3600)
+            code = process.wait(timeout=experiment_configs[0].hours * 3600)
             if code:
                 raise RuntimeError(f"Runtime worker exited {code}")
         except BaseException:

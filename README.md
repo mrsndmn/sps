@@ -151,7 +151,7 @@ function and records results and conclusions. The implementation defines the run
 | `conf/`, `scripts/train.py`, `scripts/evaluate.py` | Hydra recipes and entry points for direct training and evaluation. |
 | `src/`, `lm_eval_tasks/` | Model implementations, data preparation, training utilities, and evaluation tasks. |
 | `run_train_jobs.py`, `run_eval.py` | Shared MLSpace launchers. Use `--list` for the family catalog and `--list FAMILY` for run names. |
-| `experiment_defs/` | Named family definitions and adapters for existing submission protocols. |
+| `src/experiments/` | Typed experiment definitions and numeric settings. |
 | `scripts/` | Family-specific workers and submission protocols. For example, `scripts/readout/real_readout_run.py` defines training and `scripts/readout/real_readout_mmlu.py` evaluates its checkpoints. |
 | `tests/` | Experiment, worker and orchestration tests. Model tests also live under `src/modeling/tests/`. |
 | `docs/paper/`, `figures/` | Manuscript sources and supporting material in the former, figures for the original SPS paper in the latter. |
@@ -233,9 +233,9 @@ candidate payloads until the validation artifacts identify the winner.
 Historical IFEval and schedule workers require a pinned instruct source.
 A real submission stops if the current checkout and the archived source differ.
 
-The pilot family in `experiment_defs/zero_window.py` shares training settings
-between its named variants. `experiment_defs/registry.py` collects the families
-served by the common worker. `experiment_defs/special_families.py` registers the
+The pilot family in `src/experiments/pilot.py` shares training settings
+between its named variants. `scripts/named/registry.py` collects the families
+served by the common worker. `scripts/named/special_families.py` registers the
 families with dedicated submission protocols.
 
 ## MLSpace pilot artifacts
@@ -248,7 +248,7 @@ missing pilot shards, tokenizes them, and measures both methods with four-GPU DD
 Inspect `prepared.json`, then `python run_train_jobs.py` submits training.
 `python run_eval.py` submits the downstream tasks after training succeeds.
 
-Pilot workers write directly to the shared NFS target in `experiment_defs/paths.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
+Pilot workers write directly to the shared NFS target in `src/experiments/environment.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
 checkpoints and evaluation outputs, `sanity` holds throughput probes, `code` holds
 immutable committed snapshots, `hf` holds downloaded HF shards, and `submissions`
 holds full job-ID receipts. The existing project venv is reused; do not mutate its
