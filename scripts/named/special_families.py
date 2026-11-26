@@ -125,7 +125,7 @@ def cap_probe():
         probe,
         "teacher",
         name="continuations",
-        config=(module.c, module),
+        config=(module.c, module, cap_jobs.teacher_config),
     )
 
 
@@ -140,7 +140,7 @@ def cap_compare():
             run,
             "compare",
             arm,
-            config=(module.c, module),
+            config=(module.c, module, cap_jobs.comparison_config),
             parameters={"MODEL": run.model, "REVISION": run.revision},
         )
 

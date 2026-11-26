@@ -142,6 +142,23 @@ def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
     assert descriptions[0] != descriptions[2]
 
 
+@pytest.mark.parametrize(
+    "name,hours",
+    [
+        ("qwen3-teacher-cap-probe/continuations", 20),
+        ("qwen35-unloop-cap-compare/original", 4),
+    ],
+)
+def test_named_cap_preview_matches_worker_timeout(name, hours):
+    out = subprocess.check_output(
+        [sys.executable, "run_eval.py", "--experiment", name, "--dry"], text=True
+    )
+    preview, end = json.JSONDecoder().raw_decode(out)
+    payload = json.loads(out[end:])
+    assert preview["settings"]["EVAL_HOURS"] == hours
+    assert f"timeout {hours}h" in payload["script"]
+
+
 def test_teacher_cap_receipt_reuses_published_report_identity(monkeypatch, capsys):
     from hashlib import sha256
     from scripts.named import cap_jobs
