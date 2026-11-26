@@ -1,9 +1,12 @@
 import ast
+import os
 import subprocess
 import sys
 from dataclasses import is_dataclass
 from importlib import import_module
 from pathlib import Path
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -35,3 +38,20 @@ def test_worker_scripts_are_directly_executable():
     ):
         result = subprocess.check_output([sys.executable, path, "--help"], text=True, cwd=REPO)
         assert option in result
+
+
+@pytest.mark.parametrize(
+    "path,dependency",
+    [
+        ("scripts/benchmark/benchmark_generation_speed.py", "torch"),
+        ("scripts/figures/plot_accuracy_gain_by_scale.py", "matplotlib"),
+    ],
+)
+def test_paper_scripts_load_this_checkout(path, dependency):
+    pytest.importorskip(dependency)
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    output = subprocess.check_output(
+        [sys.executable, path, "--help"], cwd=REPO, env=env, text=True
+    )
+    assert output.startswith("usage:")

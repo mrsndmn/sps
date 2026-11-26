@@ -16,19 +16,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from plotting.output_paths import OUTPUT_ROOT
-
 import numpy as np
 import torch
 from torch import Tensor
 
-# Repo-root bootstrap. `analysis_common` lives in scripts/analysis and
-# `export_main_results_table` in scripts/tables; neither is an installed package, so
-# prefer the current checkout over an installed copy.
+# Prefer this checkout over an editable installation from another worktree.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from analysis.analysis_common import DEFAULT_VAL_BIN, LoadedModel, load_checkpoint_model, parse_model_spec
+from plotting.output_paths import OUTPUT_ROOT
 from plotting.export_main_results_table import (
     render_plain_summary,
     write_efficiency_summary,
