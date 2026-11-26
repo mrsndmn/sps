@@ -78,10 +78,11 @@ class ZeroWindowReproduction:
 
     @property
     def recipe(self) -> PaperRun:
+        window_tags = () if self.model is XLRun else ("sliding_predict_tokens",)
         return self.model(
             name=f"repro_{self.scale}_sps_w0_20b",
             architecture="sps",
-            tags=(self.scale, "sps", "w0", "20b", "triton"),
+            tags=(self.scale, "sps", *window_tags, "deterministic", "w0", "20b", "triton"),
             window_size=0,
             warmup_tokens=self.warmup_tokens,
             micro_batch_size=self.micro_batch_size,

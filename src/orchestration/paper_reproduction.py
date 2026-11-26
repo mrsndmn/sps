@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+import os
 import shlex
 import subprocess
 
@@ -9,7 +10,8 @@ from experiments import paper_reproduction as study
 from experiments.environment import PYTHON
 from experiments.worker_args import TrainArgs
 from orchestration import mlspace_launch as jobs
-from orchestration.named.publication import worker_output
+from orchestration.run_directory import RunDirectory
+from experiments.environment import COMMON_ROOT
 
 
 def check_data(dest):
@@ -47,14 +49,19 @@ def main():
     runs = {r.scale: r for r in study.experiment_configs}
     parser = argparse.ArgumentParser()
     parser.add_argument("name", choices=["data", *runs])
-    parser.add_argument("--dry", action="store_true")
-    parser.add_argument("--worker", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry", action="store_true")
+    mode.add_argument("--worker", action="store_true")
     args = parser.parse_args()
     run = runs.get(args.name)
     phase = "train" if run else "prepare"
     output = study.ROOT / "out" / run.recipe.name if run else study.CORPUS
     if args.worker:
-        work = worker_output(output)
+        directory = RunDirectory(COMMON_ROOT, output)
+        work = directory.work
+        if (os.environ.get("SPS_JOB_OUTPUT") != str(output)
+                or os.environ.get("SPS_JOB_WORK") != str(work) or not work.is_dir()):
+            parser.error("Worker requires the MLSpace publication directory")
         if run:
             check_data(study.CORPUS)
             subprocess.run(train_command(run, work), check=True)
@@ -62,7 +69,7 @@ def main():
                 raise RuntimeError("Missing final training checkpoint")
         else:
             from data.pilot_data import prepare_memmaps
-            prefix = study.PREFIX if study.PREFIX.is_dir() else None
+            prefix = study.PREFIX if (study.PREFIX / "manifest.json").is_file() else None
             prepare_memmaps(work, study.FILES, study.PREPARE_FREE_BYTES,
                             max(r.recipe.max_tokens for r in runs.values()),
                             prefix_dir=prefix, prefix_files=study.PREFIX_FILES)

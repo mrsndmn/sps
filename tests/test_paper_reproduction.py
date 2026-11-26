@@ -42,3 +42,15 @@ def test_reuse_prefix_and_reject_truncated_memmap(tmp_path):
     (dest / "train.bin").write_bytes(b"")
     with pytest.raises(RuntimeError, match="Incomplete train"):
         checked_manifest(dest, files)
+
+
+@pytest.mark.parametrize("args", [["--worker"], ["--worker", "--dry"]])
+def test_direct_worker_cannot_write_published_data(monkeypatch, args):
+    import sys
+    from orchestration.paper_reproduction import main
+
+    monkeypatch.delenv("SPS_JOB_OUTPUT", raising=False)
+    monkeypatch.setattr(sys, "argv", ["paper_reproduction", "data", *args])
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 2
