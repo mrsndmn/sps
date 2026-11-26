@@ -12,7 +12,7 @@ Pending.
 
 ## Conclusions
 
-Compare the marginal token cost and the recovery of trainable conversations across caps.
+The recommendation applies to extending saved prefixes on the original prompt cohort. Keep the original prompt eligibility budget when applying this retry policy. The source selector reserves the full initial generation budget inside the training context, so increasing that shared setting would change which prompts enter the corpus. Measure marginal token cost and trainability with the existing conversation encoder.
 
 ## Changelog
 
