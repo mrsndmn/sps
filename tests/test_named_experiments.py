@@ -415,3 +415,27 @@ def test_vllm_trainer_receives_selected_run(monkeypatch, tmp_path):
         trainer.main()
     assert second.output("train") == tmp_path / "runs/out" / second.name
     assert second.output("probe") == tmp_path / "sanity/out" / second.name
+
+
+def test_serving_replicates_with_same_arm_select_one_worker(monkeypatch, capsys):
+    from dataclasses import replace
+    import shlex
+    from experiments import real_readout_serving as config
+    from workloads.readout import real_readout_serving as native
+
+    original = config.experiment_configs[0]
+    replicate = replace(original, name="replicate-A")
+    for module in (config, native):
+        monkeypatch.setattr(module, "experiment_configs", [original, replicate])
+    run = family_runs("qwen3-instruct-real-readout-mtp")["serving-replicate-A", "eval"]
+    monkeypatch.setattr(sys, "argv", [run.script, *run.args, "--dry"])
+    native.main()
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["output_dir"].endswith("/replicate-A")
+    cmd = shlex.split(shlex.split(plan["payload"]["script"])[-1])
+    args = [v for v in cmd[cmd.index(run.script):] if not v.startswith("--cfg.")]
+    seen = []
+    monkeypatch.setattr(native, "worker", seen.append)
+    monkeypatch.setattr(sys, "argv", args)
+    native.main()
+    assert seen == [replicate]

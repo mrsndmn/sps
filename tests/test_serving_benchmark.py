@@ -76,7 +76,7 @@ def test_runtime_rejects_mutated_python_or_compiled_extensions(tmp_path, monkeyp
 
 def test_oracle_rejects_mismatched_checkpoints_and_empty_results(tmp_path, monkeypatch):
     path = tmp_path / "reference.json"
-    monkeypatch.setattr(bench, "reference_path", lambda: path)
+    monkeypatch.setattr(bench, "reference_path", lambda name: path)
     monkeypatch.setattr(bench, "protocol_signature", lambda: "protocol")
     samples = [
         {"prompt_token_ids": [1], "expected_token_ids": [2]}
@@ -194,3 +194,40 @@ def test_serving_protocol_tracks_generation_configuration(monkeypatch):
     before = [protocol() for protocol in protocols]
     monkeypatch.setitem(bench.evaluator.c.family_config.GENERATION, "new-mode", {"temperature": 0.5})
     assert all(protocol() != old for protocol, old in zip(protocols, before, strict=True))
+
+
+def test_audit_replicate_children_and_evidence_use_own_directory(monkeypatch, tmp_path):
+    import sys
+    from dataclasses import replace
+    from experiments import serving_benchmark as config
+    from orchestration.named.registry import family_runs
+    from workloads.serving import serving_graphs as graphs
+
+    original = bench.selected("audit")[0]
+    second = replace(original, name=original.name + "-second")
+    rows = [original, second]
+    for module in (config, bench):
+        monkeypatch.setattr(module, "experiment_configs", rows)
+    assert (second.name, "audit") not in family_runs("vllm-sps-draft-sweep")
+    monkeypatch.setattr(bench.c.family_config, "ROOT", tmp_path)
+    monkeypatch.setattr(bench, "verify_runtime", lambda: {"site_packages": "site"})
+    monkeypatch.setattr(bench, "trained", lambda: {"checkpoint_sha256": "trained"})
+    monkeypatch.setattr(bench.runtime, "runtime_environment", dict)
+    children = []
+    monkeypatch.setattr(bench, "child", lambda argv, env, hours: children.append(argv[1:]))
+    bench.worker(second)
+    assert len(children) == 3
+    assert bench.root_for(second).is_dir() and not bench.root_for(original).exists()
+    seen = []
+    monkeypatch.setattr(bench, "make_reference", lambda name: seen.append(name))
+    monkeypatch.setattr(bench, "audit_arm", lambda arm, name: seen.append(name))
+    for argv in children:
+        monkeypatch.setattr(sys, "argv", argv)
+        bench.main()
+    assert seen == [second.name] * 3
+    assert bench.reference_path(second.name).parent == bench.root_for(second)
+    monkeypatch.setattr(graphs, "ROOT", tmp_path)
+    evidence = []
+    monkeypatch.setattr(graphs, "with_graph_engine", lambda fn, arm, path: evidence.append(path))
+    graphs.audit_arm("sps", second.name)
+    assert evidence == [bench.root_for(second) / "graphs-sps.json"]

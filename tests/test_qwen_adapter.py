@@ -111,3 +111,15 @@ def test_archived_winner_uses_the_checkpoint_cohort(tmp_path, monkeypatch):
     marker.write_text(json.dumps(row))
     with pytest.raises(ValueError):
         cfg.winner()
+
+
+def test_worker_uses_parsed_arm_learning_rate():
+    code = """
+from experiments.family_cli import read_worker_arguments
+from experiments.qwen_adapter_run import experiment_configs
+name = experiment_configs[0].name
+read_worker_arguments([f"--cfg.qwen_adapter_run.experiment_configs.{name}.lr=0.12345"])
+from workloads.adaptation.qwen_adapter_run import experiment_configs as worker_rows
+assert next(arm.lr for arm in worker_rows if arm.name == name) == 0.12345
+"""
+    subprocess.run([sys.executable, "-c", code], check=True)

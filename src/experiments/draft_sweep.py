@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from . import vllm_sps_config as c
+from .serving_benchmark import family_config as serving_config
 
 
 @dataclass(kw_only=True)
@@ -17,6 +18,7 @@ class FamilyConfig:
 
 
 family_config = FamilyConfig()
+AUDIT = c.Experiment(serving_config.AUDIT_NAME, "audit")
 
 
 @dataclass(frozen=True)
@@ -37,7 +39,7 @@ experiment_configs = [
 
 
 def launches(family):
-    from . import draft_sweep_train, serving_benchmark
+    from . import draft_sweep_train
     from .launch import filtered
 
     script = "scripts/serving/draft_sweep.py"
@@ -46,7 +48,7 @@ def launches(family):
             (draft_sweep_train.EXPERIMENT,), phase, script, "--phase", phase
         )
     yield from filtered(
-        (r for r in serving_benchmark.experiment_configs if r.arm == "audit"),
+        (AUDIT,),
         "audit",
         script,
         "--phase",

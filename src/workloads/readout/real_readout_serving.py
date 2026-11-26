@@ -246,7 +246,7 @@ def worker(exp):
         for phase in ("audit", "benchmark"):
             for layout in LAYOUTS:
                 subprocess.run(worker_child([runtime.RUNTIME/"bin/python", "scripts/readout/real_readout_serving.py",
-                                "--arm", exp.arm, "--internal", phase, "--layout", layout,
+                                "--filter", exp.name, "--internal", phase, "--layout", layout,
                                 "--export", export]), env=env, check=True)
             if phase == "audit":
                 seq, block = [json.loads((root / f"{name}-audit.json").read_text()) for name in LAYOUTS]
@@ -274,20 +274,22 @@ def payload(exp, staged):
     body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1],
                 job_desc=f"sps-real-readout-serving {exp.name} #d.tarasov @mrsndmn",
                 script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
-                    "timeout", f"{c.family_config.EVAL_HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_serving.py", "--worker", "--arm", exp.arm]))
+                    "timeout", f"{c.family_config.EVAL_HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_serving.py", "--worker", "--filter", exp.name]))
     return body
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--arm", choices=("A", "B"))
+    selector = parser.add_mutually_exclusive_group()
+    selector.add_argument("--arm", choices=("A", "B"))
+    selector.add_argument("--filter", choices=[exp.name for exp in experiment_configs])
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--internal", choices=("audit", "benchmark"))
     parser.add_argument("--layout", choices=LAYOUTS)
     parser.add_argument("--export")
     parser.add_argument("--dry", action="store_true")
     args = parser.parse_args()
-    selected = [e for e in experiment_configs if args.arm in (None, e.arm)]
+    selected = [e for e in experiment_configs if args.arm in (None, e.arm) and args.filter in (None, e.name)]
     if args.dry:
         staged = launch.STAGING_ROOT / launch.git("rev-parse", "HEAD")
         for exp in selected:

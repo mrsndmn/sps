@@ -48,12 +48,9 @@ def launches(family):
     for task in ("eval", "mmlu", "gsm8k", "humaneval", "serving"):
         module = import_module(f"experiments.real_readout_{task}")
         for exp in module.experiment_configs:
-            selector = (
-                ("--arm", exp.arm) if task == "serving" else ("--filter", exp.name)
-            )
             yield Launch(
                 f"{task}-{exp.name}",
                 "eval",
                 f"scripts/readout/real_readout_{task}.py",
-                selector,
+                ("--filter", exp.name),
             )

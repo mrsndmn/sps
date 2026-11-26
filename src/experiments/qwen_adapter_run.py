@@ -61,24 +61,24 @@ class AdapterSweep:
     output_name: str
     targets: tuple[str, ...]
     train_gpus: int
-    arms: tuple[Arm, ...]
+    arms: list[Arm]
 
 
 SWEEPS = {
     "attention": AdapterSweep(
-        "qwen3-base-adapters", family_config.ATTENTION_TARGETS, 4, tuple(ATTENTION_ARMS)
+        "qwen3-base-adapters", family_config.ATTENTION_TARGETS, 4, ATTENTION_ARMS
     ),
     "attention-mlp": AdapterSweep(
         "qwen3-base-adapters-attention-mlp",
         family_config.ATTENTION_TARGETS + ("gate_proj", "up_proj", "down_proj"),
         8,
-        (Arm("dora-attention-mlp-standard-1e-4", True, False, 1e-4),),
+        [Arm("dora-attention-mlp-standard-1e-4", True, False, 1e-4)],
     ),
 }
 
 
 def arms(scope):
-    return list(SWEEPS[scope].arms)
+    return SWEEPS[scope].arms
 
 
 experiment_configs = arms(os.environ.get("SPS_ADAPTER_SCOPE", "attention"))

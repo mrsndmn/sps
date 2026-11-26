@@ -23,7 +23,7 @@ from experiments import vllm_sps_config as c
 from workloads.serving import vllm_sps_run as run
 
 from experiments.draft_sweep import family_config as draft_sweep_settings
-from experiments.draft_sweep import Evaluation, experiment_configs
+from experiments.draft_sweep import AUDIT, Evaluation, experiment_configs
 DRAFT_LENGTHS = draft_sweep_settings.DRAFT_LENGTHS
 EVAL_HOURS = draft_sweep_settings.EVAL_HOURS
 AUDIT_TOKENS = draft_sweep_settings.AUDIT_TOKENS
@@ -34,7 +34,6 @@ LAUNCHER = "scripts/serving/draft_sweep.py"
 HORIZONS = training.HORIZONS
 PHASES = ("probe", "train", "audit", "eval")
 TRAINER = training.EXPERIMENT
-AUDIT = c.Experiment(bench.AUDIT_NAME, "audit")
 
 
 def protocol_signature():
@@ -166,8 +165,8 @@ def audit_evidence(checkpoint, *, protocol=None):
     return summary
 
 
-def check_gate(manifest, *, protocol=None):
-    BASE_GATE(manifest, protocol=protocol)
+def check_gate(manifest, *, protocol=None, audit_name=AUDIT.name):
+    BASE_GATE(manifest, protocol=protocol, audit_name=audit_name)
     checkpoint = bench.trained()
     prepare_short_export(checkpoint["export"], create=False)
     audit_evidence(checkpoint, protocol=protocol)

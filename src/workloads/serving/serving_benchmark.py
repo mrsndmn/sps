@@ -44,8 +44,8 @@ def root_for(exp):
     return work_path(c.family_config.ROOT / "runs/out" / exp.name)
 
 
-def reference_path():
-    return work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME) / "reference.json"
+def reference_path(audit_name=AUDIT_NAME):
+    return work_path(c.family_config.ROOT / "runs/out" / audit_name) / "reference.json"
 
 
 def verify_runtime():
@@ -88,13 +88,13 @@ def trained():
     return common.trained()
 
 
-def audit_protocol():
-    root = work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME)
+def audit_protocol(audit_name=AUDIT_NAME):
+    root = work_path(c.family_config.ROOT / "runs/out" / audit_name)
     return json.loads((root / "serving-protocol.json").read_text())["protocol_signature"]
 
 
-def reference_tokens(checkpoint, *, protocol=None):
-    data = json.loads(reference_path().read_text())
+def reference_tokens(checkpoint, *, protocol=None, audit_name=AUDIT_NAME):
+    data = json.loads(reference_path(audit_name).read_text())
     if (
         data["checkpoint_sha256"] != checkpoint["checkpoint_sha256"]
         or data["protocol_signature"] != (protocol or protocol_signature())
@@ -110,14 +110,14 @@ def reference_tokens(checkpoint, *, protocol=None):
     return samples
 
 
-def make_reference():
+def make_reference(audit_name=AUDIT_NAME):
     import torch
     import transformers
 
     checkpoint = trained()
     samples = native_audit.reference(checkpoint)
     launch.store_json(
-        reference_path(),
+        reference_path(audit_name),
         {
             "checkpoint_sha256": checkpoint["checkpoint_sha256"],
             "torch_version": torch.__version__,
@@ -128,19 +128,19 @@ def make_reference():
     )
 
 
-def audit_arm(arm):
+def audit_arm(arm, audit_name=AUDIT_NAME):
     from workloads.serving.vllm_sps_evaluate import check_runtime, engine_arguments
 
     torch, vllm = check_runtime()
     if torch.cuda.device_count() != 1:
         raise RuntimeError("Audit requires exactly one visible GPU")
     checkpoint = trained()
-    refs = reference_tokens(checkpoint)
+    refs = reference_tokens(checkpoint, audit_name=audit_name)
     exp = c.Experiment(arm, arm)
     llm = vllm.LLM(**engine_arguments(exp, checkpoint["export"], c.family_config.EAGLE_REVISION))
     samples = native_audit.verify(llm, refs)
     launch.store_json(
-        work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME) / f"{arm}.json", {"samples": samples}
+        work_path(c.family_config.ROOT / "runs/out" / audit_name) / f"{arm}.json", {"samples": samples}
     )
     if not all(x["equal"] for x in samples):
         raise RuntimeError(f"{arm} native vLLM greedy parity failed")
@@ -216,12 +216,12 @@ def worker(exp):
         # Processes exit between the oracle and each serving engine, releasing
         # all GPU allocations before the next model starts.
         stage(
-            [launch.PYTHON, "scripts/serving/serving_benchmark.py", "--reference-worker"],
+            [launch.PYTHON, "scripts/serving/serving_benchmark.py", "--reference-worker", "--filter", exp.name],
             os.environ.copy(),
         )
         for arm in ("sps", "sps_mtp"):
             stage(
-                [python, "scripts/serving/serving_benchmark.py", "--audit-arm", arm],
+                [python, "scripts/serving/serving_benchmark.py", "--audit-arm", arm, "--filter", exp.name],
                 env,
             )
         launch.store_json(
@@ -271,19 +271,19 @@ def payload(exp, staged, phase):
     return body
 
 
-def check_gate(manifest, *, protocol=None):
-    data = json.loads((work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME) / "evaluated.json").read_text())
+def check_gate(manifest, *, protocol=None, audit_name=AUDIT_NAME):
+    data = json.loads((work_path(c.family_config.ROOT / "runs/out" / audit_name) / "evaluated.json").read_text())
     if (
         data["runtime_signature"] != runtime.signature()
         or data["checkpoint_sha256"] != trained()["checkpoint_sha256"]
     ):
         raise RuntimeError("Greedy audit does not match this model and runtime")
     recorded = json.loads(
-        (work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME) / "serving-runtime.json").read_text()
+        (work_path(c.family_config.ROOT / "runs/out" / audit_name) / "serving-runtime.json").read_text()
     )
     if recorded != manifest:
         raise RuntimeError("Greedy audit runtime manifest changed")
-    if audit_protocol() != (protocol or protocol_signature()):
+    if audit_protocol(audit_name) != (protocol or protocol_signature()):
         raise RuntimeError("Greedy audit serving protocol changed")
 
 
@@ -300,7 +300,7 @@ def completed(exp, manifest, *, protocol=None):
         _, measured = common.evaluation_record(exp, trained()["checkpoint_sha256"])
         if protocol is None and measured.get("evaluation_protocol") != evaluator.protocol_signature():
             raise RuntimeError("Completed evaluation used another evaluator")
-    check_gate(manifest, protocol=protocol)
+    check_gate(manifest, protocol=protocol, audit_name=exp.name if exp.arm == "audit" else AUDIT_NAME)
     return True
 
 
@@ -374,10 +374,11 @@ def main():
     parser.add_argument("--audit-arm", choices=("sps", "sps_mtp"))
     parser.add_argument("--eval-worker", action="store_true")
     args = parser.parse_args()
-    if args.reference_worker:
-        return make_reference()
-    if args.audit_arm:
-        return audit_arm(args.audit_arm)
+    if args.reference_worker or args.audit_arm:
+        name = args.filter or AUDIT_NAME
+        if not any(exp.arm == "audit" and exp.name == name for exp in experiment_configs):
+            parser.error(f"Unknown audit run {name!r}")
+        return make_reference(name) if args.reference_worker else audit_arm(args.audit_arm, name)
     if args.worker or args.eval_worker:
         choices = selected("eval" if args.eval_worker else args.phase, args.filter)
         if len(choices) != 1 or choices[0].name != args.filter:

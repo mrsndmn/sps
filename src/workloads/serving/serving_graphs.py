@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+from functools import partial
 from pathlib import Path
 from unittest.mock import patch
 
@@ -247,9 +248,9 @@ def with_graph_engine(function, argument, evidence):
     validate_evidence(evidence)
 
 
-def audit_arm(arm):
+def audit_arm(arm, audit_name=bench.AUDIT_NAME):
     with_graph_engine(
-        BASE_AUDIT, arm, work_path(ROOT / "runs/out" / bench.AUDIT_NAME) / f"graphs-{arm}.json"
+        partial(BASE_AUDIT, audit_name=audit_name), arm, work_path(ROOT / "runs/out" / audit_name) / f"graphs-{arm}.json"
     )
 
 
@@ -257,10 +258,10 @@ def evaluate(exp):
     with_graph_engine(BASE_EVALUATE, exp, bench.root_for(exp) / "cudagraph.json")
 
 
-def check_gate(manifest, *, protocol=None):
-    BASE_GATE(manifest, protocol=protocol)
+def check_gate(manifest, *, protocol=None, audit_name=bench.AUDIT_NAME):
+    BASE_GATE(manifest, protocol=protocol, audit_name=audit_name)
     for arm in ("sps", "sps_mtp"):
-        validate_evidence(work_path(ROOT / "runs/out" / bench.AUDIT_NAME) / f"graphs-{arm}.json", protocol=protocol)
+        validate_evidence(work_path(ROOT / "runs/out" / audit_name) / f"graphs-{arm}.json", protocol=protocol)
 
 
 def completed(exp, manifest, *, protocol=None):
