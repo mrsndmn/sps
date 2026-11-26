@@ -4,6 +4,7 @@ Diagnostic only: FP32 head, four slots, eager synchronous one-request decoding.
 Capture divergent histories and compare with cold full-prefix evaluation. The
 original failed correctness gate is immutable; instrumentation is not a benchmark.
 """
+from orchestration.named.publication import work_path
 import argparse
 import hashlib
 import json
@@ -35,7 +36,7 @@ LIMIT = max(audit.OUTPUT_LENGTHS)
 
 
 def root():
-    return ROOT / 'runs/out' / job_configs[0].name
+    return work_path(ROOT / 'runs/out' / job_configs[0].name)
 
 
 def digest(tokens):

@@ -4,6 +4,7 @@ Runs the actual vLLM delta-proposal rejection kernel on known distributions,
 then compares extended greedy cached decoding with/without speculation in eager
 and graph modes. This is a diagnostic gate, not a proof of full sampling equality.
 """
+from orchestration.named.publication import work_path
 import argparse
 import hashlib
 import json
@@ -58,7 +59,7 @@ input_identity = live_input_identity
 
 
 def output_dir():
-    return ROOT/'runs/out'/experiment_configs[0].name
+    return work_path(ROOT/'runs/out'/experiment_configs[0].name)
 
 
 def recorded_input_identity(root):

@@ -22,6 +22,7 @@ def schedules(extended):
                     "train",
                     config=(source, config),
                     name=f"{variant}-{run.name}",
+                    output_dir=module.sc.output_dir(variant, run),
                 )
             for workload in config.WORKLOADS:
                 yield job(
@@ -35,6 +36,7 @@ def schedules(extended):
                     workload,
                     config=(source, config),
                     name=f"{variant}-{run.name}-{workload}",
+                    output_dir=module.sc.output_dir(variant, run, workload),
                 )
 
 
@@ -52,4 +54,5 @@ def ifeval():
                 mode,
                 config=(source, module.c),
                 name=module.arm_name(run, mode),
+                output_dir=module.output_dir(run, mode),
             )

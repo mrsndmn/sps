@@ -62,12 +62,10 @@ def main():
         return body
 
     def report_path():
-        if args.arm and not compare.PROMPTS.is_file():
-            return None
         folder = (
             compare.folder(args.arm)
             if args.arm
-            else root / source_hash(teacher.__file__)
+            else root / teacher_config.OUTPUT_NAME
         )
         return folder / "report.json"
 

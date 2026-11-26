@@ -1,4 +1,5 @@
 """Separate, resumable one-GPU IFEval jobs using the existing instruct protocol."""
+from orchestration.named.publication import work_path
 import argparse
 import hashlib
 import importlib.metadata
@@ -47,7 +48,7 @@ def arm_name(exp, mode=None):
 
 
 def output_dir(exp, mode=None):
-    return RUN_ROOT / 'out' / arm_name(exp, mode)
+    return work_path(RUN_ROOT / 'out' / arm_name(exp, mode))
 
 
 def payload(exp, staged, author, nick, mode=None):

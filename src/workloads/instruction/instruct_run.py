@@ -66,18 +66,20 @@ def calibrated_plan(probes, training_rows):
 
 def internal(phase, name):
     if phase == 'prepare':
-        subprocess.run([str(e.PYTHON), '-m', 'torch.distributed.run', '--standalone', '--nproc_per_node=4',
-                        'scripts/instruction/instruct_data.py'], check=True)
-        probes = {}
-        for exp in e.collect_experiments():
-            if exp.trainable:
-                subprocess.run(e.train_command(exp, probe=True), check=True)
-                probes[exp.name] = json.loads((e.SANITY_ROOT/'out'/exp.name/'probe.json').read_text())
-        # This is a numerical preparation gate, not a benchmark evaluation job.
-        subprocess.run([str(e.PYTHON), 'scripts/instruction/instruct_evaluate.py', '--audit'], check=True)
-        from data.instruct_data import rows
-        plan = calibrated_plan(probes, rows('train'))
-        store_json(e.prepared_path(), plan)
+        from orchestration.run_directory import preparation_lock
+        with preparation_lock(e.RUN_ROOT):
+            subprocess.run([str(e.PYTHON), '-m', 'torch.distributed.run', '--standalone', '--nproc_per_node=4',
+                            'scripts/instruction/instruct_data.py'], check=True)
+            probes = {}
+            for exp in e.collect_experiments():
+                if exp.trainable:
+                    subprocess.run(e.train_command(exp, probe=True), check=True)
+                    probes[exp.name] = json.loads((e.SANITY_ROOT/'out'/exp.name/'probe.json').read_text())
+            # This is a numerical preparation gate, not a benchmark evaluation job.
+            subprocess.run([str(e.PYTHON), 'scripts/instruction/instruct_evaluate.py', '--audit'], check=True)
+            from data.instruct_data import rows
+            plan = calibrated_plan(probes, rows('train'))
+            store_json(e.prepared_path(), plan)
         return
     matches = [exp for exp in e.collect_experiments() if exp.name == name]
     if len(matches) != 1:

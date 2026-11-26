@@ -1,4 +1,5 @@
 """Source checkpoint gates, epoch ordering and isolated continuation artifacts."""
+from orchestration.named.publication import work_path
 import json
 import os
 from pathlib import Path
@@ -38,7 +39,7 @@ def arm_name(exp, workload=None):
 def output_dir(variant,exp,workload=None):
     name=arm_name(exp,workload)
     if workload is not None: name+=f'--step{variant}'
-    return root()/'runs/out'/name
+    return work_path(root()/'runs/out'/name)
 
 
 def source_checkpoint(exp):

@@ -22,6 +22,7 @@ from orchestration.source_compatibility import source_hash
 from workloads.distillation import dflash_mask_ablation as reference
 from data import instruct_data
 from orchestration import mlspace_launch as launch
+from orchestration.named.publication import work_path
 from workloads.distillation import qwen4b_drafter_data as prepared, qwen4b_drafter_train as previous
 from experiments.dflash_repro_train import (
     ROOT,
@@ -50,7 +51,7 @@ def signature():
 
 
 def run_root():
-    return ROOT / signature()[:16]
+    return EXPERIMENT.output_root
 
 
 def total_steps(row_count, exp=EXPERIMENT):
@@ -198,7 +199,7 @@ def load_checkpoint(folder, model, optimizer, schedule, design):
 
 
 def checkpoint_path(step):
-    return run_root() / "runs" / "out" / EXPERIMENT.name / f"step-{step:05d}"
+    return work_path(EXPERIMENT.output("train")) / f"step-{step:05d}"
 
 
 def train(probe):
@@ -283,7 +284,7 @@ def train(probe):
     dist.all_reduce(peak, op=dist.ReduceOp.MAX)
     if rank == 0:
         if probe:
-            launch.store_json(run_root() / "prepared.json", dict(
+            launch.store_json(work_path(EXPERIMENT.output("probe")) / "prepared.json", dict(
                 design=design, gpu=torch.cuda.get_device_name(device), world=world,
                 full_steps=steps, measured_steps=len(durations), wall_seconds=time.monotonic()-startup,
                 mean_step_seconds=mean(durations), median_step_seconds=median(durations),

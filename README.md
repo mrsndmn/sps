@@ -21,7 +21,7 @@ The project uses [uv](https://docs.astral.sh/uv/). From the repo root:
 uv sync
 ```
 
-This installs the pinned dependencies (PyTorch 2.9, Hydra, a Triton FlashAttention build,
+This installs the pinned dependencies (PyTorch 2.9, Transformers, a Triton FlashAttention build,
 and the EleutherAI `lm-evaluation-harness`). Prefix commands with `uv run` to use the
 environment (e.g. `uv run python scripts/train.py ...`). A CUDA GPU with Triton is required
 to run the fused attention kernels; CPU fallbacks exist for the tests.
@@ -132,7 +132,7 @@ There are two kinds of input:
 - **W&B history.** The validation-history, accuracy-gain, window-ablation, seed-variance and
   loss-vs-compute figures read your own runs. They take `--entity` / `--project` and default to
   `$WANDB_ENTITY` and the project in `src/experiments/worker_args.py`, so runs trained with the
-  shipped recipes (each sets `wandb_run_name: ${experiment.name}`) resolve with no flags.
+  shipped recipes resolve with no flags.
   `plot_loss_vs_compute.py` caches its pull to JSON, so re-renders need no network.
 - **Local analysis outputs.** The Δ-NLL, gradient-ratio and multi-token-probe figures read
   `../sps-artifacts/outputs/…` trees written by the corresponding `scripts/analysis/run_*.sh` sweeps, which
@@ -202,8 +202,7 @@ Its artifact directory is `qwen3-instruct-real-readout-mtp/` under the shared ro
 - `submissions/` under a launcher’s artifact directory holds its job receipts.
 
 Analysis, benchmark and table scripts use the shared NFS directory
-`../sps-artifacts/outputs/` directly. Hydra also stores its dated run metadata
-there, including sweeps under `multirun/`. On another machine set `SPS_OUTPUT_ROOT` to an absolute directory before
+`../sps-artifacts/outputs/` directly. On another machine set `SPS_OUTPUT_ROOT` to an absolute directory before
 running these commands. Per-script input and output flags still take precedence.
 `run/` also contains local orchestration state, including job observations.
 The worker's output paths identify the shared results used downstream.
@@ -227,8 +226,11 @@ python scripts/run_eval.py --experiment 1b/s_standard_pilot_1b --dry
 ```
 
 Use the same selection without `--dry` to submit. Each catalog key contains the
-family and the historical run name. Existing workers keep their checkpoint paths
-and completion checks. A named dry run previews settings before those checks.
+family and the historical run name. Each phase publishes to its configured output
+directory. Launching it again skips an existing directory. While a job is queued or
+running, its reservation under `in_progress/` blocks duplicate submissions.
+Choose another output directory to run it again. DFlash evaluation requires
+completed training, including when evaluating an earlier checkpoint. A named dry run previews settings before those checks.
 For an evaluation that selects a winner after training, the preview shows the
 candidate payloads until the validation artifacts identify the winner.
 Historical IFEval and schedule workers require a pinned instruct source.

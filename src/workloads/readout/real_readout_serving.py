@@ -1,4 +1,5 @@
 """Matched single-request CUDA-graph audit and STEM benchmark for both endpoints."""
+from orchestration.named.publication import work_path
 import argparse
 import gc
 import json
@@ -239,7 +240,7 @@ def benchmark(llm, exp, layout, root):
 
 def worker(exp):
     marker = quality.endpoint(exp)
-    root = ROOT / "runs/out" / exp.name
+    root = work_path(ROOT / "runs/out" / exp.name)
     root.mkdir(parents=True, exist_ok=True)
     graphs.verify_runtime()
     with tempfile.TemporaryDirectory(dir=root) as tmp:
@@ -291,7 +292,7 @@ def main():
         exp, = selected
         if args.internal:
             llm = engine(exp, args.layout, args.export)
-            root = ROOT / "runs/out" / exp.name
+            root = work_path(ROOT / "runs/out" / exp.name)
             return (audit(llm, args.layout, root) if args.internal == "audit"
                     else benchmark(llm, exp, args.layout, root))
         return worker(exp)
@@ -307,7 +308,7 @@ def main():
         commit = launch.git("rev-parse", "HEAD")
         staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
         for exp in selected:
-            result = ROOT / "runs/out" / exp.name / "evaluated.json"
+            result = work_path(ROOT / "runs/out" / exp.name) / "evaluated.json"
             if result.exists():
                 saved = json.loads(result.read_text())
                 if (saved["identity"] != signature(exp, quality.endpoint(exp))

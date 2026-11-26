@@ -1,4 +1,5 @@
 """Paired zero-shot DFlash mask ablation on a frozen Qwen3-4B verifier."""
+from orchestration.named.publication import work_path
 
 import argparse
 from contextlib import contextmanager
@@ -22,6 +23,7 @@ from experiments.dflash_mask_ablation import (
     TARGET_REVISION,
     DRAFT,
     DRAFT_REVISION,
+    OUTPUT_NAME,
     ROOT,
     PROMPTS,
     MAX_NEW_TOKENS,
@@ -46,11 +48,11 @@ def signature():
 
 
 def run_name():
-    return signature()[:16]
+    return OUTPUT_NAME
 
 
 def result_path():
-    return ROOT / "runs" / "out" / run_name() / "evaluated.json"
+    return work_path(ROOT / "runs" / "out" / run_name()) / "evaluated.json"
 
 
 def block_attention(positions, start, width, mode):

@@ -1,4 +1,5 @@
 """Single-GPU native vLLM gate and benchmark using the isolated serving runtime."""
+from orchestration.named.publication import work_path
 
 import argparse
 import base64
@@ -40,11 +41,11 @@ def protocol_signature():
 
 
 def root_for(exp):
-    return c.ROOT / "runs/out" / exp.name
+    return work_path(c.ROOT / "runs/out" / exp.name)
 
 
 def reference_path():
-    return c.ROOT / "runs/out" / AUDIT_NAME / "reference.json"
+    return work_path(c.ROOT / "runs/out" / AUDIT_NAME) / "reference.json"
 
 
 def verify_runtime():
@@ -88,7 +89,7 @@ def trained():
 
 
 def audit_protocol():
-    root = c.ROOT / "runs/out" / AUDIT_NAME
+    root = work_path(c.ROOT / "runs/out" / AUDIT_NAME)
     return json.loads((root / "serving-protocol.json").read_text())["protocol_signature"]
 
 
@@ -139,7 +140,7 @@ def audit_arm(arm):
     llm = vllm.LLM(**engine_arguments(exp, checkpoint["export"], c.EAGLE_REVISION))
     samples = native_audit.verify(llm, refs)
     launch.store_json(
-        c.ROOT / "runs/out" / AUDIT_NAME / f"{arm}.json", {"samples": samples}
+        work_path(c.ROOT / "runs/out" / AUDIT_NAME) / f"{arm}.json", {"samples": samples}
     )
     if not all(x["equal"] for x in samples):
         raise RuntimeError(f"{arm} native vLLM greedy parity failed")
@@ -275,14 +276,14 @@ def payload(exp, staged, phase):
 
 
 def check_gate(manifest, *, protocol=None):
-    data = json.loads((c.ROOT / "runs/out" / AUDIT_NAME / "evaluated.json").read_text())
+    data = json.loads((work_path(c.ROOT / "runs/out" / AUDIT_NAME) / "evaluated.json").read_text())
     if (
         data["runtime_signature"] != runtime.signature()
         or data["checkpoint_sha256"] != trained()["checkpoint_sha256"]
     ):
         raise RuntimeError("Greedy audit does not match this model and runtime")
     recorded = json.loads(
-        (c.ROOT / "runs/out" / AUDIT_NAME / "serving-runtime.json").read_text()
+        (work_path(c.ROOT / "runs/out" / AUDIT_NAME) / "serving-runtime.json").read_text()
     )
     if recorded != manifest:
         raise RuntimeError("Greedy audit runtime manifest changed")

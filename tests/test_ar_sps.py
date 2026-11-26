@@ -196,7 +196,8 @@ def test_same_suite_report_control_routing(tmp_path, monkeypatch):
     monkeypatch.setattr(c,'DISTILLATION',False)
     monkeypatch.setattr(c,'REPORT_BASELINE','qwen_ar')
     monkeypatch.setattr(c,'ENDPOINT_COMPARISONS',(('qwen_ce','qwen_kd'),))
-    monkeypatch.setattr(report.e,'RUN_ROOT',tmp_path)
+    monkeypatch.setitem(report.families, report.e.SUITE, report.families['ar-sps'].__class__(eval='out/{name}/eval'))
+    monkeypatch.setattr(report.e,'ARTIFACTS_ROOT',tmp_path)
     monkeypatch.setattr(report.e,'collect_experiments',lambda:[SimpleNamespace(name='qwen_ce'),SimpleNamespace(name='qwen_kd')])
     monkeypatch.setattr(report.e,'output_dir',lambda x:tmp_path/'out'/x.name)
     for arm in ('qwen_ce','qwen_kd'):

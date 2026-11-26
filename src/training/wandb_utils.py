@@ -93,25 +93,8 @@ def prepare_wandb_dir_from_config(cfg: Any, *, create: bool = True) -> str | Non
     return path
 
 
-def _read_simple_yaml_value(path: Path, key: str) -> str | None:
-    if not path.exists():
-        return None
-    for raw_line in path.read_text().splitlines():
-        line = raw_line.split("#", 1)[0].strip()
-        if not line or ":" not in line:
-            continue
-        raw_key, raw_value = line.split(":", 1)
-        if raw_key.strip() != key:
-            continue
-        return _clean_optional_str(raw_value.strip().strip("\"'"))
-    return None
-
-
 def default_wandb_dir_from_repo_config(repo_root: str | os.PathLike[str]) -> str | None:
-    """Resolve the repo default W&B dir without requiring Hydra."""
-    root = Path(repo_root)
-    data_root = _read_simple_yaml_value(root / "conf" / "system" / "default.yaml", "data_root")
-    configured = _read_simple_yaml_value(root / "conf" / "logging" / "default.yaml", "wandb_dir")
-    if configured is not None and data_root is not None:
-        configured = configured.replace("${system.data_root}", data_root)
-    return resolve_wandb_dir(wandb_dir=configured, data_root=data_root, create=False)
+    """Read the typed worker defaults used by repository entry points."""
+    from experiments.worker_args import LoggingArgs, SystemArgs
+    return resolve_wandb_dir(wandb_dir=LoggingArgs().wandb_dir,
+                            data_root=SystemArgs().data_root, create=False)

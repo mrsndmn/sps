@@ -1,4 +1,5 @@
 """Isolated rerun provenance and deterministic, optimizer-step LR schedules."""
+from orchestration.named.publication import work_path
 import json
 import math
 import os
@@ -24,7 +25,7 @@ def arm_name(exp, workload=None):
 
 
 def output_dir(variant, exp, workload=None):
-    return root(variant)/'runs/out'/arm_name(exp, workload)
+    return work_path(root(variant)/'runs/out'/arm_name(exp, workload))
 
 
 def source_plan():

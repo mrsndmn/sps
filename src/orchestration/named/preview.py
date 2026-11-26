@@ -12,6 +12,8 @@ from orchestration import mlspace_launch as launch
 def preview(plan):
     module = import_module(plan.module)
     short = module.__name__.rsplit(".", 1)[-1]
+    if plan.output_dir is not None:
+        print(f"Output directory: {plan.output_dir}", file=sys.stderr)
     args = plan.args
     staged = launch.STAGING_ROOT / launch.git("rev-parse", "HEAD")
     author = ("d.tarasov", "mrsndmn")

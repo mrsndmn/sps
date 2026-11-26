@@ -1,5 +1,6 @@
 """Catalog of named experiments. Family IDs disambiguate historical run names."""
 
+from experiments.family_arguments import settings
 from dataclasses import asdict
 from functools import partial
 
@@ -13,10 +14,6 @@ from experiments import (
 )
 from experiments.pilot import zero_window_longer_training, zero_window_pilot
 from orchestration.suite_registry import AR_SPS_SUITES, INSTRUCT_SUITE, MMLU_SUITES
-
-
-def settings(module):
-    return {key: value for key, value in vars(module).items() if key.isupper()}
 
 
 CONFIGURATIONS = {

@@ -33,6 +33,7 @@ def serving(family):
                 "--filter",
                 run.name,
                 config=config,
+                output_dir=config.ROOT / ("sanity" if phase == "probe" else "runs") / "out" / run.name,
                 parameters=shared_training_settings(config.source)
                 if phase in {"train", "probe"}
                 else None,

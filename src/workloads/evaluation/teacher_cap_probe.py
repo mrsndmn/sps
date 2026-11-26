@@ -1,4 +1,5 @@
 """Measure the value of extending archived, length-capped Qwen teacher responses."""
+from orchestration.named.publication import worker_output
 import hashlib
 import json
 from collections import defaultdict
@@ -96,7 +97,8 @@ def run(shard=None):
         torch_dtype=torch.bfloat16, attn_implementation='sdpa').to('cuda').eval()
     eos = model.generation_config.eos_token_id
     eos = {eos} if isinstance(eos, int) else set(eos)
-    folder = ROOT / identity
+    from experiments.teacher_cap_probe import OUTPUT_NAME
+    folder = worker_output(ROOT / OUTPUT_NAME)
     results = []
     for domain, population, row, archive in selected:
         key = row['source_id']

@@ -138,6 +138,7 @@ def evaluate(arm, commit):
     adapter = Adapter(pretrained=model.backbone, tokenizer=AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION),
                       backend='causal', batch_size=c.EVAL_BATCH, max_length=c.CONTEXT, device='cuda', logits_cache=False)
     losses = common.nll(model, rows('test'), device)
+    root = cfg.winner_output()
     store_json(root/'eval/heldout.json', dict(nll=float(np.mean(losses)), per_sequence=losses))
     metrics = {}
     for task in e.TASKS:

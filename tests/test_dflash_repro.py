@@ -63,3 +63,26 @@ def test_worker_payload_requests_matching_training_topology_and_single_eval_gpu(
     assert body["instance_type"] == "a100.1gpu"
     assert "--phase eval --step 10000" in body["script"]
     assert "torch.distributed" not in body["script"]
+
+
+def test_milestone_evaluation_waits_for_published_training(tmp_path, monkeypatch):
+    from dataclasses import replace
+    import pytest
+    from orchestration.named import publication
+
+    exp = replace(training.EXPERIMENT, output_root=tmp_path / "experiment")
+    monkeypatch.setattr(training, "EXPERIMENT", exp)
+    monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
+    weights = training.checkpoint_path(5000) / "weights.safetensors"
+    weights.parent.mkdir(parents=True)
+    weights.touch()
+    calls = []
+    monkeypatch.setattr(jobs, "submit_job", lambda *args: calls.append(args))
+    with pytest.raises(RuntimeError, match="Complete DFlash training"):
+        jobs.submit_phase(training, "eval", 5000, jobs.marker, {}, "test")
+    jobs.marker("train", None).touch()
+    jobs.submit_phase(training, "eval", 5000, jobs.marker, {}, "test")
+    assert len(calls) == 1
+    exp.output("eval", 5000).mkdir()
+    jobs.submit_phase(training, "eval", 5000, jobs.marker, {}, "test")
+    assert len(calls) == 1

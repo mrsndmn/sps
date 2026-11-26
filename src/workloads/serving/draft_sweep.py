@@ -329,10 +329,15 @@ def worker(phase, exp):
     )
 
 
+def probe_report():
+    path = ROOT / "sanity/out" / training.EXPERIMENT.name / "probe.json"
+    return path if path.exists() else ROOT / "prepared.json"
+
+
 def complete(phase, exp, manifest=None, *, protocol=None):
     if phase in {"probe", "train"}:
         marker = (
-            ROOT / "prepared.json"
+            probe_report()
             if phase == "probe"
             else bench.root_for(exp) / "trained.json"
         )
@@ -397,7 +402,7 @@ def submit(args, choices):
     if phase == "train":
         if not complete("probe", TRAINER):
             raise RuntimeError("Finish the 9-position probe first")
-        estimate = common.probe_seconds(ROOT / "prepared.json", legacy_horizons=training.LEGACY_HORIZONS)
+        estimate = common.probe_seconds(probe_report(), legacy_horizons=training.LEGACY_HORIZONS)
         if 2 * estimate > c.TRAIN_HOURS * 3600:
             raise RuntimeError("Probe does not fit the reserved training time")
     if phase in {"audit", "eval"}:

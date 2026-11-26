@@ -27,8 +27,13 @@ def trained():
     return marker
 
 
+def probe_report():
+    path = ROOT / "probe/prepared.json"
+    return path if path.exists() else ROOT / "prepared.json"
+
+
 def check_probe():
-    projected = common.probe_seconds(ROOT / "prepared.json", num_gpus=ARM.num_gpus,
+    projected = common.probe_seconds(probe_report(), num_gpus=ARM.num_gpus,
                                      legacy_horizons=LEGACY_HORIZONS)
     if projected >= c.TRAIN_HOURS * 3600:
         raise RuntimeError("Training projection exceeds allocation")
@@ -37,7 +42,7 @@ def check_probe():
 def submit(phase, dry):
     commit = launch.git("rev-parse", "HEAD")
     staged = launch.STAGING_ROOT / commit
-    marker = ROOT / "prepared.json" if phase == "probe" else OUT / "trained.json"
+    marker = probe_report() if phase == "probe" else OUT / "trained.json"
     if marker.exists():
         if phase == "probe":
             check_probe()

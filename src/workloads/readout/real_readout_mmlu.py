@@ -1,4 +1,5 @@
 """Full, zero-shot MMLU chat generation for the final native and SPS readouts."""
+from orchestration.named.publication import work_path
 import argparse
 from collections import Counter
 import gc
@@ -84,7 +85,7 @@ def generate(exp, export):
     from workloads.instruction.instruct_generation import document_seed, mmlu_messages, parse_answer, split_response
 
     docs, digest = dataset()
-    root = ROOT / "runs/out" / exp.name
+    root = work_path(ROOT / "runs/out" / exp.name)
     marker = quality.endpoint(exp)
     ident = json.loads((root/"manifest.json").read_text())
     if not compatible_identity(ident, identity(exp, marker, digest), marker, "mmlu"):
@@ -130,7 +131,7 @@ def generate(exp, export):
 
 def worker(exp):
     import torch
-    root = ROOT / "runs/out" / exp.name
+    root = work_path(ROOT / "runs/out" / exp.name)
     marker = quality.endpoint(exp)
     _, digest = dataset()
     ident = identity(exp, marker, digest)
@@ -180,7 +181,7 @@ def main():
         commit = launch.git("rev-parse", "HEAD")
         staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
         for exp in selected:
-            root = ROOT/"runs/out"/exp.name
+            root = work_path(ROOT/"runs/out"/exp.name)
             marker = quality.endpoint(exp)
             ident = identity(exp, marker, digest)
             if (root/"evaluated.json").exists():

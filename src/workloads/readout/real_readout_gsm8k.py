@@ -1,4 +1,5 @@
 """Paired zero-shot chat generation on the full GSM8K test split."""
+from orchestration.named.publication import work_path
 import argparse
 from decimal import Decimal
 import json
@@ -75,7 +76,7 @@ def evaluate(exp):
     docs, data = dataset()
     marker = quality.endpoint(exp)
     ident = identity(exp, marker, data)
-    root = ROOT / "runs/out" / exp.name
+    root = work_path(ROOT / "runs/out" / exp.name)
     manifest, path = root / "manifest.json", root / "answers.jsonl"
     if manifest.exists():
         saved = json.loads(manifest.read_text())
@@ -144,7 +145,7 @@ def main():
         for exp in selected:
             marker = quality.endpoint(exp)
             ident = identity(exp, marker, data)
-            root = ROOT / "runs/out" / exp.name
+            root = work_path(ROOT / "runs/out" / exp.name)
             if (root / "evaluated.json").exists():
                 saved = json.loads((root / "evaluated.json").read_text())
                 if (not compatible_identity(saved["identity"], ident, marker, "gsm8k")

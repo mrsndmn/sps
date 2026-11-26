@@ -1,4 +1,5 @@
 """Long base CE worker; pilot DDP loop with absolute-step warmup/cosine LR."""
+from orchestration.named.publication import work_path, public_path
 import argparse
 import contextlib
 import json
@@ -31,7 +32,7 @@ def finalize(root, model, optimizer, step, best, frozen, plan):
         raise RuntimeError('Cannot complete unfinished training')
     save(root/'final.pt', model, optimizer, step, best, frozen, plan)
     store_json(root/'trained.json', dict(design_signature=e.design_signature(), step=step,
-                                       checkpoint=str(root/'final.pt'), reminder=config.REMINDER))
+                                       checkpoint=str(public_path(root/'final.pt')), reminder=config.REMINDER))
 
 
 def main():
@@ -51,7 +52,7 @@ def main():
     dist.init_process_group('nccl')
     plan = read_plan()
     steps = plan['steps']; transition = plan['stage_steps']
-    root = e.RUN_ROOT/'out'/exp.name
+    root = work_path(e.RUN_ROOT/'out'/exp.name)
     root.mkdir(parents=True, exist_ok=True)
     model = load_model(exp.recipe, device)
     teacher = load_teacher(device) if exp.distillation_weight else None

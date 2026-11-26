@@ -1,4 +1,5 @@
 """Matched Qwen3 SPS adapter sweep; submit the winner only after all finals exist."""
+from orchestration.named.publication import work_path
 import argparse
 import hashlib
 import json
@@ -39,7 +40,11 @@ experiment_configs = list(_sweep.arms)
 
 
 def directory(arm):
-    return ROOT / 'runs/out' / arm.name
+    return work_path(ROOT / 'runs/out' / arm.name)
+
+
+def winner_output():
+    return work_path(ROOT / 'evaluations' / 'winner')
 
 
 def digest(path):

@@ -5,18 +5,18 @@ import random
 import pytest
 
 from training.sampler import FixedRandomChunkDistributedSampler, initial_sampler_offset
-from orchestration.experiment_suite import BLOCK_SIZE, TRAIN_TOKENS, collect_experiments, overrides
+from orchestration.experiment_suite import BLOCK_SIZE, TRAIN_TOKENS, collect_experiments
 
 
 def test_pilot_corpus_supplies_every_rank_for_the_entire_training_budget():
     # Reproduce the corpus size that exhausted rank three with the old defaults.
     dataset_len = 2231741898 - BLOCK_SIZE
-    settings = dict(arg.split('=', 1) for arg in overrides(collect_experiments()[0]))
+    settings = collect_experiments()[0].training
     samples_needed = TRAIN_TOKENS // BLOCK_SIZE // 4
     offset = initial_sampler_offset(dataset_len, 1337)
     for rank in range(4):
         sampler = FixedRandomChunkDistributedSampler(dataset_len, 4, rank, BLOCK_SIZE,
-            chunk_size_units=int(settings['training.chunk_size_units']), start_offset=offset)
+            chunk_size_units=settings.chunk_size_units, start_offset=offset)
         assert len(sampler) >= samples_needed
         assert len(list(itertools.islice(sampler, 6))) == 6
 

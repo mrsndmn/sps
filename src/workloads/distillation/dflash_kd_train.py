@@ -1,7 +1,6 @@
 """Soft Qwen-to-DFlash distillation with the hard run's training schedule."""
 
 from contextlib import nullcontext
-from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 from statistics import mean, median
@@ -19,6 +18,7 @@ from orchestration.design_compatibility import canonical_signature
 from orchestration.source_compatibility import source_hash
 from workloads.distillation import dflash_repro_train as hard
 from orchestration import mlspace_launch as launch
+from orchestration.named.publication import work_path
 from experiments.dflash_kd_train import (
     ROOT,
     TEMPERATURE,
@@ -33,11 +33,11 @@ def signature():
 
 
 def run_root():
-    return ROOT / signature()[:16]
+    return EXPERIMENT.output_root
 
 
 def checkpoint_path(step):
-    return run_root() / "runs" / "out" / EXPERIMENT.name / f"step-{step:05d}"
+    return work_path(EXPERIMENT.output("train")) / f"step-{step:05d}"
 
 
 def teacher_indices(anchors, weights, device):
@@ -185,7 +185,7 @@ def train(probe):
     dist.all_reduce(peak, op=dist.ReduceOp.MAX)
     if rank == 0:
         if probe:
-            launch.store_json(run_root() / "prepared.json", dict(
+            launch.store_json(work_path(EXPERIMENT.output("probe")) / "prepared.json", dict(
                 design=design, hard_design=hard.signature(), initial_sha256=initial,
                 gpu=torch.cuda.get_device_name(device), world=world, full_steps=steps,
                 measured_steps=len(durations), wall_seconds=time.monotonic()-startup,

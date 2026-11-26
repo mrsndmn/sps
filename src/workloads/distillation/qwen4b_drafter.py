@@ -1,4 +1,5 @@
 """Submit and report the Qwen3-4B mask and mask-embedding experiment."""
+from orchestration.named.publication import work_path
 
 import argparse
 import json
@@ -11,22 +12,29 @@ from workloads.distillation import qwen4b_drafter_data as prepared
 from workloads.distillation import qwen4b_drafter_eval as evaluation
 from workloads.distillation import qwen4b_drafter_train as training
 
-from experiments.qwen4b_drafter import PHASE_TIMEOUT
+from experiments.qwen4b_drafter import DATASET_DIRECTORIES, PHASE_TIMEOUT
 PREPARED_TRAIN_TIMEOUT = "24h"
 ARCHIVE = "smoltalk-2048"
-ARCHIVE_TRAIN = "b0088cb54b3bd646"
+ARCHIVE_TRAIN = DATASET_DIRECTORIES[ARCHIVE]
 ARCHIVE_EVAL = "eval-5b067a4174bd18c8"
 
 
 def root(dataset):
-    design = ARCHIVE_TRAIN if dataset == ARCHIVE else training.signature(dataset)[:16]
-    return training.ROOT / design
+    return training.ROOT / DATASET_DIRECTORIES[dataset]
+
+
+def phase_output(phase, name, dataset):
+    return root(dataset) / "probe" if phase == "probe" else root(dataset) / "runs/out" / name
 
 
 def marker(phase, name, dataset):
+    output = work_path(phase_output(phase, name, dataset))
     if phase == "probe":
-        return root(dataset) / "prepared.json"
-    return root(dataset) / "runs" / "out" / name / (
+        legacy = root(dataset) / "prepared.json"
+        if output == phase_output(phase, name, dataset) and legacy.is_file():
+            return legacy
+        return output / "prepared.json"
+    return output / (
         "trained.json" if phase == "train" else "evaluated.json"
     )
 
@@ -37,7 +45,7 @@ def names(phase, dataset=training.DEFAULT_DATASET):
     if phase == "eval":
         if dataset == ARCHIVE:
             return [ARCHIVE_EVAL]
-        return ["eval-" + evaluation.signature(dataset)[:16]]
+        return ["evaluation"]
     return [exp.name for exp in training.experiment_configs]
 
 

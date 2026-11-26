@@ -148,7 +148,7 @@ def main(cfg: DictConfig):
     if cfg.training.init_from == 'scratch':
         print("Initializing a new model from scratch")
 
-        # Instantiate model using Hydra
+        # Construct the selected architecture
         model = instantiate(cfg.model)
         print("Model instantiated:", type(model).__name__)
         print("Model config:", model.config)
@@ -174,7 +174,7 @@ def main(cfg: DictConfig):
                 cfg.model.config[k] = v
             OmegaConf.set_struct(cfg, True)
 
-            # Instantiate model using Hydra
+            # Construct the selected architecture
             model = instantiate(cfg.model)
 
             # Load state dict

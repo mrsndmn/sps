@@ -18,9 +18,10 @@ def adapters():
             "train",
             "--filter",
             run.name,
+            output_dir=module.directory(run),
             config=load("experiments.ar_sps_config"),
         )
-    yield job(module, "eval", "winner", "eval", config=load("experiments.ar_sps_config"))
+    yield job(module, "eval", "winner", "eval", output_dir=module.winner_output(), config=load("experiments.ar_sps_config"))
 
 
 def base50():
@@ -30,6 +31,7 @@ def base50():
         "train",
         module.c.experiment_configs[0],
         config=(module.c, module.config),
+        output_dir=module.e.RUN_ROOT / "out" / module.c.experiment_configs[0].name,
     )
 
 
@@ -42,6 +44,7 @@ def readout():
             module.ARM,
             phase,
             config=module.c,
+            output_dir=module.ROOT / "probe" if phase == "probe" else module.OUT,
             parameters=shared_training_settings(module.c.source),
         )
     for workload in ("eval", "mmlu", "gsm8k", "humaneval", "serving"):
@@ -64,6 +67,7 @@ def readout():
                 name=f"{workload}-{exp.name}",
                 config=config,
                 parameters=effective,
+                output_dir=module.ROOT / "runs/out" / exp.name,
             )
 
 
@@ -81,6 +85,7 @@ def provenance():
             "--filter",
             run.name,
             config=(source, evaluator.ic),
+            output_dir=evaluator.output_dir(run),
             parameters={
                 "generation": source.GENERATION[run.mode],
                 "preparation_generation": prep.GENERATION,
@@ -100,6 +105,7 @@ def sampling():
                 run,
                 config=shared,
                 parameters={"conditions": conditions},
+                output_dir=(module.output_dir() if suffix in {"audit", "trace"} else module.root()),
             )
 
 
@@ -110,6 +116,7 @@ def mask_ablation():
         "eval",
         "paired-masks",
         submit_flag="--submit",
+        output_dir=module.result_path().parent,
         parameters={"conditions": [vars(run) for run in module.experiment_configs]},
     )
 
@@ -125,6 +132,7 @@ def cap_probe():
         probe,
         "teacher",
         name="continuations",
+        output_dir=module.ROOT / cap_jobs.teacher_config.OUTPUT_NAME,
         config=(module.c, module, cap_jobs.teacher_config),
     )
 
@@ -141,6 +149,7 @@ def cap_compare():
             "compare",
             arm,
             config=(module.c, module, cap_jobs.comparison_config),
+            output_dir=module.folder(arm),
             parameters={"MODEL": run.model, "REVISION": run.revision},
         )
 

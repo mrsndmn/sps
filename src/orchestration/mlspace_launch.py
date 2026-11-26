@@ -96,6 +96,8 @@ def reconcile_receipts(client, active_by_desc):
             marker = ARTIFACTS_ROOT / 'prepared.json' if receipt['phase'] == 'prepare' else (
                 RUN_ROOT / 'out' / receipt['name'] /
                 ('trained.json' if receipt['phase'] == 'train' else 'evaluated.json'))
+            if receipt.get("output_dir"):
+                marker = Path(receipt["output_dir"])
             if not marker.exists():
                 raise RuntimeError(f'Job {receipt["job_name"]} completed without success marker {marker}')
             continue
@@ -151,8 +153,27 @@ def submit_payload(client, body, phase, name, commit):
     data = dict(phase=phase, identity=identity, name=name, commit=commit,
                 attempted_at=time.time())
     store_json(intent, data)
+    directory = None
+    if output := os.environ.get('SPS_SUBMIT_OUTPUT'):
+        from orchestration.named.publication import reserve_payload
+        directory = reserve_payload(body, Path(output), STAGING_ROOT / commit)
+        if directory is None:
+            intent.unlink()
+            return dict(name=name, reused=True, output_dir=output)
+        data['output_dir'] = output
+        store_json(intent, data)
     result = client.run_job(body)
-    job_name = result.get('job_name')
+    job_name = valid_job_name(result)
+    if directory and not job_name and isinstance(result, dict) and result.get('error_code') == 1:
+        directory.retire()
+        intent.unlink()
+        raise RuntimeError(f'MLSpace rejected submission: {result}')
+    if directory and job_name:
+        try:
+            directory.record(job_name)
+        except FileNotFoundError:
+            if not directory.output.is_dir():
+                raise
     if not job_name or not re.fullmatch(r'lm-mpi-job-[0-9a-f-]{36}', job_name):
         raise RuntimeError(f'MLSpace rejected submission; reconcile intent at {intent}: {result}')
     uuid.UUID(job_name.removeprefix('lm-mpi-job-'))
@@ -197,6 +218,7 @@ def main(default_phase='train', *, named=None):
     launch = submit
     if SUITE in WORKER_SCRIPTS:
         from orchestration.pilot_launch import submit as launch
+        return launch(args)
     if args.dry:
         return launch(args)
     with submission_lock():

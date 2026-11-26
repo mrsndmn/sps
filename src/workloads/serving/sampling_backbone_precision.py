@@ -5,6 +5,7 @@ and backbone arithmetic change when selecting FP16 instead of BF16; this is not
 an arithmetic-only intervention. FP16 has a smaller exponent range; nonfinite
 distributions fail validation. Original failed-gate evidence stays immutable.
 """
+from orchestration.named.publication import work_path
 import argparse
 import json
 import math
@@ -33,7 +34,7 @@ BASE_IDENTITY = precision.recorded_identity
 
 
 def root():
-    return ROOT / 'runs/out' / job_configs[0].name
+    return work_path(ROOT / 'runs/out' / job_configs[0].name)
 
 
 def identity():

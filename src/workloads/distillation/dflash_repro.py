@@ -1,6 +1,8 @@
 """Launch the isolated DFlash-b16 reproduction probe, training, or evaluation."""
 
 import argparse
+import os
+from orchestration.named.publication import submitting, work_path
 import json
 from pathlib import Path
 import shlex
@@ -18,17 +20,19 @@ def final_step():
 
 
 def arm_name(phase, step):
-    if phase != "eval":
-        return training.EXPERIMENT.name
-    identity = evaluation.signature()[:12]
-    return f"gsm8k-step-{step:05d}-{identity}"
+    if phase == "eval":
+        return training.EXPERIMENT.output(phase, step).name
+    return training.EXPERIMENT.name
 
 
 def marker(phase, step):
-    if phase == "probe":
-        return training.run_root() / "prepared.json"
-    name = "trained.json" if phase == "train" else "evaluated.json"
-    return training.run_root() / "runs" / "out" / arm_name(phase, step) / name
+    directory = work_path(training.EXPERIMENT.output(phase, step))
+    file = {"probe": "prepared.json", "train": "trained.json", "eval": "evaluated.json"}[phase]
+    if phase == "probe" and directory == training.EXPERIMENT.output("probe"):
+        legacy = training.run_root() / "prepared.json"
+        if legacy.is_file() and not (directory / file).is_file():
+            return legacy
+    return directory / file
 
 
 def payload(phase, step, staged):
@@ -47,7 +51,7 @@ def payload(phase, step, staged):
         entry += ["--step", str(step)]
     command = ["timeout", "--kill-after=60s", TIMEOUTS[phase], str(launch.PYTHON), *distributed, *entry]
     body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(command)
-    body["job_desc"] = f"dflash-repro {phase} {name} {training.signature()[:16]} #d.tarasov @mrsndmn"
+    body["job_desc"] = f"dflash-repro {phase} {name} {training.run_root().name} #d.tarasov @mrsndmn"
     return body
 
 
@@ -58,11 +62,24 @@ def submit(phase, step, dry):
     if dry:
         print(json.dumps(body, indent=2))
         return
-    if phase == "train" and not marker("probe", None).is_file():
-        raise RuntimeError("Complete the DFlash GPU probe before training")
-    if phase == "eval" and not (training.checkpoint_path(step) / "weights.safetensors").is_file():
-        raise RuntimeError(f"Missing DFlash checkpoint at step {step}")
-    submit_job(phase, arm_name(phase, step), training.run_root(), marker(phase, step), body, commit)
+    submit_phase(training, phase, step, marker, body, commit)
+
+
+def submit_phase(trainer, phase, step, marker_for, body, commit):
+    output = trainer.EXPERIMENT.output(phase, step)
+    with submitting(output) as ready:
+        if not ready or marker_for(phase, step).is_file():
+            return
+        if phase == "train" and not marker_for("probe", None).is_file():
+            raise RuntimeError("Complete the DFlash GPU probe before training")
+        if phase == "eval":
+            if not marker_for("train", None).is_file():
+                raise RuntimeError("Complete DFlash training before evaluating any checkpoint")
+            if not (trainer.checkpoint_path(step) / "weights.safetensors").is_file():
+                raise RuntimeError(f"Missing DFlash checkpoint at step {step}")
+        with patch.dict(os.environ, SPS_SUBMIT_OUTPUT=str(output)):
+            submit_job(phase, output.name if phase == "eval" else trainer.EXPERIMENT.name,
+                       trainer.run_root(), marker_for(phase, step), body, commit)
 
 
 def submit_job(phase, name, root, result_path, body, commit):
@@ -108,9 +125,9 @@ def main():
     args = parser.parse_args()
     step = args.step
     if args.phase == "eval":
-        last = final_step()
-        step = last if step is None else step
-        if step not in (*training.MILESTONES, last):
+        if step is None:
+            step = final_step()
+        elif step not in training.MILESTONES and step != final_step():
             parser.error("Choose a scheduled DFlash checkpoint")
     elif step is not None:
         parser.error("--step is only available for evaluation")
@@ -123,6 +140,8 @@ def main():
         if result.is_file():
             return
         if args.phase == "eval":
+            if not marker("train", None).is_file():
+                raise RuntimeError("Complete DFlash training before evaluating any checkpoint")
             evaluation.evaluate(training.checkpoint_path(step), result)
         else:
             training.train(probe=args.phase == "probe")

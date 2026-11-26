@@ -20,7 +20,7 @@ from orchestration import experiment_suite as e
 from orchestration.mlspace_launch import payload
 print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),cache=str(e.HF_HOME),
  names=[x.name for x in e.collect_experiments()],budget=e.TRAIN_TOKENS,
- args=e.overrides(e.collect_experiments()[0]),
+ args=e.collect_experiments()[0].arguments(e.RUN_ROOT),
  payload=payload('train',e.collect_experiments()[0].name,e.STAGING_ROOT,'a','b'))))
 '''
     results = {}
@@ -34,9 +34,9 @@ print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),cache=str(e.HF_HOME),
     assert set(short['names']).isdisjoint(long['names'])
     assert long['payload']['env_variables']['SPS_EXPERIMENT_SUITE'] == '10b'
     assert long['payload']['job_desc'] != short['payload']['job_desc']
-    a, b = (dict(x.split('=',1) for x in r['args']) for r in (short,long))
-    assert b['+experiment'] == a['+experiment']
-    for key in ('scheduler.warmup_tokens','scheduler.lr_decay_tokens'):
+    a, b = (r['args'] for r in (short,long))
+    assert b['architecture'] == a['architecture']
+    for key in ('warmup_tokens','lr_decay_tokens'):
         assert int(b[key]) == int(a[key]) * 10
 
 
@@ -60,12 +60,12 @@ def test_pair_has_matched_budget_and_distinct_methods():
     standard, sps = config.collect_experiments()
     assert 'full_attention' in standard.recipe and 'sps_w0' in sps.recipe
     def args(exp):
-        return dict(s.split('=', 1) for s in config.overrides(exp) if '=' in s)
+        return exp.arguments(config.RUN_ROOT)
     a, b = args(standard), args(sps)
-    for key in ('training.max_tokens', 'training.global_batch_size', 'system.data_root',
-                'scheduler.warmup_tokens', 'scheduler.lr_decay_tokens'):
+    for key in ('max_tokens', 'global_batch_size', 'data_root',
+                'warmup_tokens', 'lr_decay_tokens'):
         assert a[key] == b[key]
-    assert int(a['training.max_tokens']) % config.TOKENS_PER_STEP == 0
+    assert int(a['max_tokens']) % config.TOKENS_PER_STEP == 0
     assert all(e.num_gpus == 4 for e in (standard, sps))
     assert len(config.collect_experiments('sps_w0')) == 1
 
@@ -139,17 +139,17 @@ def test_payload_quotes_staging_path():
 def test_design_signature_tracks_inherited_configs(tmp_path, monkeypatch):
     monkeypatch.setattr(config, 'REPO_ROOT', tmp_path)
     for name in ('scripts/train.py', 'scripts/evaluate.py', 'scripts/pilot/pilot_run.py',
-                 'scripts/pilot/named_worker.py', 'src/workloads/pilot/pilot_run.py', 'src/training/train.py', 'src/modeling/evaluation/evaluate.py', 'conf/model/sps.yaml',
-                 'conf/optimizer/adamw.yaml', 'src/orchestration/experiment_suite.py', 'src/orchestration/suite_registry.py',
+                 'scripts/pilot/named_worker.py', 'src/workloads/pilot/pilot_run.py', 'src/training/train.py', 'src/modeling/evaluation/evaluate.py', 'src/experiments/pilot_1b.py',
+                 'src/experiments/worker_args.py', 'src/orchestration/experiment_suite.py', 'src/orchestration/suite_registry.py',
                  'src/experiments/environment.py', 'src/experiments/pilot.py', 'src/experiments/types.py', 'src/experiments/suite.py'):
         p = tmp_path / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text('initial')
     before = config.design_signature()
-    (tmp_path / 'conf/model/sps.yaml').write_text('changed model dimensions')
+    (tmp_path / 'src/experiments/pilot_1b.py').write_text('changed model dimensions')
     assert config.design_signature() != before
     before = config.design_signature()
-    (tmp_path / 'conf/optimizer/adamw.yaml').write_text('changed optimizer')
+    (tmp_path / 'src/experiments/worker_args.py').write_text('changed optimizer')
     assert config.design_signature() != before
 
 

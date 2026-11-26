@@ -1,4 +1,5 @@
 """Isolated decode CUDA-graph gate and matched vLLM benchmark."""
+from orchestration.named.publication import work_path
 
 import argparse
 import hashlib
@@ -247,7 +248,7 @@ def with_graph_engine(function, argument, evidence):
 
 def audit_arm(arm):
     with_graph_engine(
-        BASE_AUDIT, arm, ROOT / "runs/out" / bench.AUDIT_NAME / f"graphs-{arm}.json"
+        BASE_AUDIT, arm, work_path(ROOT / "runs/out" / bench.AUDIT_NAME) / f"graphs-{arm}.json"
     )
 
 
@@ -258,7 +259,7 @@ def evaluate(exp):
 def check_gate(manifest, *, protocol=None):
     BASE_GATE(manifest, protocol=protocol)
     for arm in ("sps", "sps_mtp"):
-        validate_evidence(ROOT / "runs/out" / bench.AUDIT_NAME / f"graphs-{arm}.json", protocol=protocol)
+        validate_evidence(work_path(ROOT / "runs/out" / bench.AUDIT_NAME) / f"graphs-{arm}.json", protocol=protocol)
 
 
 def completed(exp, manifest, *, protocol=None):

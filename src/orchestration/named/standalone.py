@@ -1,7 +1,10 @@
 """Named plans for families with dedicated MLSpace submission protocols."""
 
+from experiments.family_arguments import settings
 from dataclasses import asdict, dataclass, is_dataclass
 from importlib import import_module
+from importlib.util import find_spec
+from types import ModuleType
 from pathlib import Path
 
 
@@ -13,6 +16,9 @@ class Job:
     args: tuple
     settings: dict
     submit_flag: str | None = None
+    output_dir: Path | None = None
+
+    schemas: tuple[str, ...] = ()
 
     @property
     def script(self):
@@ -22,18 +28,51 @@ class Job:
         return f"scripts/{family}/{name}.py"
 
 
-
 def values(module):
     return {
         k: v
-        for k, v in vars(module).items()
+        for k, v in settings(module).items()
         if k.isupper()
         and isinstance(v, (str, int, float, bool, dict, tuple, list, Path))
     }
 
 
+def family_schemas(sources):
+    """Collect definitions explicitly selected by the native submission plan."""
+    pending = list(sources)
+    visited = set()
+    names = set()
+    while pending:
+        source = pending.pop()
+        name = source.__name__
+        if name in visited:
+            continue
+        visited.add(name)
+        if "family_config" in vars(source):
+            names.add(name.rsplit(".", 1)[-1])
+        if not name.startswith("experiments."):
+            definition = "experiments." + name.rsplit(".", 1)[-1]
+            if find_spec(definition):
+                pending.append(import_module(definition))
+        pending.extend(
+            value
+            for value in vars(source).values()
+            if isinstance(value, ModuleType)
+            and value.__name__.startswith("experiments.")
+        )
+    return tuple(sorted(names))
+
+
 def job(
-    module, phase, run, *args, config=None, name=None, submit_flag=None, parameters=None
+    module,
+    phase,
+    run,
+    *args,
+    config=None,
+    name=None,
+    submit_flag=None,
+    parameters=None,
+    output_dir=None,
 ):
     sources = config if isinstance(config, tuple) else (config or module,)
     settings = {}
@@ -52,6 +91,8 @@ def job(
         tuple(map(str, args)),
         settings,
         submit_flag,
+        output_dir,
+        family_schemas((*sources, module)),
     )
 
 
@@ -63,4 +104,5 @@ def builds(module_name, phase, selector=None, *, config=None):
     module = load(module_name)
     for run in getattr(module, "job_configs", None) or module.experiment_configs:
         args = (selector, run.name) if selector else ()
-        yield job(module, phase, run, *args, config=config)
+        output = module.prepared_dir() if phase == "prepare" else module.output_dir(run)
+        yield job(module, phase, run, *args, config=config, output_dir=output)

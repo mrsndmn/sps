@@ -1,6 +1,7 @@
 """Submit and report the DFlash-b16 soft-distillation experiment."""
 
 import argparse
+from orchestration.named.publication import work_path
 from hashlib import sha256
 
 from orchestration.design_compatibility import canonical_signature
@@ -20,16 +21,19 @@ def evaluation_signature():
 
 
 def arm_name(phase, step):
-    if phase != "eval":
-        return training.EXPERIMENT.name
-    return f"gsm8k-step-{step:05d}-{evaluation_signature()[:12]}"
+    if phase == "eval":
+        return training.EXPERIMENT.output(phase, step).name
+    return training.EXPERIMENT.name
 
 
 def marker(phase, step):
-    if phase == "probe":
-        return training.run_root() / "prepared.json"
-    name = "trained.json" if phase == "train" else "evaluated.json"
-    return training.run_root() / "runs" / "out" / arm_name(phase, step) / name
+    directory = work_path(training.EXPERIMENT.output(phase, step))
+    file = {"probe": "prepared.json", "train": "trained.json", "eval": "evaluated.json"}[phase]
+    if phase == "probe" and directory == training.EXPERIMENT.output("probe"):
+        legacy = training.run_root() / "prepared.json"
+        if legacy.is_file() and not (directory / file).is_file():
+            return legacy
+    return directory / file
 
 
 def payload(phase, step, staged):
@@ -47,7 +51,7 @@ def payload(phase, step, staged):
     command = ["timeout", "--kill-after=60s", runner.TIMEOUTS[phase], str(launch.PYTHON),
                *distributed, *entry]
     body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(command)
-    body["job_desc"] = f"dflash-kd {phase} {name} {training.signature()[:16]} #d.tarasov @mrsndmn"
+    body["job_desc"] = f"dflash-kd {phase} {name} {training.run_root().name} #d.tarasov @mrsndmn"
     return body
 
 
@@ -73,9 +77,9 @@ def main():
     args = parser.parse_args()
     phase, step = args.phase, args.step
     if phase == "eval":
-        last = runner.final_step()
-        step = last if step is None else step
-        if step not in (*hard.MILESTONES, last):
+        if step is None:
+            step = runner.final_step()
+        elif step not in hard.MILESTONES and step != runner.final_step():
             parser.error("Choose a scheduled DFlash checkpoint")
     elif step is not None:
         parser.error("--step is only available for evaluation")
@@ -88,6 +92,8 @@ def main():
         if result.is_file():
             return
         if phase == "eval":
+            if not marker("train", None).is_file():
+                raise RuntimeError("Complete DFlash training before evaluating any checkpoint")
             evaluate(step, result)
         else:
             training.train(probe=phase == "probe")
@@ -97,8 +103,4 @@ def main():
         if args.dry:
             print(json.dumps(body, indent=2))
             return
-        if phase == "train" and not marker("probe", None).is_file():
-            raise RuntimeError("Complete the soft-KD GPU probe before training")
-        if phase == "eval" and not (training.checkpoint_path(step) / "weights.safetensors").is_file():
-            raise RuntimeError(f"Missing soft-KD checkpoint at step {step}")
-        runner.submit_job(phase, arm_name(phase, step), training.run_root(), result, body, commit)
+        runner.submit_phase(training, phase, step, marker, body, commit)

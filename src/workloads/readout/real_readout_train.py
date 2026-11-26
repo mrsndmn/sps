@@ -1,4 +1,5 @@
 """Train future slots, then jointly adapt the native AR readout and slots."""
+from orchestration.named.publication import work_path, public_path
 import argparse
 import contextlib
 import json
@@ -93,7 +94,7 @@ def main():
     steps = c.PROBE_STEPS if probe else c.TRAIN_STEPS
     split = steps // 2 if probe else c.STAGE_STEPS
     model = parent().to(device)
-    root = run.ROOT / "probe" if probe else run.OUT
+    root = work_path(run.ROOT / "probe") if probe else work_path(run.OUT)
     root.mkdir(parents=True, exist_ok=True)
     start = 0
     state = None
@@ -169,11 +170,11 @@ def main():
         dist.all_reduce(measured, op=dist.ReduceOp.MAX)
         if rank == 0:
             projected = (measured[0]*c.STAGE_STEPS + measured[1]*(c.TRAIN_STEPS-c.STAGE_STEPS))/3600
-            store_json(run.ROOT / "prepared.json", dict(
+            store_json(root / "prepared.json", dict(
                        **common.probe_workload(world), seconds=measured.tolist(), projected_hours=projected.item()))
     elif rank == 0:
         store_json(root / "trained.json", dict(parent=str(run.PARENT),
-                   checkpoint=str(root/"final.pt"), step=steps, horizons=c.HORIZONS,
+                   checkpoint=str(public_path(root/"final.pt")), step=steps, horizons=c.HORIZONS,
                    **common.training_schedule(),
                    checkpoint_sha256=common.file_hash(root/"final.pt")))
     dist.destroy_process_group()

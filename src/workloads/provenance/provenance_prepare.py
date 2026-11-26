@@ -4,6 +4,7 @@ Thinking rows are copied verbatim. Rejecting a generated response removes the
 corresponding prompt from BOTH conditions. No benchmark score selects responses.
 This stage reports actual token budgets before training configurations are fixed.
 """
+from orchestration.named.publication import work_path, public_path
 import argparse
 from collections import Counter
 import json
@@ -30,6 +31,17 @@ from experiments.provenance_prepare import (
 )
 
 ROOT = source.ROOT.parent/'instruct-response-provenance'
+
+
+def prepared_dir():
+    return ROOT / "prepared"
+
+
+def results():
+    path = work_path(prepared_dir())
+    if path == prepared_dir() and not path.exists() and (ROOT / "prepared.json").is_file():
+        return ROOT
+    return path
 
 
 def signature():
@@ -67,7 +79,7 @@ def record_path(row):
     name = row['source_id']
     if len(name) != 64 or any(x not in '0123456789abcdef' for x in name):
         raise ValueError('Invalid source identifier')
-    return ROOT/'samples'/f'{name}.json'
+    return results()/'samples'/f'{name}.json'
 
 
 def validate_record(record, row, split, expected):
@@ -179,19 +191,19 @@ def finalize():
         original,teacher,rejected=pair_rows(rows,samples,split,expected)
         group=dict(rejected=rejected,conditions={})
         for condition,values in (('corpus',original),('teacher',teacher)):
-            path=ROOT/'data'/condition/f'{split}.jsonl'
+            path=results()/'data'/condition/f'{split}.jsonl'
             path.parent.mkdir(parents=True,exist_ok=True)
             data.write_jsonl(path,values)
-            group['conditions'][condition]=dict(path=str(path),sha256=common.file_hash(path),by_mode=summarize(values))
+            group['conditions'][condition]=dict(path=str(public_path(path)),sha256=common.file_hash(path),by_mode=summarize(values))
         group['paired_source_ids_sha256']=data.digest([r['source_id'] for r in original])
         report['splits'][split]=group
-    data.atomic_json(ROOT/'prepared.json',report)
+    data.atomic_json(results()/'prepared.json',report)
     print(json.dumps(report,indent=2),flush=True)
 
 
 def worker():
     current=identity()
-    meta=ROOT/'identity.json'
+    meta=results()/'identity.json'
     if meta.exists() and json.loads(meta.read_text()) != current:
         raise RuntimeError('Preparation inputs changed')
     data.atomic_json(meta,current)
@@ -204,7 +216,7 @@ def worker():
 
 
 def completed():
-    marker=ROOT/'prepared.json'
+    marker=results()/'prepared.json'
     if not marker.exists():return False
     report=json.loads(marker.read_text())
     if report['identity'] != identity():raise RuntimeError('Stale paired preparation')

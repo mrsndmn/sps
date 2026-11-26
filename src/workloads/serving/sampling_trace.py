@@ -4,6 +4,7 @@ Compare full next-token distributions with one/four prediction slots in native
 FP32/BF16 and vLLM BF16. The four-slot non-speculative arm is a diagnostic eager
 intervention, not a benchmark. Existing audit outputs and runtimes stay immutable.
 """
+from orchestration.named.publication import work_path
 import argparse
 import json
 import os
@@ -32,7 +33,7 @@ FILES = ('identity.json','prefixes.json','kernel.json','report.json',
 
 
 def output_dir():
-    return ROOT/'runs/out'/experiment_configs[0].name
+    return work_path(ROOT/'runs/out'/experiment_configs[0].name)
 
 
 def identity():

@@ -1,4 +1,5 @@
 """Read-only STEM aggregation of the pinned MMLU reasoning evaluation."""
+from experiments.evaluation_outputs import families
 import hashlib
 import json
 from pathlib import Path
@@ -72,7 +73,7 @@ def main():
     signature = SOURCE_SIGNATURE if args.suite == 'mmlu-generation' else STEM_SIGNATURE
     results = {}
     for exp in experiment_configs:
-        folder = root / 'runs/out' / exp.name / 'full'
+        folder = families[args.suite].for_run(COMMON_ROOT, exp)
         meta = folder / 'manifest.json'
         if not meta.exists():
             samples = []

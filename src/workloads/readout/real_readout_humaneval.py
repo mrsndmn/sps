@@ -1,4 +1,5 @@
 """Generate one HumanEval+ solution per task for external EvalPlus scoring."""
+from orchestration.named.publication import work_path
 import argparse
 import gzip
 import hashlib
@@ -78,7 +79,10 @@ def identity(exp, marker):
 
 
 def paths(exp):
-    return ROOT/"runs/out"/exp.name, ROOT/"samples"/(exp.name+".jsonl")
+    output = work_path(ROOT / "runs/out" / exp.name)
+    legacy = ROOT / "samples" / (exp.name + ".jsonl")
+    samples = output / "samples.jsonl"
+    return output, legacy if legacy.is_file() and output == ROOT/"runs/out"/exp.name and not samples.exists() else samples
 
 
 def evaluate(exp):

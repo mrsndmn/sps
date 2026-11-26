@@ -2,7 +2,7 @@
 Interactive generation script for local checkpoints.
 
 This script:
-1. loads a checkpoint using the same Hydra config conventions as training/eval
+1. loads a checkpoint using the same typed arguments as training/eval
 2. runs a prepared batch of prompts
 3. drops into an interactive REPL so you can try your own inputs
 

@@ -158,7 +158,7 @@ main('eval')
         assert result.stdout.count('"instance_type": "a100.1gpu"') == count
         assert result.stdout.count('scripts/evaluation/mmlu_run.py eval') == count
         if suite == 'mmlu-full-resume':
-            assert 'qwen0.6_ce' not in result.stdout
+            assert '--filter qwen0.6_ce' not in result.stdout
     rejected = subprocess.run([sys.executable, 'scripts/run_train_jobs.py', '--dry'], env=env,
                               capture_output=True, text=True)
     assert rejected.returncode != 0

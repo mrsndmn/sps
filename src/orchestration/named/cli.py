@@ -61,7 +61,16 @@ def main(default_phase="train"):
         cmd = [sys.executable, plan.script, *plan.args]
         if plan.submit_flag:
             cmd.append(plan.submit_flag)
-        return subprocess.call(cmd)
+        env = dict(os.environ, SPS_FAMILY_SCHEMAS=",".join(plan.schemas))
+        if plan.output_dir is None:
+            return subprocess.call(cmd, env=env)
+        from orchestration.named.publication import submitting
+
+        with submitting(plan.output_dir) as ready:
+            if ready:
+                env["SPS_SUBMIT_OUTPUT"] = str(plan.output_dir)
+                return subprocess.call(cmd, env=env)
+        return 0
     try:
         family, run = resolve(args.experiment, named_runs())
     except ValueError as error:

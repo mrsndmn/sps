@@ -1,4 +1,5 @@
 """Paired fresh thinking generations on the archived teacher-cap cohort."""
+from orchestration.named.publication import worker_output
 import argparse
 from collections import Counter
 import json
@@ -6,7 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 
-from orchestration.source_compatibility import source_hash
+from experiments.qwen35_cap_compare import OUTPUT_PARENT
 from experiments import instruct_config as c
 from data import instruct_data as data
 from workloads.serving import serving_runtime as runtime
@@ -35,7 +36,7 @@ def prepare():
 
 
 def folder(arm):
-    return ROOT / source_hash(__file__) / data.digest(json.loads(PROMPTS.read_bytes())) / arm
+    return worker_output(ROOT.joinpath(*OUTPUT_PARENT, arm))
 
 
 def weights_path(arm):

@@ -3,6 +3,7 @@
 Preserves both previous experiments. Completion means diagnostics collected, not
 that the original sampling gate passed. No serving speed claims are made here.
 """
+from orchestration.named.publication import work_path
 import argparse
 import json
 import os
@@ -28,7 +29,7 @@ AUDIT_SOURCE=audit.output_dir()
 TRACE_SOURCE=trace.output_dir()
 
 
-def root():return ROOT/'runs/out'/job_configs[0].name
+def root():return work_path(ROOT/'runs/out'/job_configs[0].name)
 
 
 def identity():

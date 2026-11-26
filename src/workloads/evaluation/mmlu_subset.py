@@ -1,4 +1,5 @@
 """STEM selection and validated reuse from the original full-MMLU run."""
+from experiments.evaluation_outputs import families
 import hashlib
 import json
 from pathlib import Path
@@ -55,7 +56,7 @@ def reuse_full_and_stem(common_root, exp, rows, indices):
     merged = {}
     for suite, signature in [('mmlu-generation', SOURCE_SIGNATURE),
                              ('mmlu-stem-generation', STEM_SIGNATURE)]:
-        folder = common_root / suite / 'runs/out' / exp.name / 'full'
+        folder = families[suite].for_run(common_root, exp)
         for item in reuse_samples(folder, exp, rows, indices, signature=signature):
             index = item['index']
             if index in merged and merged[index] != item:

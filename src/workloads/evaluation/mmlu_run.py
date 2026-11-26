@@ -1,4 +1,5 @@
 """Resumable single-GPU MMLU reasoning evaluation of pinned final checkpoints."""
+from experiments.evaluation_outputs import families
 import argparse
 import hashlib
 import json
@@ -58,7 +59,7 @@ def evaluate(exp, limit=None, *, destination=None):
     saved = recover_samples(path)
     seen = validate_saved(saved, rows, indices)
     if stem or e.SUITE == 'mmlu-full-resume':
-        source = e.COMMON_ROOT / 'mmlu-generation/runs/out' / exp.name / 'full'
+        source = families["mmlu-generation"].for_run(e.COMMON_ROOT, exp)
         reused = (reuse_full_and_stem(e.COMMON_ROOT, exp, rows, indices)
                   if e.SUITE == 'mmlu-full-resume' else reuse_samples(source, exp, rows, indices))
         saved_by_id = {item['index']: item for item in saved}

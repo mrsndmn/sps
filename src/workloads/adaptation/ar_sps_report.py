@@ -1,4 +1,5 @@
 """Strict observed retention with paired, per-task bootstrap uncertainty."""
+from experiments.phase_outputs import families
 import json
 import numpy as np
 from orchestration import experiment_suite as e
@@ -63,19 +64,23 @@ def compare(baseline, candidate, *, matched_exposure=False, baseline_signature=N
     return row
 
 
+def evaluation_dir(name):
+    return families[e.SUITE].path(e.ARTIFACTS_ROOT, "eval", name)
+
+
 def build_report():
     if c.DISTILLATION:
         return distillation_report()
-    baseline = e.RUN_ROOT/'out'/c.REPORT_BASELINE/'eval/source'
+    baseline = evaluation_dir(c.REPORT_BASELINE)/'source'
     reports = []
     for exp in e.collect_experiments():
-        for marker in sorted((e.output_dir(exp)/'eval').glob('*/complete.json')):
+        for marker in sorted((evaluation_dir(exp.name)).glob('*/complete.json')):
             reports.append(compare(baseline, marker.parent))
     controls = []
     for label in ('stage_endpoint', 'final'):
         for control_name, candidate_name in c.ENDPOINT_COMPARISONS:
-            staged = e.RUN_ROOT/'out'/candidate_name/'eval'
-            control = e.RUN_ROOT/'out'/control_name/'eval'/label
+            staged = evaluation_dir(candidate_name)
+            control = evaluation_dir(control_name)/label
             if (staged/label/'complete.json').exists() and (control/'complete.json').exists():
                 controls.append(compare(control, staged/label, matched_exposure=True))
     return dict(against_original=reports, matched_endpoint_controls=controls,
@@ -90,7 +95,7 @@ def distillation_report():
     baseline = root/'smollm2_original_ar/eval/source'
     reports, controls = [], []
     for exp in e.collect_experiments():
-        evaluation = e.output_dir(exp)/'eval'
+        evaluation = evaluation_dir(exp.name)
         for marker in sorted(evaluation.glob('*/complete.json')):
             reports.append(compare(baseline, marker.parent, baseline_signature=c.REFERENCE_SIGNATURE))
         for label in ('stage_endpoint', 'final'):

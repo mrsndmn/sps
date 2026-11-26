@@ -50,6 +50,7 @@ def qwen4b():
                         "--filter",
                         run.name,
                         name=f"{dataset}-{run.name}",
+                        output_dir=module.phase_output(phase, run.name, dataset),
                         config=(
                             module.training.reference,
                             module.prepared,
@@ -71,6 +72,7 @@ def qwen4b():
                         module.training,
                         module.evaluation if phase == "eval" else module.training,
                     ),
+                    output_dir=module.phase_output(phase, module.names(phase, dataset)[0], dataset),
                     parameters={
                         "conditions": [
                             vars(run) for run in module.training.experiment_configs

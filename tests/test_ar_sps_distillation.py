@@ -140,7 +140,8 @@ def test_distillation_report_uses_only_declared_controls(tmp_path, monkeypatch):
     monkeypatch.setattr(report.e, 'COMMON_ROOT', tmp_path)
     monkeypatch.setattr(data, 'rows', lambda _: None)
     monkeypatch.setattr(report.e, 'collect_experiments', lambda: [SimpleNamespace(name='kd')])
-    monkeypatch.setattr(report.e, 'output_dir', lambda _: tmp_path/'kd')
+    monkeypatch.setitem(report.families, report.e.SUITE, report.families['ar-sps'].__class__(eval='{name}/eval'))
+    monkeypatch.setattr(report.e, 'ARTIFACTS_ROOT', tmp_path)
     for label in ('stage_endpoint','final'):
         p=tmp_path/'kd/eval'/label;p.mkdir(parents=True);(p/'complete.json').write_text('{}')
     calls=[]

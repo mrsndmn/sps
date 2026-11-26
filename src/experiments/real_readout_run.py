@@ -1,10 +1,26 @@
 """Executable definitions for real readout run."""
 
+from dataclasses import dataclass
+from pathlib import Path
+
 from . import vllm_sps_config as c
+from .family_arguments import configure, export_fields
 
-ROOT = c.ROOT.parent / "qwen3-instruct-real-readout-mtp"
 
-PARENT = c.PARENT.parents[1] / "qwen3_instruct_continued_ar_ce" / "final.pt"
+@dataclass(frozen=True, kw_only=True)
+class FamilyConfig:
+    ROOT: Path = c.ROOT.parent / "qwen3-instruct-real-readout-mtp"
+    PARENT: Path = c.PARENT.parents[1] / "qwen3_instruct_continued_ar_ce" / "final.pt"
+    LEGACY_HORIZONS: int = 4
+
+    @property
+    def OUT(self) -> Path:
+        return self.ROOT / "runs/out" / ARM.name
+
+
+family_config = configure(FamilyConfig)
+__getattr__ = export_fields(family_config)
+
 
 experiment_configs = [
     c.Experiment(
@@ -13,7 +29,3 @@ experiment_configs = [
 ]
 
 ARM = experiment_configs[0]
-
-OUT = ROOT / "runs/out" / ARM.name
-
-LEGACY_HORIZONS = 4

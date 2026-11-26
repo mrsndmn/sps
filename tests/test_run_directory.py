@@ -100,3 +100,33 @@ def test_named_evaluation_uses_recorded_checkpoint_and_reserved_output(
         assert cmd[cmd.index("--checkpoint_path") + 1] == str(checkpoint)
         result = Path(cmd[cmd.index("--output_path") + 1])
         assert result.is_relative_to(pilot_launch.destination("eval", run).work)
+
+
+def test_retry_recovers_partial_results_and_preserves_previous_receipt(tmp_path):
+    run = RunDirectory(tmp_path, tmp_path / "mmlu")
+    assert run.reserve()
+    run.work.mkdir()
+    (run.work / "samples.jsonl").write_text('{"index": 0}\n')
+    job = "lm-mpi-job-48fcb78d-e22e-4076-a28d-f92f4e1d6b0c"
+    run.record(job)
+    run.retire()
+    assert run.reserve()
+    assert run.job_name() is None
+    assert (run.failed_attempt / "job.json").is_file()
+    assert (run.work / "samples.jsonl").read_text() == '{"index": 0}\n'
+
+
+def test_specialized_worker_round_trips_family_settings(tmp_path, monkeypatch):
+    import json
+    from experiments import qwen4b_drafter_train as family
+    from experiments.family_cli import arguments, encode, parse
+
+    values = arguments(["qwen4b_drafter_train"])
+    args = encode(values) + ["--qwen4b_drafter_train__lr", "0.001"]
+    overrides = parse(values, args)
+    monkeypatch.setenv("SPS_FAMILY_ARGUMENTS", json.dumps(overrides))
+    decoded = family.configure(family.FamilyConfig)
+    assert decoded.LR == 0.001
+    assert decoded.ROWS == family.family_config.ROWS
+    assert decoded.LENGTHS == family.family_config.LENGTHS
+    assert decoded.ROOT == family.family_config.ROOT

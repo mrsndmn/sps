@@ -1,4 +1,5 @@
 """Fixed final-checkpoint IFEval and crossed held-out NLL for provenance controls."""
+from orchestration.named.publication import work_path
 import argparse
 from functools import lru_cache
 import importlib.metadata
@@ -27,7 +28,7 @@ c = train.c
 
 
 def output_dir(exp):
-    return ROOT / 'runs/out' / exp.name
+    return work_path(ROOT / 'runs/out' / exp.name)
 
 
 def training_arm(exp):
@@ -72,7 +73,7 @@ def identity(exp):
     files = [Path(__file__), Path(evaluator.__file__), Path(generation.__file__), Path(decoding.__file__),
              Path(train.common.__file__), Path(train.__file__), Path(c.__file__)]
     return dict(experiment=exp.__dict__, checkpoint=checkpoint(exp.arm), protocol=protocol(),
-                preparation_sha256=train.prep.common.file_hash(train.prep.ROOT / 'prepared.json'),
+                preparation_sha256=train.prep.common.file_hash(train.prep.results() / 'prepared.json'),
                 code={p.name: source_hash(p) for p in files})
 
 
@@ -122,10 +123,10 @@ def evaluate(exp):
     # These are descriptive endpoints; no checkpoint is selected with them.
     crossed = None
     if exp.mode == 'nonthinking':
-        if train.prep.common.file_hash(train.prep.ROOT / 'prepared.json') != ident['preparation_sha256']:
+        if train.prep.common.file_hash(train.prep.results() / 'prepared.json') != ident['preparation_sha256']:
             raise RuntimeError('Held-out preparation changed during generation')
         values, _ = train.paired_data()
-        if train.prep.common.file_hash(train.prep.ROOT / 'prepared.json') != ident['preparation_sha256']:
+        if train.prep.common.file_hash(train.prep.results() / 'prepared.json') != ident['preparation_sha256']:
             raise RuntimeError('Held-out preparation changed while reading')
         crossed = {condition: train.common.nll(model, values[condition]['test'], torch.device('cuda'))
                    for condition in ('corpus', 'teacher')}

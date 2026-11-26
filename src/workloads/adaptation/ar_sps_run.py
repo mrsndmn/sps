@@ -66,17 +66,19 @@ def calibrated_plan(probes):
 
 def internal(phase, name):
     if phase == 'prepare':
-        from data.ar_sps_data import prepare
-        prepare()
-        probes = {}
-        for exp in e.collect_experiments():
-            if not exp.trainable:
-                continue
-            subprocess.run(e.train_command(exp, probe=True), check=True)
-            probes[exp.name] = json.loads((e.SANITY_ROOT/'out'/exp.name/'probe.json').read_text())
-        # Native AR parity is a hard preparation gate, before marker publication.
-        subprocess.run([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--audit'], check=True)
-        store_json(e.prepared_path(), calibrated_plan(probes))
+        from orchestration.run_directory import preparation_lock
+        with preparation_lock(e.RUN_ROOT):
+            from data.ar_sps_data import prepare
+            prepare()
+            probes = {}
+            for exp in e.collect_experiments():
+                if not exp.trainable:
+                    continue
+                subprocess.run(e.train_command(exp, probe=True), check=True)
+                probes[exp.name] = json.loads((e.SANITY_ROOT/'out'/exp.name/'probe.json').read_text())
+            # Native AR parity is a hard preparation gate, before marker publication.
+            subprocess.run([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--audit'], check=True)
+            store_json(e.prepared_path(), calibrated_plan(probes))
     else:
         matches = [exp for exp in e.collect_experiments() if exp.name == name]
         if len(matches) != 1:

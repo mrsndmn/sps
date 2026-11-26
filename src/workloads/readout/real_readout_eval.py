@@ -1,4 +1,5 @@
 """One-GPU final-checkpoint IFEval and held-out NLL for A and B."""
+from orchestration.named.publication import work_path
 import argparse
 import hashlib
 import json
@@ -112,7 +113,7 @@ def evaluate(exp):
 
     if torch.cuda.device_count() != 1:
         raise RuntimeError("Exactly one visible GPU required")
-    root = ROOT / "runs/out" / exp.name
+    root = work_path(ROOT / "runs/out" / exp.name)
     marker = endpoint(exp)
     ident = identity(exp, marker)
     protocol()
@@ -163,7 +164,7 @@ def submit(experiments):
     staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
     for exp in experiments:
         ident = identity(exp)
-        marker = ROOT / "runs/out" / exp.name / "evaluated.json"
+        marker = work_path(ROOT / "runs/out" / exp.name) / "evaluated.json"
         if marker.exists():
             saved = json.loads(marker.read_text())
             if saved["identity"] != ident or saved["artifacts"] != artifact_hashes(marker.parent, exp):

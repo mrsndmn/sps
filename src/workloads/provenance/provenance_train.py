@@ -5,6 +5,7 @@ Token-normalized CE is unchanged; supervised-token exposure is reported, not
 matched. Response source, content and length change together. No test-set or
 benchmark score selects this training recipe or its endpoint.
 """
+from orchestration.named.publication import work_path, public_path
 import argparse
 from contextlib import contextmanager
 import json
@@ -30,13 +31,13 @@ ROOT = prep.ROOT.parent / 'instruct-provenance-controls'
 
 
 def output_dir(exp):
-    return ROOT / 'runs/out' / exp.name
+    return work_path(ROOT / 'runs/out' / exp.name)
 
 
 def paired_data():
     if not prep.completed():
         raise RuntimeError('Paired preparation is not complete')
-    report = json.loads((prep.ROOT / 'prepared.json').read_text())
+    report = json.loads((prep.results() / 'prepared.json').read_text())
     values = {condition: {split: [json.loads(line) for line in
                   Path(report['splits'][split]['conditions'][condition]['path']).read_text().splitlines()]
               for split in prep.SPLITS} for condition in ('corpus', 'teacher')}
@@ -107,7 +108,7 @@ def training_context(exp, values, ident):
     def rows(split):
         records = values[exp.condition][split]
         return ordered_train(records) if split == 'train' else records
-    with patch.object(e, 'RUN_ROOT', ROOT / 'runs'), \
+    with patch.object(e, 'output_dir', output_dir), patch.object(e, 'RUN_ROOT', ROOT / 'runs'), \
          patch.object(e, 'collect_experiments', lambda name: [exp] if name == exp.name else []), \
          patch.object(e, 'design_signature', lambda: signature), \
          patch.object(trainer, 'rows', rows), patch.object(trainer, 'read_plan', lambda: ident['plan']):
@@ -145,7 +146,7 @@ def worker(exp):
                       '--train-worker', '--arm', exp.name], os.environ.copy(), exp.hours-300/3600)
     with training_context(exp, values, ident):
         common.validate_final(root / 'final.pt', ident['plan'])
-    launch.store_json(root / 'trained.json', dict(identity=ident, checkpoint=str(root / 'final.pt'),
+    launch.store_json(root / 'trained.json', dict(identity=ident, checkpoint=str(public_path(root / 'final.pt')),
                       checkpoint_sha256=prep.common.file_hash(root / 'final.pt'), passed=True))
 
 
@@ -185,7 +186,7 @@ def submit(selected, dry=False):
         return
     values, report = paired_data()
     plan = make_plan(values)
-    launch.store_json(ROOT / 'plan.json', dict(plan=plan, preparation_sha256=prep.common.file_hash(prep.ROOT / 'prepared.json')))
+    launch.store_json(ROOT / 'plan.json', dict(plan=plan, preparation_sha256=prep.common.file_hash(prep.results() / 'prepared.json')))
     from mls.manager.job.utils import training_job_api_from_profile
     client, options = training_job_api_from_profile('default')
     launch.disable_submission_retries(client)

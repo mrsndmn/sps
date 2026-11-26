@@ -82,7 +82,9 @@ with patch.object(Path, 'read_bytes', changed):
     )
 
 
-def test_named_mask_ablation_selects_submission_mode(monkeypatch):
+def test_named_mask_ablation_selects_submission_mode(monkeypatch, tmp_path):
+    from orchestration.named import publication
+    monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
     from orchestration.named import cli
     from types import SimpleNamespace
     from orchestration.named import special_families
@@ -91,7 +93,8 @@ def test_named_mask_ablation_selects_submission_mode(monkeypatch):
         special_families,
         "load",
         lambda _: SimpleNamespace(
-            __name__="workloads.distillation.dflash_mask_ablation", experiment_configs=[]
+            __name__="workloads.distillation.dflash_mask_ablation", experiment_configs=[],
+            result_path=lambda: tmp_path / "mask" / "evaluated.json",
         ),
     )
     monkeypatch.setattr(
@@ -100,7 +103,7 @@ def test_named_mask_ablation_selects_submission_mode(monkeypatch):
         ["scripts/run_eval.py", "--experiment", "dflash-mask-ablation/paired-masks"],
     )
     calls = []
-    monkeypatch.setattr(cli.subprocess, "call", lambda argv: calls.append(argv) or 0)
+    monkeypatch.setattr(cli.subprocess, "call", lambda argv, env: calls.append(argv) or 0)
     with monkeypatch.context() as context:
         context.setattr(os, "environ", os.environ.copy())
         assert cli.main("eval") == 0
@@ -127,7 +130,7 @@ with patch.object(
     )
 
 
-def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
+def test_cap_submission_identity_uses_configured_output(tmp_path, monkeypatch, capsys):
     from orchestration.named import cap_jobs
 
     monkeypatch.setattr(cap_jobs.compare, "ROOT", tmp_path)
@@ -144,7 +147,7 @@ def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
         assert "timeout 4h" in payload["script"]
         descriptions.append(payload["job_desc"])
     assert descriptions[0] == descriptions[1]
-    assert descriptions[0] != descriptions[2]
+    assert descriptions[0] == descriptions[2]
 
 
 @pytest.mark.parametrize(
@@ -257,7 +260,7 @@ def test_cap_report_identities_track_inherited_settings(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Path, "read_bytes", change_sampler)
     assert source_hash(teacher.__file__) != teacher_identity
-    assert compare.folder("original") != paired_folder
+    assert compare.folder("original") == paired_folder
 
 
 def test_cap_completed_comparison_skips_cohort_preparation(

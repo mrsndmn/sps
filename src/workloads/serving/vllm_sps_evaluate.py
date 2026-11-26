@@ -1,4 +1,5 @@
 """Sequential native-vLLM MMLU STEM quality and latency pilot."""
+from orchestration.named.publication import work_path
 
 import hashlib
 import json
@@ -142,7 +143,7 @@ def evaluate(exp):
 
         references = reference(trained)
     llm = LLM(**arguments)
-    root = c.ROOT / "runs/out" / exp.name
+    root = work_path(c.ROOT / "runs/out" / exp.name)
     root.mkdir(parents=True, exist_ok=True)
     if references is not None:
         from workloads.serving.vllm_sps_audit import verify

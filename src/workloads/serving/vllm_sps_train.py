@@ -1,4 +1,5 @@
 """Assistant-masked staged MTP adaptation with one Qwen backbone."""
+from orchestration.named.publication import work_path, public_path
 
 import argparse
 import contextlib
@@ -96,7 +97,7 @@ def main():
     transition = steps // 2 if args.probe else c.STAGE_STEPS
     if len(data) < steps * c.GLOBAL_BATCH:
         raise RuntimeError("Insufficient instruction training data")
-    root = c.ROOT / ("sanity" if args.probe else "runs") / "out" / "qwen3_sps_mtp"
+    root = work_path(c.ROOT / ("sanity" if args.probe else "runs") / "out" / "qwen3_sps_mtp")
     root.mkdir(parents=True, exist_ok=True)
     model = common.load_model(device)
     start = 0
@@ -232,7 +233,8 @@ def main():
                 "peak_memory_bytes": torch.cuda.max_memory_allocated(device),
             }
             store_json(root / "probe.json", probe)
-            store_json(c.ROOT / "prepared.json", probe)
+            if public_path(root) == root:
+                store_json(c.ROOT / "prepared.json", probe)
     elif rank == 0:
         save(root / "final.pt", steps)
         # Export the final checkpoint; ordinary and speculative SPS share it.
@@ -240,8 +242,8 @@ def main():
         store_json(
             root / "trained.json",
             {
-                "checkpoint": str(root / "final.pt"),
-                "export": str(root / "hf"),
+                "checkpoint": str(public_path(root / "final.pt")),
+                "export": str(public_path(root / "hf")),
                 "parent": str(c.PARENT),
                 "parent_sha256": common.file_hash(c.PARENT),
                 "checkpoint_sha256": common.file_hash(root / "final.pt"),

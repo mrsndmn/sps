@@ -99,22 +99,6 @@ def collect_experiments(filter_name=None):
     ]
 
 
-def overrides(exp, *, probe=False):
-    root = SANITY_ROOT if probe else RUN_ROOT
-    config = exp.config(root, probe=probe)
-    args = [f"+experiment={exp.recipe}"]
-    for group in ("experiment", "training", "scheduler", "system", "logging"):
-        for key, value in config[group].items():
-            if key != "tags":
-                literal = (
-                    json.dumps(value)
-                    if isinstance(value, bool) or value is None
-                    else str(value)
-                )
-                args.append(f"{group}.{key}={literal}")
-    return args
-
-
 def train_command(exp, *, probe=False, data_root=None, dest=None):
     if SUITE == INSTRUCT_SUITE:
         if not exp.trainable:
@@ -234,7 +218,6 @@ def design_signature():
     definitions = repo / "src/experiments"
     inputs = sorted(
         [
-            *repo.glob("conf/**/*.yaml"),
             *repo.glob("src/modeling/**/*.py"),
             *repo.glob("src/training/**/*.py"),
             *repo.glob("src/data/**/*.py"),
@@ -251,6 +234,8 @@ def design_signature():
         definitions / "types.py",
         definitions / "suite.py",
     ]
+    if SUITE in {"1b", "10b"}:
+        inputs += [definitions / "worker_args.py", definitions / f"pilot_{SUITE}.py"]
     if SUITE in {
         "mtp",
         "mtp-unfreeze",

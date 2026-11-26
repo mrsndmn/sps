@@ -57,6 +57,9 @@ parents have independent reservations. For each submission:
    description to identify the job. An unresolved reservation continues to
    block submission.
 
+DFlash publishes its checkpoint directory upon training completion. Both final and
+milestone evaluations require the published training result and the requested weights.
+
 ## Migration checks
 
 Compare old and new effective settings and worker inputs for each migrated
