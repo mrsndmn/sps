@@ -7,7 +7,7 @@ import sys
 def test_milestone_precedes_resume_cursor(tmp_path):
     code='''from pathlib import Path
 from unittest.mock import patch
-from scripts import extend_train as t
+from workloads.instruction import extend_train as t
 root=Path(__import__('sys').argv[1]); paths=[]
 def save(path,*args): paths.append(path.name)
 with patch.object(t,'save',save):

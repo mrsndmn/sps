@@ -1,7 +1,7 @@
 from copy import deepcopy
 from pathlib import Path
 import pytest
-from scripts import provenance_train as t
+from workloads.provenance import provenance_train as t
 
 
 def row(i, mode='nonthinking', size=4):

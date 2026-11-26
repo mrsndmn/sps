@@ -8,7 +8,7 @@ def test_final_step_resume_and_interruption(tmp_path):
     code='''import json
 from pathlib import Path
 from unittest.mock import patch
-from scripts import base50_train as t
+from workloads.adaptation import base50_train as t
 root=Path(__import__('sys').argv[1])
 # Represent an existing latest checkpoint at the final step, without final.pt.
 (root/'latest.pt').write_text('last-step state')

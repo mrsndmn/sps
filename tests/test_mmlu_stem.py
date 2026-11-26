@@ -1,7 +1,7 @@
 import hashlib
 import json
 import pytest
-from scripts.report_mmlu_stem import STEM_SUBJECTS, read_samples, summarize
+from workloads.evaluation.report_mmlu_stem import STEM_SUBJECTS, read_samples, summarize
 
 
 def sample(index, row, answer):
@@ -35,7 +35,7 @@ def test_active_file_is_never_modified(tmp_path):
 
 def test_subset_reuse_noncontiguous_ids(tmp_path):
     from types import SimpleNamespace
-    from scripts.mmlu_subset import selected_indices, reuse_samples, validate_saved, SOURCE_SIGNATURE
+    from workloads.evaluation.mmlu_subset import selected_indices, reuse_samples, validate_saved, SOURCE_SIGNATURE
     data = [dict(subject=s, answer=0) for s in ['anatomy', 'astronomy', 'anatomy', 'machine_learning']]
     indices = selected_indices(data, stem=True)
     assert indices == [1, 3]
@@ -56,7 +56,7 @@ def test_subset_reuse_noncontiguous_ids(tmp_path):
 
 def test_merge_full_stem_deduplicates_and_rejects_conflicts(tmp_path):
     from types import SimpleNamespace
-    from scripts.mmlu_subset import reuse_full_and_stem, SOURCE_SIGNATURE, STEM_SIGNATURE
+    from workloads.evaluation.mmlu_subset import reuse_full_and_stem, SOURCE_SIGNATURE, STEM_SIGNATURE
     data = [dict(subject=s, answer=0) for s in ['anatomy', 'astronomy', 'machine_learning']]
     exp = SimpleNamespace(name='fixture')
     rows = [sample(i, row, 'A') | {'correct': True} for i, row in enumerate(data)]
@@ -76,10 +76,10 @@ def test_merge_full_stem_deduplicates_and_rejects_conflicts(tmp_path):
 def test_historical_stem_report_ignores_current_evaluator_signature(tmp_path, monkeypatch):
     import sys
     from types import SimpleNamespace
-    from scripts import experiment_suite as e
-    from src.experiments import environment
-    from scripts import report_mmlu_stem as report
-    from scripts.mmlu_config import experiment_configs
+    from orchestration import experiment_suite as e
+    from experiments import environment
+    from workloads.evaluation import report_mmlu_stem as report
+    from experiments.mmlu_config import experiment_configs
     data = [dict(subject='astronomy', answer=0)]
     exp = experiment_configs[0]
     folder = tmp_path/'mmlu-stem-generation/runs/out'/exp.name/'full'

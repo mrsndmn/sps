@@ -1,6 +1,6 @@
 import json
 import pytest
-from scripts.paper_diagnostics import align, paired, read_rows, transitions
+from workloads.evaluation.paper_diagnostics import align, paired, read_rows, transitions
 
 
 def row(i=0, answer='A', target='A'):

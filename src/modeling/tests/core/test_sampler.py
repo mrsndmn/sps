@@ -5,7 +5,7 @@ import random
 import pytest
 
 from training.sampler import FixedRandomChunkDistributedSampler, initial_sampler_offset
-from scripts.experiment_suite import BLOCK_SIZE, TRAIN_TOKENS, collect_experiments, overrides
+from orchestration.experiment_suite import BLOCK_SIZE, TRAIN_TOKENS, collect_experiments, overrides
 
 
 def test_pilot_corpus_supplies_every_rank_for_the_entire_training_budget():

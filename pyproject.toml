@@ -25,11 +25,12 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"workloads.readout" = ["*.patch"]
+
 [tool.pytest.ini_options]
 testpaths = ["src/modeling/tests"]
-# Put the repo root on sys.path so tests can `import scripts.evaluate` (the repo's
-# eval entrypoint) without colliding with the installed HuggingFace `evaluate` package.
-pythonpath = ["."]
+pythonpath = ["src"]
 markers = [
     "cuda: requires CUDA GPU",
     "triton: requires Triton (implies CUDA)",

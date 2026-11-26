@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-from scripts import qwen4b_drafter as jobs, qwen4b_drafter_data as prepared
-from scripts import qwen4b_drafter_train as training
+from workloads.distillation import qwen4b_drafter as jobs, qwen4b_drafter_data as prepared
+from workloads.distillation import qwen4b_drafter_train as training
 
 
 def test_blocks_share_prefix_features_without_crossing_anchors():

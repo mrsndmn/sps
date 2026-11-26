@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from scripts import draft_sweep as sweep
+from workloads.serving import draft_sweep as sweep
 
 
 def test_sweep_has_matched_one_gpu_evaluations(monkeypatch):
@@ -128,8 +128,8 @@ def test_embedding_phase_enables_decoder_checkpoint_recomputation():
     from transformers import Qwen3Config, Qwen3ForCausalLM
 
     from modeling.models.sps.pretrained import PretrainedSPS
-    from scripts import draft_sweep_train, vllm_sps_train
-    from scripts.vllm_sps_model import QwenSPSMTP, horizon_targets
+    from workloads.serving import draft_sweep_train, vllm_sps_train
+    from workloads.serving.vllm_sps_model import QwenSPSMTP, horizon_targets
 
     config = Qwen3Config(
         vocab_size=32,

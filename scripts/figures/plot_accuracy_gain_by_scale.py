@@ -42,7 +42,7 @@ from matplotlib.lines import Line2D
 
 # ``export_main_results_table`` lives in scripts/tables (not an installed package); ``plotting.*``
 # is importable via the installed ``src`` package.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tables"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from plotting.wandb_runs import DEFAULT_WANDB_PROJECT  # noqa: E402
 from plotting.style import (  # noqa: E402
@@ -54,7 +54,7 @@ from plotting.style import (  # noqa: E402
     enable_latex,
     sc,
 )
-from export_main_results_table import collect_table_rows  # noqa: E402
+from plotting.export_main_results_table import collect_table_rows  # noqa: E402
 
 
 DEFAULT_SCALES = ("xs", "s", "m", "l", "xl")

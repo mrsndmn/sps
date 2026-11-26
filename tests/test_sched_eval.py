@@ -13,7 +13,11 @@ import pytest
 @pytest.mark.parametrize('workload',['quality','ifeval-nonthinking','ifeval-thinking','mmlu-nonthinking','mmlu-thinking'])
 def test_worker_uses_selected_checkpoint_and_only_selected_workload(tmp_path,monkeypatch,variant,workload):
     import torch
-    from scripts import sched_eval as r, instruct_config as c, instruct_common, instruct_data, instruct_evaluate
+    from workloads.instruction import sched_eval as r
+    from experiments import instruct_config as c
+    from workloads.instruction import instruct_common
+    from data import instruct_data
+    from workloads.instruction import instruct_evaluate
     sc=r.sc
     exp=SimpleNamespace(name='example',recipe='staged_sps')
     source=tmp_path/'source';(source/'eval').mkdir(parents=True)
@@ -72,8 +76,9 @@ def test_worker_uses_selected_checkpoint_and_only_selected_workload(tmp_path,mon
 
 def test_checkpoint_gate_selects_best_and_rejects_wrong_step(tmp_path,monkeypatch):
     import torch
-    from scripts import sched_common as sc, sched_config as c
-    from scripts import instruct_config as source
+    from workloads.instruction import sched_common as sc
+    from experiments import sched_config as c
+    from experiments import instruct_config as source
     exp=SimpleNamespace(name='example');plan={'steps':512,'stage_steps':102}
     monkeypatch.setattr(sc.e,'output_dir',lambda exp:tmp_path)
     monkeypatch.setattr(sc,'source_plan',lambda:plan)
@@ -89,7 +94,7 @@ def test_checkpoint_gate_selects_best_and_rejects_wrong_step(tmp_path,monkeypatc
 
 def test_optimizer_and_model_resume_follow_same_lr_trajectory(tmp_path,monkeypatch):
     import torch
-    from scripts import sched_train as r
+    from workloads.instruction import sched_train as r
     exp=SimpleNamespace(name='tiny',recipe='continued_ar')
     plan={'steps':8,'stage_steps':2}
     monkeypatch.setattr(r,'ACTIVE_EXPERIMENT',exp,raising=False)

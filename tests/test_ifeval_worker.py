@@ -11,7 +11,8 @@ import pytest
 @pytest.mark.parametrize('trainable', [False, True])
 def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch, trainable, mode):
     import torch
-    from scripts import ifeval_run as r, instruct_common, instruct_evaluate, instruct_config
+    from workloads.instruction import ifeval_run as r, instruct_common, instruct_evaluate
+    from experiments import instruct_config
     source = tmp_path/'source'; source.mkdir()
     (source/'eval').mkdir()
     (source/'final.pt').write_bytes(b'test checkpoint')
@@ -73,7 +74,7 @@ def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch
 
 
 def test_legacy_import_preserves_answers_and_rejects_protocol_changes(tmp_path, monkeypatch):
-    from scripts import ifeval_run as r
+    from workloads.instruction import ifeval_run as r
     monkeypatch.setattr(r, 'RUN_ROOT', tmp_path)
     exp = SimpleNamespace(name='example')
     legacy = r.output_dir(exp)/'eval'; legacy.mkdir(parents=True)

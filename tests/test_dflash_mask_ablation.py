@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from scripts.dflash_mask_ablation import (
+from workloads.distillation.dflash_mask_ablation import (
     Experiment,
     block_attention,
     commit_round,

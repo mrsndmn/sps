@@ -3,7 +3,7 @@ import json
 import os
 import subprocess
 import sys
-from scripts import extend_config as sc, extend_config as c
+from experiments import extend_config as sc, extend_config as c
 
 
 def test_each_epoch_is_complete_and_different():
@@ -25,17 +25,17 @@ def test_cli_and_one_gpu_eval_identity(tmp_path):
     # Keep real CLI parsing and payload generation, isolate completion markers.
     cli = '''from pathlib import Path
 import sys
-from scripts import extend_run as runner
+from workloads.instruction import extend_run as runner
 runner.sc.e.COMMON_ROOT = Path(sys.argv.pop(1))
 runner.main()
 '''
     for phase,step in [('train','2048'),('eval','1024'),('eval','1536'),('eval','2048')]:
         p=subprocess.run([sys.executable,'-c',cli,str(tmp_path),'--phase',phase,'--variant',step,'--dry','--filter','staged_sps_ce'],capture_output=True,text=True,check=True,env=env)
-        assert 'scripts.extend_run' in p.stdout
+        assert 'scripts/instruction/extend_run.py' in p.stdout
         assert f'step{step}' in p.stdout
         assert ('a100.4gpu' if phase=='train' else 'a100.1gpu') in p.stdout
-    code="""from scripts.extend_run import experiments
-from scripts import extend_common as sc
+    code="""from workloads.instruction.extend_run import experiments
+from workloads.instruction import extend_common as sc
 exp=experiments('staged_sps_ce')[0]
 assert sc.output_dir('1024',exp,'ifeval-thinking')!=sc.output_dir('2048',exp,'ifeval-thinking')
 assert sc.output_dir('1024',exp)==sc.output_dir('2048',exp)

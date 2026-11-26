@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import serving_runtime as runtime
+from workloads.serving import serving_runtime as runtime
 
 
 def test_runtime_job_uses_one_gpu_and_preserves_project_interpreter():

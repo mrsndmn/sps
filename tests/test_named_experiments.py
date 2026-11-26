@@ -7,13 +7,13 @@ import sys
 
 import pytest
 
-from scripts.named.registry import named_runs, resolve
-from scripts.suite_registry import WORKER_MODULES
+from orchestration.named.registry import named_runs, resolve
+from orchestration.suite_registry import WORKER_SCRIPTS
 
 
 def test_catalog_covers_common_workers_and_disambiguates_archives():
     runs = named_runs()
-    assert {family for family, _ in runs.values()} == set(WORKER_MODULES)
+    assert {family for family, _ in runs.values()} == set(WORKER_SCRIPTS)
     with pytest.raises(ValueError, match="Ambiguous"):
         resolve("smollm2_original_ar", runs)
     family, run = resolve("ar-sps-360m-ce/smollm2_original_ar", runs)
@@ -22,7 +22,7 @@ def test_catalog_covers_common_workers_and_disambiguates_archives():
     assert "mmlu-full-resume/qwen0.6_ce" not in runs
 
 
-@pytest.mark.parametrize("entry, gpus", [("run_eval.py", 1), ("run_train_jobs.py", 4)])
+@pytest.mark.parametrize("entry, gpus", [("scripts/run_eval.py", 1), ("scripts/run_train_jobs.py", 4)])
 def test_named_preview_overrides_ambient_suite(entry, gpus):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE="10b")
     name = "s_standard_pilot_1b"
@@ -45,16 +45,16 @@ def test_named_preview_overrides_ambient_suite(entry, gpus):
 def test_readout_named_preview_uses_its_checkpoint_and_worker():
     name = "qwen3-instruct-real-readout-mtp/gsm8k-A-nonthinking"
     out = subprocess.check_output(
-        [sys.executable, "run_eval.py", "--experiment", name, "--dry"], text=True
+        [sys.executable, "scripts/run_eval.py", "--experiment", name, "--dry"], text=True
     )
     plan = json.loads(out)
-    from scripts import instruct_config
+    from experiments import instruct_config
 
     assert plan["settings"]["generation"] == instruct_config.GENERATION["nonthinking"]
     assert plan["settings"]["REVISION"] == instruct_config.REVISION
     assert plan["payload"]["instance_type"] == "a100.1gpu"
     assert (
-        "scripts.real_readout_gsm8k --worker --filter A-nonthinking"
+        "scripts/readout/real_readout_gsm8k.py --worker --filter A-nonthinking"
         in plan["payload"]["script"]
     )
 
@@ -64,7 +64,7 @@ def test_inherited_mtp_settings_invalidate_markers(suite):
     code = """
 from pathlib import Path
 from unittest.mock import patch
-from scripts import experiment_suite as registry
+from orchestration import experiment_suite as registry
 original = Path.read_bytes
 previous = registry.design_signature()
 def changed(path):
@@ -83,21 +83,21 @@ with patch.object(Path, 'read_bytes', changed):
 
 
 def test_named_mask_ablation_selects_submission_mode(monkeypatch):
-    from scripts.named import cli
+    from orchestration.named import cli
     from types import SimpleNamespace
-    from scripts.named import special_families
+    from orchestration.named import special_families
 
     monkeypatch.setattr(
         special_families,
         "load",
         lambda _: SimpleNamespace(
-            __name__="scripts.distillation.dflash_mask_ablation", experiment_configs=[]
+            __name__="workloads.distillation.dflash_mask_ablation", experiment_configs=[]
         ),
     )
     monkeypatch.setattr(
         sys,
         "argv",
-        ["run_eval.py", "--experiment", "dflash-mask-ablation/paired-masks"],
+        ["scripts/run_eval.py", "--experiment", "dflash-mask-ablation/paired-masks"],
     )
     calls = []
     monkeypatch.setattr(cli.subprocess, "call", lambda argv: calls.append(argv) or 0)
@@ -105,25 +105,30 @@ def test_named_mask_ablation_selects_submission_mode(monkeypatch):
         context.setattr(os, "environ", os.environ.copy())
         assert cli.main("eval") == 0
     assert calls == [
-        [sys.executable, "-m", "scripts.distillation.dflash_mask_ablation", "--submit"]
+        [sys.executable, "scripts/distillation/dflash_mask_ablation.py", "--submit"]
     ]
 
 
-def test_pilot_signature_tracks_final_evaluation_arguments(monkeypatch):
-    from scripts import experiment_suite as experiments
-
-    original = experiments.eval_command
-    previous = experiments.design_signature()
-    monkeypatch.setattr(
-        experiments,
-        "eval_command",
-        lambda run, task: [*original(run, task), "+limit=20"],
+def test_pilot_signature_tracks_final_evaluation_arguments():
+    code = """
+from unittest.mock import patch
+from orchestration import experiment_suite
+original = experiment_suite.eval_command
+previous = experiment_suite.design_signature()
+with patch.object(
+    experiment_suite, "eval_command", lambda run, task: [*original(run, task), "+limit=20"]
+):
+    assert experiment_suite.design_signature() != previous
+"""
+    subprocess.run(
+        [sys.executable, "-c", code],
+        env=dict(os.environ, SPS_EXPERIMENT_SUITE="1b"),
+        check=True,
     )
-    assert experiments.design_signature() != previous
 
 
 def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
-    from scripts.named import cap_jobs
+    from orchestration.named import cap_jobs
 
     monkeypatch.setattr(cap_jobs.compare, "ROOT", tmp_path)
     prompts = tmp_path / "cohort.json"
@@ -151,7 +156,7 @@ def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
 )
 def test_named_cap_preview_matches_worker_timeout(name, hours):
     out = subprocess.check_output(
-        [sys.executable, "run_eval.py", "--experiment", name, "--dry"], text=True
+        [sys.executable, "scripts/run_eval.py", "--experiment", name, "--dry"], text=True
     )
     preview, end = json.JSONDecoder().raw_decode(out)
     payload = json.loads(out[end:])
@@ -161,7 +166,7 @@ def test_named_cap_preview_matches_worker_timeout(name, hours):
 
 def test_teacher_cap_receipt_reuses_published_report_identity(monkeypatch, capsys):
     from hashlib import sha256
-    from scripts.named import cap_jobs
+    from orchestration.named import cap_jobs
 
     monkeypatch.setattr(sys, "argv", ["cap_jobs", "teacher", "--dry"])
     cap_jobs.main()
@@ -177,7 +182,7 @@ def test_teacher_cap_receipt_reuses_published_report_identity(monkeypatch, capsy
 @pytest.mark.parametrize("arm", [None, "original", "unloop"])
 def test_cap_reuses_active_published_receipt(arm, tmp_path, monkeypatch, capsys):
     from types import ModuleType
-    from scripts.named import cap_jobs
+    from orchestration.named import cap_jobs
 
     job_name = "lm-mpi-job-22222222-2222-4222-8222-222222222222"
     if arm:
@@ -232,8 +237,8 @@ def test_cap_reuses_active_published_receipt(arm, tmp_path, monkeypatch, capsys)
 
 def test_cap_report_identities_track_inherited_settings(tmp_path, monkeypatch):
     from pathlib import Path
-    from scripts.named import cap_jobs
-    from scripts.source_compatibility import source_hash
+    from orchestration.named import cap_jobs
+    from orchestration.source_compatibility import source_hash
 
     teacher, compare = cap_jobs.teacher, cap_jobs.compare
     monkeypatch.setattr(compare, "ROOT", tmp_path)
@@ -258,7 +263,7 @@ def test_cap_report_identities_track_inherited_settings(tmp_path, monkeypatch):
 def test_cap_completed_comparison_skips_cohort_preparation(
     tmp_path, monkeypatch, capsys
 ):
-    from scripts.named import cap_jobs
+    from orchestration.named import cap_jobs
 
     compare = cap_jobs.compare
     monkeypatch.setattr(compare, "ROOT", tmp_path)
@@ -278,7 +283,7 @@ def test_cap_completed_comparison_skips_cohort_preparation(
 
 
 def test_teacher_cap_assists_require_archived_design(monkeypatch):
-    from scripts.named import cap_jobs
+    from orchestration.named import cap_jobs
 
     teacher = cap_jobs.teacher
     monkeypatch.setattr(teacher, "source_hash", lambda _: "different-design")
@@ -288,11 +293,11 @@ def test_teacher_cap_assists_require_archived_design(monkeypatch):
 
 def test_unprepared_drafter_prints_worker_command(tmp_path):
     from types import SimpleNamespace
-    from scripts.named.distillation import preview_drafter
-    from scripts.named.standalone import Job
+    from orchestration.named.distillation import preview_drafter
+    from orchestration.named.standalone import Job
 
     module = SimpleNamespace(
-        __name__="scripts.distillation.qwen4b_drafter",
+        __name__="workloads.distillation.qwen4b_drafter",
         training=SimpleNamespace(DATA=tmp_path, DEFAULT_DATASET="smoltalk"),
     )
     plan = Job(
@@ -308,8 +313,7 @@ def test_unprepared_drafter_prints_worker_command(tmp_path):
     assert preview["pending_input"] == str(tmp_path / "manifest.json")
     assert preview["worker_command"] == [
         sys.executable,
-        "-m",
-        module.__name__,
+        "scripts/distillation/qwen4b_drafter.py",
         *plan.args,
         "--worker",
     ]
@@ -318,8 +322,8 @@ def test_unprepared_drafter_prints_worker_command(tmp_path):
 
 @pytest.mark.parametrize("mode", ["thinking", "nonthinking"])
 def test_provenance_preview_uses_evaluation_generation(mode):
-    from scripts.named.special_families import provenance
-    from scripts import provenance_evaluate, provenance_prepare
+    from orchestration.named.special_families import provenance
+    from workloads.provenance import provenance_evaluate, provenance_prepare
 
     plans = list(provenance())
     prep = next(plan for plan in plans if plan.phase == "prepare")
@@ -340,12 +344,12 @@ def test_provenance_preview_uses_evaluation_generation(mode):
 )
 @pytest.mark.parametrize("phase", ["train", "probe"])
 def test_named_train_preview_includes_shared_optimizer_and_context(family, run, phase):
-    from scripts import vllm_sps_train
+    from workloads.serving import vllm_sps_train
 
     out = subprocess.check_output(
         [
             sys.executable,
-            "run_train_jobs.py",
+            "scripts/run_train_jobs.py",
             "--experiment",
             family + "/" + run,
             "--phase",

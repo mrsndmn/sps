@@ -3,13 +3,13 @@ import sys
 from types import SimpleNamespace as NS
 import torch
 import pytest
-from scripts import sampling_backbone_precision as b
+from workloads.serving import sampling_backbone_precision as b
 
 
 def test_one_gpu_isolated_payload():
     result = b.payload(b.job_configs[0], Path('/staged'))
     assert result['instance_type'] == b.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
-    assert 'scripts.sampling_backbone_precision --worker' in result['script']
+    assert 'scripts/serving/sampling_backbone_precision.py --worker' in result['script']
     assert b.ROOT not in (b.precision.ROOT, b.audit.ROOT, b.cache.ROOT)
 
 

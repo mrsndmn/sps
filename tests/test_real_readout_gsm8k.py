@@ -1,6 +1,6 @@
-from scripts.real_readout_gsm8k import answer
+from workloads.readout.real_readout_gsm8k import answer
 
-from scripts.readout import readout_archive
+from workloads.readout import readout_archive
 
 
 def test_exact_final_numeric_line():

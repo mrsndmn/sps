@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from scripts import qwen_adapter_run as cfg
+from workloads.adaptation import qwen_adapter_run as cfg
 
 
 def test_attention_mlp_scope():
     command = """from pathlib import Path
-from scripts import qwen_adapter_run as cfg
+from workloads.adaptation import qwen_adapter_run as cfg
 arm, = cfg.experiment_configs
 assert arm.dora and not arm.rs and arm.lr == 1e-4
 assert set(cfg.TARGETS) == {'q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj'}
@@ -75,7 +75,7 @@ def test_adapter_roundtrip(scope, index, select_scope):
     import torch
     from transformers import Qwen3Config, Qwen3ForCausalLM
     from modeling.models.sps.pretrained import PretrainedSPS
-    from scripts.qwen_adapter_worker import attach
+    from workloads.adaptation.qwen_adapter_worker import attach
     import copy
     config = Qwen3Config(vocab_size=64, hidden_size=32, intermediate_size=64,
         num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2, head_dim=8)

@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from scripts import dflash_kd as jobs, dflash_kd_train as training, dflash_repro_train as hard
+from workloads.distillation import dflash_kd as jobs, dflash_kd_train as training, dflash_repro_train as hard
 
 
 def test_teacher_indices_use_previous_token_and_reuse_overlapping_positions():

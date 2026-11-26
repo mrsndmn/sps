@@ -8,10 +8,10 @@ import torch
 from transformers import LlamaConfig, LlamaForCausalLM, Qwen3Config, Qwen3ForCausalLM
 
 from modeling.models.sps.pretrained import PretrainedSPS
-from scripts.ar_sps_train import optimizer_for
-from scripts.ar_sps_common import loss
-from scripts.ar_sps_run import calibrated_plan, reserve
-from scripts import ar_sps_config as c
+from workloads.adaptation.ar_sps_train import optimizer_for
+from workloads.adaptation.ar_sps_common import loss
+from workloads.adaptation.ar_sps_run import calibrated_plan, reserve
+from experiments import ar_sps_config as c
 
 
 def make_model(sps=True, family="llama"):
@@ -76,7 +76,7 @@ def test_freeze_then_unfreeze_ties_and_restore(model):
 
 
 def test_calibration_and_budget(tmp_path, monkeypatch):
-    import scripts.ar_sps_run as run
+    import workloads.adaptation.ar_sps_run as run
     monkeypatch.setattr(run.e, 'ARTIFACTS_ROOT', tmp_path)
     probes = {'staged': {'embedding': 1., 'full': 2.}, 'direct': {'full': 2.}, 'ar': {'full': 1.}}
     plan = calibrated_plan(probes)
@@ -93,15 +93,15 @@ def test_calibration_and_budget(tmp_path, monkeypatch):
 
 
 def test_content_split_and_paired_intervals():
-    from scripts.ar_sps_data import split_for
-    from scripts.ar_sps_report import paired_interval
+    from data.ar_sps_data import split_for
+    from workloads.adaptation.ar_sps_report import paired_interval
     assert split_for('same document') == split_for('same document')
     assert paired_interval([0, 1], [0, 1]) == [0., 0.]
     with pytest.raises(ValueError): paired_interval([1], [])
 
 
 def test_report_exposure_and_per_task_retention(tmp_path, monkeypatch):
-    from scripts import ar_sps_report as report
+    from workloads.adaptation import ar_sps_report as report
     monkeypatch.setattr(report.c, 'PRIMARY_METRICS', {'task_a': 'acc,none', 'task_b': 'acc,none'})
     monkeypatch.setattr(report.e, 'design_signature', lambda: 'test')
     def write(root, step, scores):
@@ -127,7 +127,7 @@ def test_report_exposure_and_per_task_retention(tmp_path, monkeypatch):
 
 
 def test_audit_checks_reference_and_production_causality(model):
-    from scripts.ar_sps_evaluate import audit_model
+    from workloads.adaptation.ar_sps_evaluate import audit_model
     result = audit_model(model(False), torch.tensor([[2, 4, 8, 6]]), 2)
     assert result['native_max_abs'] == 0
     assert result['float32']['causal_max_abs'] == 0
@@ -136,7 +136,7 @@ def test_audit_checks_reference_and_production_causality(model):
 
 
 def test_audit_rejects_future_leakage(monkeypatch, model):
-    from scripts.ar_sps_evaluate import audit_model
+    from workloads.adaptation.ar_sps_evaluate import audit_model
     m = model(False)
     original = m.forward
     def leaky(ids, **kwargs):
@@ -150,7 +150,7 @@ def test_audit_rejects_future_leakage(monkeypatch, model):
 
 
 def test_audit_records_shape_drift_without_relaxing_reference(monkeypatch, model):
-    from scripts.ar_sps_evaluate import audit_model
+    from workloads.adaptation.ar_sps_evaluate import audit_model
     m = model(False)
     original = m.forward
     def shape_dependent(ids, **kwargs):
@@ -192,7 +192,7 @@ def test_native_kd_teacher_freeze_and_student_update(model):
 
 def test_same_suite_report_control_routing(tmp_path, monkeypatch):
     from types import SimpleNamespace
-    from scripts import ar_sps_report as report
+    from workloads.adaptation import ar_sps_report as report
     monkeypatch.setattr(c,'DISTILLATION',False)
     monkeypatch.setattr(c,'REPORT_BASELINE','qwen_ar')
     monkeypatch.setattr(c,'ENDPOINT_COMPARISONS',(('qwen_ce','qwen_kd'),))

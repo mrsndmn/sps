@@ -9,9 +9,9 @@ import torch
 
 def test_unfreeze_registry_and_matched_continuation():
     code='''
-from scripts import experiment_suite as e
+from orchestration import experiment_suite as e
 import json
-from scripts.mlspace_launch import payload
+from orchestration.mlspace_launch import payload
 print(json.dumps(dict(names=[x.name for x in e.collect_experiments()],horizons=[x.horizons for x in e.collect_experiments()],
  root=str(e.ARTIFACTS_ROOT),steps=e.mtp.MTP_TRAIN_STEPS,budget=e.TRAIN_TOKENS,parent=e.mtp.MTP_PARENT_INPUT_TOKENS,
  lr=e.mtp.MTP_LR,emb_lr=e.mtp.MTP_EMBED_LR,cmd=e.train_command(e.collect_experiments()[0]),
@@ -23,13 +23,13 @@ print(json.dumps(dict(names=[x.name for x in e.collect_experiments()],horizons=[
     assert d['parent']==1_000_013_824
     assert d['steps']==763 and d['budget']==50_003_968
     assert d['lr']==1e-5 and d['emb_lr']==1e-4
-    assert 'scripts.mtp_train' in d['cmd']
-    assert 'scripts.mtp_run' in d['payload']['script']
+    assert 'scripts/speculative/mtp_train.py' in d['cmd']
+    assert 'scripts/speculative/mtp_run.py' in d['payload']['script']
     assert d['payload']['instance_type']=='a100.4gpu'
 
 
 def test_plain_ce_includes_first_horizon_and_padding():
-    from scripts.mtp_train import adaptation_loss
+    from workloads.speculative.mtp_train import adaptation_loss
     torch.manual_seed(7)
     logits=torch.randn(2,3,4,9,requires_grad=True)
     labels=torch.randint(0,9,(2,3,4));labels[0,1,2:]=-100
@@ -42,8 +42,8 @@ def test_plain_ce_includes_first_horizon_and_padding():
 
 
 def test_optimizer_deduplicates_tied_embeddings_and_preserves_lr_ratio(monkeypatch):
-    from scripts.mtp_train import optimizer_groups
-    from scripts import experiment_suite as e
+    from workloads.speculative.mtp_train import optimizer_groups
+    from orchestration import experiment_suite as e
     from types import SimpleNamespace
     class Draft(torch.nn.Module):
         def __init__(self):
@@ -70,9 +70,9 @@ def test_optimizer_deduplicates_tied_embeddings_and_preserves_lr_ratio(monkeypat
 
 
 def test_full_checkpoint_restores_backbone_and_tied_weights(tmp_path,monkeypatch):
-    from scripts import experiment_suite as e
-    from scripts.mtp_train import save_checkpoint
-    from scripts.mtp_common import restore_draft
+    from orchestration import experiment_suite as e
+    from workloads.speculative.mtp_train import save_checkpoint
+    from workloads.speculative.mtp_common import restore_draft
     class Draft(torch.nn.Module):
         def __init__(self):
             super().__init__();self.horizons=2
@@ -95,7 +95,7 @@ def test_full_checkpoint_restores_backbone_and_tied_weights(tmp_path,monkeypatch
 
 
 def test_changed_parent_cannot_be_used_for_before_after_evaluation(tmp_path,monkeypatch):
-    from scripts import mtp_common
+    from workloads.speculative import mtp_common
     source=tmp_path/'source.pt';source.write_bytes(b'source')
     data=tmp_path/'data';data.mkdir();(data/'manifest.json').write_bytes(b'data')
     parent=tmp_path/'parent.pt';parent.write_bytes(b'learned embeddings')

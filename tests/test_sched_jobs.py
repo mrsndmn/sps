@@ -7,11 +7,12 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from scripts import sched_common as sc, sched_config as c
+from workloads.instruction import sched_common as sc
+from experiments import sched_config as c
 
 
 def run(*args):
-    return subprocess.run([sys.executable,'-c','import tempfile; from pathlib import Path; from scripts import sched_run as r; t=tempfile.TemporaryDirectory(); r.sc.e.COMMON_ROOT=Path(t.name); r.main()',*args],capture_output=True,text=True,
+    return subprocess.run([sys.executable,'-c','import tempfile; from pathlib import Path; from workloads.instruction import sched_run as r; t=tempfile.TemporaryDirectory(); r.sc.e.COMMON_ROOT=Path(t.name); r.main()',*args],capture_output=True,text=True,
         env=dict(os.environ,SPS_EXPERIMENT_SUITE=c.SOURCE_SUITE))
 
 
@@ -20,7 +21,7 @@ def test_dry_jobs_are_isolated_and_have_required_gpu_count(variant,phase,count,g
     p=run('--variant',variant,'--phase',phase,'--dry')
     assert p.returncode==0,p.stderr
     assert p.stdout.count(f'"instance_type": "a100.{gpus}gpu"')==count
-    assert p.stdout.count('scripts.sched_run --worker')==count
+    assert p.stdout.count('scripts/instruction/sched_run.py --worker')==count
     assert 'qwen3_instruct_original_ar' not in p.stdout
     if phase=='eval':
         for workload in c.WORKLOADS:
@@ -36,7 +37,7 @@ def test_mode_filter_and_invalid_worker_routes():
 
 
 def test_schedule_still_requires_its_archived_source():
-    p=subprocess.run([sys.executable,'-c',"""from scripts import sched_common as s
+    p=subprocess.run([sys.executable,'-c',"""from workloads.instruction import sched_common as s
 try:
     s.signature()
 except RuntimeError as error:
@@ -56,12 +57,12 @@ else:
     ],
 )
 def test_shared_rerun_code_matches_archived_design_and_tracks_changes(tmp_path, family, archived):
-    from scripts.design_compatibility import rerun_signature
+    from orchestration.design_compatibility import rerun_signature
 
     folder = Path(sc.__file__).parent
     assert rerun_signature(family, c.SOURCE_SIGNATURE, folder) == archived
     for source in [*folder.glob(f"{family}_*.py"), folder / "rerun_jobs.py", folder / "rerun_eval.py",
-                   folder.parents[1] / "src/experiments" / f"{family}_config.py"]:
+                   folder.parents[1] / "experiments" / f"{family}_config.py"]:
         (tmp_path / source.name).write_bytes(source.read_bytes())
     migrated = rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path)
     (tmp_path / "rerun_eval.py").write_text("changed")
@@ -79,7 +80,7 @@ def test_warmup_cosine_endpoints_and_monotonicity(total):
 
 
 def test_sps_stage_reset_and_ar_single_schedule():
-    from scripts import instruct_config as source
+    from experiments import instruct_config as source
     plan=dict(steps=512,stage_steps=102)
     assert sc.learning_rate('staged_sps',30,plan)==source.EMBED_LR
     assert sc.learning_rate('staged_sps',101,plan)==0
@@ -94,7 +95,8 @@ def test_sps_stage_reset_and_ar_single_schedule():
 
 
 def test_terminal_marker_skips_and_stale_marker_fails(tmp_path,monkeypatch,capsys):
-    from scripts import mlspace_launch as launch, sched_run as r
+    from orchestration import mlspace_launch as launch
+    from workloads.instruction import sched_run as r
     exp=SimpleNamespace(name='example',trainable=True)
     monkeypatch.setattr(sc.e,'collect_experiments',lambda _: [exp])
     monkeypatch.setattr(sc,'output_dir',lambda *args:tmp_path)

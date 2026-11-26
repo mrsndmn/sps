@@ -9,16 +9,16 @@ import pytest
 
 def test_separate_ifeval_dry_plan_preserves_pre_migration_design(tmp_path):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE='ar-sps-qwen3-1.7b-instruct')
-    result = subprocess.run([sys.executable, '-c', 'from pathlib import Path; import sys; from scripts import ifeval_run as r; r.RUN_ROOT=Path(sys.argv[1]); sys.argv=["ifeval","--dry"]; r.main()', str(tmp_path)], env=env,
+    result = subprocess.run([sys.executable, '-c', 'from pathlib import Path; import sys; from workloads.instruction import ifeval_run as r; r.RUN_ROOT=Path(sys.argv[1]); sys.argv=["ifeval","--dry"]; r.main()', str(tmp_path)], env=env,
                             capture_output=True, text=True, check=True)
     assert result.stdout.count('"instance_type": "a100.1gpu"') == 10
-    assert result.stdout.count('scripts.ifeval_run --worker --filter') == 10
-    assert 'scripts.instruct_run' not in result.stdout
+    assert result.stdout.count('scripts/instruction/ifeval_run.py --worker --filter') == 10
+    assert 'scripts/instruction/instruct_run.py' not in result.stdout
     # The parent of the catalog migration already differed from the archived
     # instruct run. Preserve its actual signature and the source-identity gate.
     code = """
-from scripts import experiment_suite as e
-from scripts import ifeval_run
+from orchestration import experiment_suite as e
+from workloads.instruction import ifeval_run
 assert e.design_signature() == '8386a4caf4ed6ac6c20a8eff5c71e01b5f72b5abeb5c5ac6d67158125e3a30b1'
 try:
     ifeval_run.source_check(e.collect_experiments()[0])
@@ -31,7 +31,7 @@ else:
 
 
 def test_source_gate_rejects_mismatched_preparation(tmp_path, monkeypatch):
-    from scripts import ifeval_run as r
+    from workloads.instruction import ifeval_run as r
     monkeypatch.setattr(r.e, 'SUITE', r.c.SOURCE_SUITE)
     monkeypatch.setattr(r.e, 'design_signature', lambda: r.c.SOURCE_SIGNATURE)
     monkeypatch.setattr(r.e, 'ARTIFACTS_ROOT', tmp_path)
@@ -41,7 +41,7 @@ def test_source_gate_rejects_mismatched_preparation(tmp_path, monkeypatch):
 
 
 def test_completed_ifeval_is_skipped_and_stale_marker_rejected(tmp_path, monkeypatch, capsys):
-    from scripts import ifeval_run as r
+    from workloads.instruction import ifeval_run as r
     exp = SimpleNamespace(name='original', trainable=False)
     monkeypatch.setattr(r, 'RUN_ROOT', tmp_path)
     monkeypatch.setattr(r.e, 'collect_experiments', lambda _: [exp])

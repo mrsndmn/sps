@@ -38,7 +38,7 @@ External artifacts root:
 - Paired response replacement: `instruct-provenance-evaluation/reports/nonthinking.json`
   contains validated paired contrasts, bootstrap intervals and crossed held-out NLL;
   `instruct-provenance-evaluation/reports/thinking.json` contains the completed
-  thinking contrasts. `python -m scripts.provenance.provenance_report --mode nonthinking|thinking`
+  thinking contrasts. `python scripts/provenance/provenance_report.py --mode nonthinking|thinking`
   reproduces each report from saved answers. The contrast does not match token
   exposure or answer length.
 - IFEval: `qwen3-instruct-ifeval/runs/out/*/evaluated.json`.
@@ -61,13 +61,13 @@ External artifacts root:
 - Qwen3-4B fixed-weight DFlash mask ablation:
   `dflash-mask-ablation/runs/out/277ae900c11f7e9a/evaluated.json` contains
   paired outputs, greedy references, acceptance counts and timing. Run
-  `python -m scripts.dflash_mask_ablation --report` to print the summary.
+  `python scripts/distillation/dflash_mask_ablation.py --report` to print the summary.
   The one-GPU worker uses the Qwen3-4B and DFlash-b16 snapshots pinned by the
   script from the shared Hugging Face cache.
 - Qwen3-4B trained draft mask and embedding comparison
   `qwen4b-drafter/b0088cb54b3bd646/runs/out/eval-5b067a4174bd18c8/evaluated.json`
   contains all timed outputs, per-position acceptance and exact-output throughput
-  comparisons. Run `python -m scripts.qwen4b_drafter --dataset smoltalk-2048 --phase eval --report`
+  comparisons. Run `python scripts/distillation/qwen4b_drafter.py --dataset smoltalk-2048 --phase eval --report`
   to reproduce the summary. The four sibling run directories contain the
   trained weights and their training reports.
 - DFlash-b16 scratch reproduction on GSM8K
@@ -75,8 +75,8 @@ External artifacts root:
   and `dflash-kd/45d1905c50658e45/runs/out/gsm8k-step-*-5938c51ca9ec/evaluated.json`
   contain hard and soft results for the three checkpoints, per-position
   acceptance, matched-output comparisons and raw timings. Use
-  `python -m scripts.dflash_repro --phase eval --step <step> --report`
-  and `python -m scripts.dflash_kd --phase eval --step <step> --report`.
+  `python scripts/distillation/dflash_repro.py --phase eval --step <step> --report`
+  and `python scripts/distillation/dflash_kd.py --phase eval --step <step> --report`.
   Training cost and job provenance are recorded in
   `experiments/dflash-reproduction.md` and `experiments/dflash-soft-kd.md`.
 - SPS-MTP training/export: `vllm-sps-qwen3/runs/out/qwen3_sps_mtp/` contains
@@ -84,7 +84,7 @@ External artifacts root:
   original Qwen verifier; SPS/SPS-MTP share this final, jointly adapted verifier.
 
 Serving definitions live in `src/experiments/vllm_sps_config.py`, `src/experiments/instruct_config.py`
-(sampling), `scripts/serving/vllm_sps_train.py`, `scripts/serving/vllm_sps_evaluate.py`, `scripts/serving/serving_benchmark.py`
+(sampling), `scripts/serving/vllm_sps_train.py`, `src/workloads/serving/vllm_sps_evaluate.py`, `scripts/serving/serving_benchmark.py`
 and `scripts/serving/serving_graphs.py`. The report formula is in `scripts/serving/vllm_sps_report.py`.
 The 100-question STEM pilot is separate from the ordered partial-MMLU analysis.
 Its three timing repeats reuse the same seeds, not independent quality samples.

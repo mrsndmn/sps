@@ -1,6 +1,6 @@
 """Offline data-boundary tests; no downloads or GPU required."""
 import pytest
-from scripts.instruct_data import (OverlapFilter, encode_example, group_id, parse_thinking,
+from data.instruct_data import (OverlapFilter, encode_example, group_id, parse_thinking,
                                    split_for, valid_messages)
 
 
@@ -91,24 +91,25 @@ def _load_worker(monkeypatch):
     import sys
     import types
     from importlib.util import spec_from_file_location, module_from_spec
-    config = types.ModuleType('scripts.instruct_config')
+    config = types.ModuleType('experiments.instruct_config')
     for name, value in dict(STAGE_FRACTION=.2, TRAIN_HOURS=1., STARTUP_SECONDS=0,
                             MAX_STEPS=10, GLOBAL_BATCH=2, MIN_STEPS=2, SAFETY=1.).items():
         setattr(config, name, value)
     exps = [types.SimpleNamespace(name='ce', recipe='staged_sps', trainable=True),
             types.SimpleNamespace(name='ar', recipe='continued_ar', trainable=True)]
-    registry = types.ModuleType('scripts.experiment_suite')
+    registry = types.ModuleType('orchestration.experiment_suite')
     registry.collect_experiments = lambda: exps
     registry.design_signature = lambda: 'sig'
-    monkeypatch.setitem(sys.modules, 'scripts.experiment_suite', registry)
-    monkeypatch.setitem(sys.modules, 'scripts.instruct_config', config)
-    import scripts
-    monkeypatch.setattr(scripts, 'experiment_suite', registry, raising=False)
-    monkeypatch.setattr(scripts, 'instruct_config', config, raising=False)
-    launcher = types.ModuleType('scripts.mlspace_launch')
+    monkeypatch.setitem(sys.modules, 'orchestration.experiment_suite', registry)
+    monkeypatch.setitem(sys.modules, 'experiments.instruct_config', config)
+    import experiments
+    import orchestration
+    monkeypatch.setattr(orchestration, 'experiment_suite', registry, raising=False)
+    monkeypatch.setattr(experiments, 'instruct_config', config, raising=False)
+    launcher = types.ModuleType('orchestration.mlspace_launch')
     launcher.store_json = lambda *_: None
-    monkeypatch.setitem(sys.modules, 'scripts.mlspace_launch', launcher)
-    spec = spec_from_file_location('instruct_worker_test', 'scripts/instruction/instruct_run.py')
+    monkeypatch.setitem(sys.modules, 'orchestration.mlspace_launch', launcher)
+    spec = spec_from_file_location('instruct_worker_test', 'src/workloads/instruction/instruct_run.py')
     worker = module_from_spec(spec)
     spec.loader.exec_module(worker)
     return worker

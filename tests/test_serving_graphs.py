@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts import serving_graphs as graphs
+from workloads.serving import serving_graphs as graphs
 
 
 def test_graph_arguments_preserve_sampling_target_and_enable_full_decode_capture():
@@ -21,7 +21,7 @@ def test_graph_arguments_preserve_sampling_target_and_enable_full_decode_capture
         assert result.pop("enforce_eager") is False
         assert result.pop("compilation_config") == graphs.COMPILATION
         assert result.pop("worker_extension_cls") == (
-            "scripts.serving_graphs.GraphReplayWorkerExtension"
+            "workloads.serving.serving_graphs.GraphReplayWorkerExtension"
         )
         original.pop("enforce_eager")
         assert result == original
@@ -54,10 +54,10 @@ def test_child_uses_graph_entrypoint_and_source_without_changing_parent(monkeypa
     monkeypatch.setattr(graphs, "BASE_CHILD", lambda *args: calls.append(args))
     env = {"PYTHONPATH": "/staged:/staged/src"}
     graphs.child(
-        ["/python", "-m", "scripts.serving_benchmark", "--eval-worker"], env, 1
+        ["/python", "scripts/serving/serving_benchmark.py", "--eval-worker"], env, 1
     )
     command, settings, hours = calls[0]
-    assert command[2] == "scripts.serving_graphs"
+    assert command[1] == "scripts/serving/serving_graphs.py"
     assert settings["PYTHONPATH"].split(os.pathsep) == [
         str(graphs.SITE),
         "/staged",
@@ -112,7 +112,7 @@ def test_graph_engine_uses_named_rpc_and_installs_importable_extension(
     class LLM:
         def __init__(self, **kwargs):
             assert kwargs["worker_extension_cls"] == (
-                "scripts.serving_graphs.GraphReplayWorkerExtension"
+                "workloads.serving.serving_graphs.GraphReplayWorkerExtension"
             )
 
         def collective_rpc(self, method):
@@ -130,7 +130,7 @@ def test_graph_engine_uses_named_rpc_and_installs_importable_extension(
     vllm = SimpleNamespace(LLM=LLM)
     monkeypatch.setitem(sys.modules, "vllm", vllm)
     monkeypatch.setattr(graphs, "protocol_signature", lambda: "current")
-    from scripts import vllm_sps_evaluate as evaluator
+    from workloads.serving import vllm_sps_evaluate as evaluator
 
     def run(exp):
         arguments = evaluator.engine_arguments(exp, "/export", "revision")
@@ -150,13 +150,13 @@ def test_graph_cli_dry_payload_is_one_gpu_and_distinct_from_eager():
     env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]))
     for phase in ("audit", "eval"):
         result = subprocess.run(
-            [sys.executable, "-m", "scripts.serving_graphs", "--phase", phase, "--dry"],
+            [sys.executable, "scripts/serving/serving_graphs.py", "--phase", phase, "--dry"],
             check=True,
             capture_output=True,
             text=True,
             env=env,
         )
         assert "sps-serving-benchmark graphs " in result.stdout
-        assert "scripts.serving_graphs" in result.stdout
+        assert "scripts/serving/serving_graphs.py" in result.stdout
         assert '"instance_type": "a100.1gpu"' in result.stdout
         assert "vllm-sps-qwen3-cudagraphs" not in str(graphs.EAGER_ROOT)

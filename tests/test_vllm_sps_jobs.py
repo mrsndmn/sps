@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
-from scripts.vllm_sps_evaluate import engine_arguments, select_examples
+from workloads.serving.vllm_sps_evaluate import engine_arguments, select_examples
 
-from scripts import vllm_sps_config as c
-from scripts.serving import serving_benchmark, vllm_sps_run
-from scripts.serving import vllm_sps_common as common
+from experiments import vllm_sps_config as c
+from workloads.serving import serving_benchmark, vllm_sps_run
+from workloads.serving import vllm_sps_common as common
 
 
 def test_eval_jobs_are_single_gpu_and_ordinary_sps_shares_speculative_checkpoint():
@@ -32,7 +32,7 @@ def test_training_jobs_use_the_training_worker_and_allocation(phase):
     exp, = c.collect_experiments(phase)
     body = vllm_sps_run.payload(phase, exp, Path("/staged"), "author", "nick")
     assert body["instance_type"] == vllm_sps_run.launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus]
-    assert f"scripts.serving.vllm_sps_run --worker --phase {phase}" in body["script"]
+    assert f"scripts/serving/vllm_sps_run.py --worker --phase {phase}" in body["script"]
 
 
 def test_stem_selection_is_repeatable_and_covers_subjects():

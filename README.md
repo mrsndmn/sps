@@ -150,17 +150,18 @@ function and records results and conclusions. The implementation defines the run
 | --- | --- |
 | `conf/`, `scripts/train.py`, `scripts/evaluate.py` | Hydra recipes and entry points for direct training and evaluation. |
 | `src/`, `lm_eval_tasks/` | Model implementations, data preparation, training utilities, and evaluation tasks. |
-| `run_train_jobs.py`, `run_eval.py` | Shared MLSpace launchers. Use `--list` for the family catalog and `--list FAMILY` for run names. |
+| `scripts/run_train_jobs.py`, `scripts/run_eval.py` | Shared MLSpace launchers. Use `--list` for the family catalog and `--list FAMILY` for run names. |
 | `src/experiments/` | Typed experiment definitions and numeric settings. |
-| `scripts/` | Family-specific workers and submission protocols. For example, `scripts/readout/real_readout_run.py` defines training and `scripts/readout/real_readout_mmlu.py` evaluates its checkpoints. |
+| `scripts/` | Family-specific command-line entry points. For example, `scripts/readout/real_readout_run.py` starts training and `scripts/readout/real_readout_mmlu.py` evaluates its checkpoints. |
 | `tests/` | Experiment, worker and orchestration tests. Model tests also live under `src/modeling/tests/`. |
 | `docs/paper/`, `figures/` | Manuscript sources and supporting material in the former, figures for the original SPS paper in the latter. |
 
 ### Script families
 
-Choose a directory by the experiment you are working on. The existing
-`python -m scripts.<module>` commands in experiment notes and job receipts
-also resolve to the grouped sources.
+Run programs by file path from the repository root. The shared launchers
+live in `scripts/`, with worker entry points grouped by experiment family.
+`src/orchestration/` builds requests and `src/workloads/` implements workers.
+Previously submitted jobs use the script paths in their own committed snapshots.
 
 | Directory under `scripts/` | Contents |
 | --- | --- |
@@ -172,8 +173,8 @@ also resolve to the grouped sources.
 | `analysis/`, `figures/`, `tables/`, `benchmark/` | Analysis, plots, table exports and performance measurements for the original paper. |
 
 Browse the Qwen3 vLLM probe and training runs with
-`python run_train_jobs.py --list vllm-sps-qwen3`. For evaluation in the isolated
-runtime use `python run_eval.py --list vllm-sps-benchmark`. The draft-length sweep
+`python scripts/run_train_jobs.py --list vllm-sps-qwen3`. For evaluation in the isolated
+runtime use `python scripts/run_eval.py --list vllm-sps-benchmark`. The draft-length sweep
 is in the `vllm-sps-draft-sweep` family. Use `scripts/generate.py` for local checkpoint smoke tests.
 
 SPS-MTP training and its native-readout control use checkpoint metadata and
@@ -185,7 +186,7 @@ scripts, which check agreement with the recorded audit protocol.
 
 ### Following an experiment into storage
 
-`experiments.COMMON_ROOT` points to the shared `sps-artifacts/` directory beside
+`experiments.environment.COMMON_ROOT` points to the shared `sps-artifacts/` directory beside
 this checkout. Most experiment families have their own directory there. The
 original `1b` pilot uses the root itself. Shared infrastructure includes `code/`
 for staged worker snapshots and `hf/` for the Hugging Face cache.
@@ -219,10 +220,10 @@ uv run pytest -m cuda         # GPU tests (Triton kernels)
 Browse families and their named runs from the repository root.
 
 ```bash
-python run_train_jobs.py --list
-python run_train_jobs.py --list 1b
-python run_train_jobs.py --experiment 1b/s_standard_pilot_1b --dry
-python run_eval.py --experiment 1b/s_standard_pilot_1b --dry
+python scripts/run_train_jobs.py --list
+python scripts/run_train_jobs.py --list 1b
+python scripts/run_train_jobs.py --experiment 1b/s_standard_pilot_1b --dry
+python scripts/run_eval.py --experiment 1b/s_standard_pilot_1b --dry
 ```
 
 Use the same selection without `--dry` to submit. Each catalog key contains the
@@ -234,19 +235,19 @@ Historical IFEval and schedule workers require a pinned instruct source.
 A real submission stops if the current checkout and the archived source differ.
 
 The pilot family in `src/experiments/pilot.py` shares training settings
-between its named variants. `scripts/named/registry.py` collects the families
-served by the common worker. `scripts/named/special_families.py` registers the
+between its named variants. `src/orchestration/named/registry.py` collects the families
+served by the common worker. `src/orchestration/named/special_families.py` registers the
 families with dedicated submission protocols.
 
 ## MLSpace pilot artifacts
 
-`python run_train_jobs.py --dry` and `python run_eval.py --dry` print plans without
+`python scripts/run_train_jobs.py --dry` and `python scripts/run_eval.py --dry` print plans without
 API calls, credentials or writes. Submission requires the read-only shared `mls`
-package in the existing environment. Run `python run_train_jobs.py --phase prepare`
+package in the existing environment. Run `python scripts/run_train_jobs.py --phase prepare`
 first: this reuses pinned FineWeb-Edu cache files where present, downloads only
 missing pilot shards, tokenizes them, and measures both methods with four-GPU DDP.
-Inspect `prepared.json`, then `python run_train_jobs.py` submits training.
-`python run_eval.py` submits the downstream tasks after training succeeds.
+Inspect `prepared.json`, then `python scripts/run_train_jobs.py` submits training.
+`python scripts/run_eval.py` submits the downstream tasks after training succeeds.
 
 Pilot workers write directly to the shared NFS target in `src/experiments/environment.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
 checkpoints and evaluation outputs, `sanity` holds throughput probes, `code` holds
@@ -261,9 +262,9 @@ no success marker and can be resubmitted; successful and active jobs are skipped
 ### Longer training
 
 The longer comparison uses `SPS_EXPERIMENT_SUITE=10b` with the same launchers:
-`SPS_EXPERIMENT_SUITE=10b python run_train_jobs.py --phase prepare`, followed by
-`SPS_EXPERIMENT_SUITE=10b python run_train_jobs.py` and, after completion,
-`SPS_EXPERIMENT_SUITE=10b python run_eval.py`. Its artifacts and submission receipts
+`SPS_EXPERIMENT_SUITE=10b python scripts/run_train_jobs.py --phase prepare`, followed by
+`SPS_EXPERIMENT_SUITE=10b python scripts/run_train_jobs.py` and, after completion,
+`SPS_EXPERIMENT_SUITE=10b python scripts/run_eval.py`. Its artifacts and submission receipts
 are isolated from the default pilot; the cache and staged code are shared.
 
 ## Citation

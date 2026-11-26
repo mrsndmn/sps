@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import pytest
 import torch
-from scripts import provenance_evaluate as p
+from workloads.provenance import provenance_evaluate as p
 
 
 def test_complete_registry_and_one_gpu_payloads():

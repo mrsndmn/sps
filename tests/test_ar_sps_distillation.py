@@ -9,10 +9,10 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from scripts import ar_sps_common as common
-from scripts import ar_sps_config as c
-from scripts import ar_sps_data as data
-from scripts import ar_sps_run as run
+from workloads.adaptation import ar_sps_common as common
+from experiments import ar_sps_config as c
+from data import ar_sps_data as data
+from workloads.adaptation import ar_sps_run as run
 
 
 def test_kl_direction_temperature_and_teacher_no_gradient():
@@ -116,7 +116,7 @@ def test_matched_budget_must_not_shrink(tmp_path, monkeypatch):
 
 
 def test_external_control_signature_is_explicit(tmp_path, monkeypatch):
-    from scripts import ar_sps_report as report
+    from workloads.adaptation import ar_sps_report as report
     monkeypatch.setattr(report.e, 'design_signature', lambda: 'current')
     monkeypatch.setattr(c, 'PRIMARY_METRICS', {})
     baseline, candidate = tmp_path/'control', tmp_path/'final'
@@ -134,7 +134,7 @@ def test_external_control_signature_is_explicit(tmp_path, monkeypatch):
 
 
 def test_distillation_report_uses_only_declared_controls(tmp_path, monkeypatch):
-    from scripts import ar_sps_report as report
+    from workloads.adaptation import ar_sps_report as report
     from types import SimpleNamespace
     monkeypatch.setattr(c, 'REFERENCE_CONTROLS', ('smollm2_staged_sps',))
     monkeypatch.setattr(report.e, 'COMMON_ROOT', tmp_path)

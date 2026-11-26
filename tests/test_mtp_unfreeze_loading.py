@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from scripts import experiment_suite as e
-from scripts import mtp_common as common
+from orchestration import experiment_suite as e
+from workloads.speculative import mtp_common as common
 from modeling.models.sps.core import SPSConfig, SPSModelBase
 from modeling.models.sps.mtp import SPSMTP
 

@@ -2,7 +2,7 @@ import pytest
 import torch
 from transformers import LlamaConfig, LlamaForCausalLM, Qwen3Config, Qwen3ForCausalLM
 from modeling.models.sps.pretrained import PretrainedSPS
-from scripts.mmlu_generation import Decoder, parse_answer, prompt
+from workloads.evaluation.mmlu_generation import Decoder, parse_answer, prompt
 
 @pytest.mark.parametrize('family', ['llama', 'qwen3'])
 @pytest.mark.parametrize('sps', [False, True])

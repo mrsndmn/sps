@@ -45,7 +45,7 @@ def test_future_mask_and_rollback_to_each_accepted_length(draft):
 
 
 def test_parallel_short_budgets_and_greedy_oracle():
-    from scripts.mtp_evaluate import SpeculativeAdapter, probabilities
+    from workloads.speculative.mtp_evaluate import SpeculativeAdapter, probabilities
     from modeling.mtp_speculative import speculative_generate
     mtp=model();prefix=torch.tensor([1,2])
     for budget in (0,1,2,3,7):
@@ -65,7 +65,7 @@ def test_parallel_short_budgets_and_greedy_oracle():
 @pytest.mark.skipif(not torch.cuda.is_available(),reason='CUDA native oracle')
 def test_cuda_block_native_logits_and_eos_recovery():
     from modeling.models.sps import SPSConfig,SPSModel
-    from scripts.mtp_evaluate import NativePrefixVerifier,probabilities
+    from workloads.speculative.mtp_evaluate import NativePrefixVerifier,probabilities
     torch.manual_seed(23)
     ref=SPSModel(SPSConfig(vocab_size=39,block_size=32,n_layer=2,n_head=2,
         hidden_size=128,intermediate_size=192,eos_token_id=36,pad_token_id=37,
@@ -86,16 +86,16 @@ def test_cuda_block_native_logits_and_eos_recovery():
 def test_parallel_evaluation_registry_is_isolated():
     import subprocess,sys,json,os
     env=dict(os.environ,SPS_EXPERIMENT_SUITE='mtp-parallel')
-    code='''from scripts import experiment_suite as e
+    code='''from orchestration import experiment_suite as e
 import json
-from scripts.mlspace_launch import payload
+from orchestration.mlspace_launch import payload
 print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),models=[x.horizons for x in e.experiment_configs],parents=[str(e.training_marker(x)) for x in e.experiment_configs],payload=payload('eval',e.experiment_configs[0].name,e.STAGING_ROOT/'test','a','b'))))'''
     a=json.loads(subprocess.check_output([sys.executable,'-c',code],env=env,text=True))
     assert a['root'].endswith('/mtp-parallel') and a['models']==[2,3,4]
     assert all('/mtp-unfreeze/' in x for x in a['parents'])
-    assert 'scripts.mtp_parallel_evaluate eval' in a['payload']['script']
+    assert 'scripts/speculative/mtp_parallel_evaluate.py eval' in a['payload']['script']
     assert a['payload']['instance_type']=='a100.1gpu'
-    r=subprocess.run([sys.executable,'run_train_jobs.py','--dry'],env=env,capture_output=True,text=True)
+    r=subprocess.run([sys.executable,'scripts/run_train_jobs.py','--dry'],env=env,capture_output=True,text=True)
     assert r.returncode and 'evaluation-only' in r.stderr
 
 

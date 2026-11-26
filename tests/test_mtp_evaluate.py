@@ -7,7 +7,7 @@ import torch
 from modeling.models.sps.core import SPSConfig, SPSModelBase
 from modeling.models.sps.mtp import SPSMTP
 from modeling.mtp_speculative import speculative_generate
-from scripts import mtp_evaluate as ev
+from workloads.speculative import mtp_evaluate as ev
 
 
 @pytest.fixture(autouse=True)
@@ -160,7 +160,7 @@ def test_timed_speculation_records_actual_emitted_tokens_and_counters():
 
 def test_cli_uses_validated_trained_marker_checkpoint(monkeypatch, tmp_path):
     import json
-    from scripts import experiment_suite as experiments
+    from orchestration import experiment_suite as experiments
     exp = SimpleNamespace(name='chosen', horizons=3)
     checkpoint = tmp_path/'adaptation_final.pt'
     checkpoint.touch()
@@ -306,7 +306,7 @@ def test_updated_cuda_draft_uses_immutable_native_verifier():
 
 
 def test_full_checkpoint_restored_for_inference_still_requires_original_target():
-    from scripts.mtp_common import restore_draft
+    from workloads.speculative.mtp_common import restore_draft
     draft = model()
     restore_draft(draft, dict(source=str(ev.MTP_SOURCE), horizons=draft.horizons,
         train_backbone=True, backbone=draft.reference.state_dict(),

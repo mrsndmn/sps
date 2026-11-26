@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts import serving_benchmark as bench
+from workloads.serving import serving_benchmark as bench
 
 
 def test_all_serving_jobs_are_single_gpu_and_use_separate_child_interpreters():
@@ -98,7 +98,7 @@ def test_oracle_rejects_mismatched_checkpoints_and_empty_results(tmp_path, monke
 
 
 def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch):
-    from scripts import vllm_sps_evaluate
+    from workloads.serving import vllm_sps_evaluate
 
     AutoTokenizer = SimpleNamespace()
     monkeypatch.setitem(
@@ -187,7 +187,7 @@ def test_completed_results_cannot_be_reused_after_protocol_changes(
 
 
 def test_serving_protocol_tracks_generation_configuration(monkeypatch):
-    from scripts.serving import draft_sweep, serving_graphs
+    from workloads.serving import draft_sweep, serving_graphs
 
     protocols = (bench.protocol_signature, serving_graphs.protocol_signature,
                  draft_sweep.protocol_signature)

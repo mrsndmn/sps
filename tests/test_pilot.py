@@ -8,15 +8,16 @@ import os
 
 import pytest
 
-from scripts import experiment_suite as config
-from scripts import mlspace_launch, pilot_run
+from orchestration import experiment_suite as config
+from orchestration import mlspace_launch
+from workloads.pilot import pilot_run
 
 
 def test_long_suite_is_tenfold_and_preserves_pilot_paths():
     script = '''
 import json
-from scripts import experiment_suite as e
-from scripts.mlspace_launch import payload
+from orchestration import experiment_suite as e
+from orchestration.mlspace_launch import payload
 print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),cache=str(e.HF_HOME),
  names=[x.name for x in e.collect_experiments()],budget=e.TRAIN_TOKENS,
  args=e.overrides(e.collect_experiments()[0]),
@@ -137,8 +138,9 @@ def test_payload_quotes_staging_path():
 
 def test_design_signature_tracks_inherited_configs(tmp_path, monkeypatch):
     monkeypatch.setattr(config, 'REPO_ROOT', tmp_path)
-    for name in ('scripts/train.py', 'scripts/evaluate.py', 'conf/model/sps.yaml',
-                 'conf/optimizer/adamw.yaml', 'scripts/experiment_suite.py', 'scripts/suite_registry.py',
+    for name in ('scripts/train.py', 'scripts/evaluate.py', 'scripts/pilot/pilot_run.py',
+                 'scripts/pilot/named_worker.py', 'src/workloads/pilot/pilot_run.py', 'src/training/train.py', 'src/modeling/evaluation/evaluate.py', 'conf/model/sps.yaml',
+                 'conf/optimizer/adamw.yaml', 'src/orchestration/experiment_suite.py', 'src/orchestration/suite_registry.py',
                  'src/experiments/environment.py', 'src/experiments/pilot.py', 'src/experiments/types.py', 'src/experiments/suite.py'):
         p = tmp_path / name
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -272,8 +274,8 @@ def test_all_evaluation_payloads_use_one_gpu_without_changing_training(suite):
     import subprocess,json,os
     code="""
 import json
-from scripts import experiment_suite as e
-from scripts.mlspace_launch import payload
+from orchestration import experiment_suite as e
+from orchestration.mlspace_launch import payload
 x=e.collect_experiments()[0]
 print(json.dumps({phase:payload(phase,x.name,e.STAGING_ROOT,'a','b')['instance_type'] for phase in ['prepare','train','eval']}))
 """
@@ -310,7 +312,7 @@ def test_staging_uses_linked_worktree_commit(tmp_path, monkeypatch):
 
 
 def test_routing_refactor_preserves_known_pilot_design():
-    from scripts.design_compatibility import canonical_signature
+    from orchestration.design_compatibility import canonical_signature
     migrated = '4780e1816b74ecdf53e3e98bc439c1e5f775274129ebcc5df958a0f56f49169a'
     parent = '344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f'
     assert canonical_signature(migrated) == parent
@@ -318,9 +320,9 @@ def test_routing_refactor_preserves_known_pilot_design():
 
 def test_parallel_marker_rejects_unfreeze_worker():
     script = '''
-from scripts import experiment_suite as e
+from orchestration import experiment_suite as e
 before = e.design_signature()
-e.WORKER_MODULES[e.SUITE] = e.WORKER_MODULES['mtp-unfreeze']
+e.WORKER_SCRIPTS[e.SUITE] = e.WORKER_SCRIPTS['mtp-unfreeze']
 assert e.design_signature() != before
 '''
     env = dict(os.environ, SPS_EXPERIMENT_SUITE='mtp-parallel')
@@ -334,6 +336,6 @@ def test_launcher_rejects_marker_after_worker_change(tmp_path, monkeypatch, caps
     monkeypatch.setattr(sys, 'argv', ['launcher', '--dry', '--phase', 'prepare'])
     assert mlspace_launch.main() == 0
     assert 'Skip completed: data-and-probes' in capsys.readouterr().out
-    monkeypatch.setitem(config.WORKER_MODULES, '1b', 'scripts.mtp_run')
+    monkeypatch.setitem(config.WORKER_SCRIPTS, '1b', 'scripts/speculative/mtp_run.py')
     with pytest.raises(RuntimeError, match='Stale completion marker'):
         mlspace_launch.main()

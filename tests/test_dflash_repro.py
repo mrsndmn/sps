@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from scripts import dflash_repro as jobs, dflash_repro_train as training
+from workloads.distillation import dflash_repro as jobs, dflash_repro_train as training
 
 
 def test_epoch_shuffling_and_anchor_sampling():

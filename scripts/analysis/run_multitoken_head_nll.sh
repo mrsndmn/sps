@@ -43,7 +43,7 @@ DATASET="${DATASET:-fineweb-edu}"
 
 merge_all() {
   # Trivial CPU (reads a handful of small JSON files); safe to run inline.
-  uv run python -m scripts.analysis.multitoken_head_nll_io \
+  uv run python scripts/analysis/multitoken_head_nll_io.py \
     --root "$OUTPUT_ROOT" --scales $SCALES --variants $VARIANTS
 }
 

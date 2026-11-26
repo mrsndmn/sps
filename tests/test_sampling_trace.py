@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import numpy as np
 import pytest
-from scripts import sampling_trace as t
+from workloads.serving import sampling_trace as t
 
 
 def test_extract_pairs_deduplicates_first_token_divergence():
@@ -52,7 +52,7 @@ def test_submission_adapter_does_not_recurse_identity_or_touch_parent(tmp_path,m
         t.identity()
     body=t.payload(t.experiment_configs[0],Path('/staged'))
     assert body['instance_type']==t.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
-    assert 'scripts.sampling_trace --worker' in body['script']
+    assert 'scripts/serving/sampling_trace.py --worker' in body['script']
     assert t.ROOT!=t.audit.ROOT
 
 

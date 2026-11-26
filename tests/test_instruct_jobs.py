@@ -21,26 +21,26 @@ def test_instruct_dry_routing(tmp_path, phase, count, gpus):
     result = run_code('''
 import sys
 from pathlib import Path
-from scripts import experiment_suite as e
+from orchestration import experiment_suite as e
 e.ARTIFACTS_ROOT = Path(sys.argv[1]); e.RUN_ROOT = e.ARTIFACTS_ROOT/'runs'
 for exp in e.collect_experiments():
     marker = e.training_marker(exp)
     if marker is not None:
         marker.parent.mkdir(parents=True, exist_ok=True)
         if sys.argv[2] == 'eval': marker.write_text('{}')
-from scripts.mlspace_launch import main
+from orchestration.mlspace_launch import main
 sys.argv = ['launcher', '--phase', sys.argv[2], '--dry']
 main()
 ''', tmp_path, phase)
     assert result.stdout.count(f'"instance_type": "a100.{gpus}gpu"') == count
-    assert result.stdout.count(f'scripts.instruct_run {phase}') == count
-    assert 'scripts.ar_sps_run' not in result.stdout
+    assert result.stdout.count(f'scripts/instruction/instruct_run.py {phase}') == count
+    assert 'scripts/adaptation/ar_sps_run.py' not in result.stdout
 
 
 def test_instruct_registry_and_signature():
     run_code('''
-from scripts import experiment_suite as e
-from scripts import instruct_config as c
+from orchestration import experiment_suite as e
+from experiments import instruct_config as c
 arms = e.collect_experiments()
 assert len(arms) == 5
 assert [(x.recipe, x.distillation_weight) for x in arms] == [
@@ -52,7 +52,7 @@ assert c.GLOBAL_BATCH % (4*c.MICRO_BATCH) == 0
 for arm in arms[1:]:
     assert arm.num_gpus == 4 and arm.trainable
     command = e.train_command(arm)
-    assert 'scripts.instruct_train' in command and '--probe' not in command
+    assert 'scripts/instruction/instruct_train.py' in command and '--probe' not in command
     assert '--probe' in e.train_command(arm, probe=True)
     assert e.SUITE in str(e.training_marker(arm))
 old = e.design_signature(); c.REVISION = 'changed'
@@ -61,7 +61,7 @@ assert old != e.design_signature()
 
 
 def test_real_instruct_eval_requires_current_preparation(tmp_path, monkeypatch):
-    from scripts import mlspace_launch as launch
+    from orchestration import mlspace_launch as launch
     monkeypatch.setattr(launch, 'SUITE', SUITE)
     monkeypatch.setattr(launch, 'ARTIFACTS_ROOT', tmp_path)
     monkeypatch.setattr(launch, 'collect_experiments', lambda _: [SimpleNamespace(name='original', trainable=False)])
@@ -79,9 +79,9 @@ def test_missing_training_markers_allow_only_original(tmp_path):
     result = run_code('''
 import sys
 from pathlib import Path
-from scripts import experiment_suite as e
+from orchestration import experiment_suite as e
 e.ARTIFACTS_ROOT=Path(sys.argv[1]); e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs'
-from scripts.mlspace_launch import main
+from orchestration.mlspace_launch import main
 sys.argv=['launcher','--dry']
 main('eval')
 ''', tmp_path)

@@ -13,14 +13,14 @@ Over the 18 timed steps after warmup, the mean was 2.816 s per step and the
 median was 2.779 s. Peak allocated GPU memory was 26.7 GiB per rank at most.
 The full training projection is 9.11 hours of wall time, or 36.46 A100 GPU-hours,
 before queueing, checkpoint writes and GSM8K evaluation.
-Raw measurements are available through `python -m scripts.dflash_repro --phase probe --report`.
+Raw measurements are available through `python scripts/distillation/dflash_repro.py --phase probe --report`.
 
 Full training completed as `lm-mpi-job-ba89ccd5-484f-40d9-948a-fbfa7215a047`.
 MLSpace recorded 9 h 04 min 31 s on four A100s, or 36.30 GPU-hours.
 All 11,652 optimizer steps completed. The saved checkpoints at 5,000,
 10,000 and 11,652 contain inference weights and matching optimizer and
 scheduler states. The training report is available through
-`python -m scripts.dflash_repro --phase train --report`.
+`python scripts/distillation/dflash_repro.py --phase train --report`.
 
 GSM8K evaluation completed on all 1,319 prompts. Acceptance is the share
 of proposals in the accepted prefix. The position rates are the share
@@ -48,7 +48,7 @@ The three trained checkpoints and published b16 produced identical sequences
 on all prompts. Those sequences match sequential AR on the same 695 prompts
 across all jobs. Speedup versus AR uses this common set. The raw reports
 contain all 15 position rates and prompt-level measurements. Use
-`python -m scripts.dflash_repro --phase eval --step <step> --report`.
+`python scripts/distillation/dflash_repro.py --phase eval --step <step> --report`.
 
 - Step 5,000 — `lm-mpi-job-0eb55b38-de93-42d0-af7e-d516772c9ec3`.
 - Step 10,000 — `lm-mpi-job-f1e7ad53-c0df-40b8-aa8d-1c9c7653cca3`.

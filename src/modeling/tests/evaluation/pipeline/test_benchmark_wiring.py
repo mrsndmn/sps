@@ -10,7 +10,7 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
-import scripts.evaluate as evaluate_mod
+import modeling.evaluation.evaluate as evaluate_mod
 
 
 class _FakeEncoding:

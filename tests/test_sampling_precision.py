@@ -2,13 +2,13 @@ from pathlib import Path
 import json
 import numpy as np
 import pytest
-from scripts import sampling_precision as p
+from workloads.serving import sampling_precision as p
 
 
 def test_new_allocation_is_one_gpu_and_does_not_reuse_old_roots():
     body=p.payload(p.job_configs[0],Path('/staged'))
     assert body['instance_type']==p.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
-    assert 'scripts.sampling_precision --worker' in body['script']
+    assert 'scripts/serving/sampling_precision.py --worker' in body['script']
     assert p.ROOT not in (p.audit.ROOT,p.trace.ROOT)
     assert [(x.arm,x.fp32_head) for x in p.experiment_configs]==[
         ('sps_four_slots',False),('sps',True),('sps_four_slots',True),('sps_mtp',True)]
