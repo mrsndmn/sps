@@ -151,6 +151,71 @@ def test_teacher_cap_receipt_reuses_published_report_identity(monkeypatch, capsy
     assert identity in json.loads(capsys.readouterr().out)["job_desc"]
 
 
+def test_teacher_cap_reuses_active_published_receipt(tmp_path, monkeypatch, capsys):
+    from types import ModuleType
+    from scripts.named import cap_jobs
+
+    job_name = "lm-mpi-job-22222222-2222-4222-8222-222222222222"
+    submissions = tmp_path / "submissions"
+    submissions.mkdir()
+    (submissions / f"{job_name}.json").write_text(
+        json.dumps(
+            dict(
+                identity="qwen3-teacher-cap-probe",
+                commit=cap_jobs.PUBLISHED_TEACHER_COMMIT,
+                job_name=job_name,
+            )
+        )
+    )
+    checked = []
+
+    class Client:
+        def get_job_status(self, name):
+            checked.append(name)
+            return {"status": "running"}
+
+    utils = ModuleType("mls.manager.job.utils")
+    utils.get_in_progress_jobs = lambda **_: []
+    utils.training_job_api_from_profile = lambda _: (Client(), {})
+    monkeypatch.setitem(sys.modules, utils.__name__, utils)
+    monkeypatch.setattr(cap_jobs.teacher, "ROOT", tmp_path)
+    monkeypatch.setattr(cap_jobs.launch, "disable_submission_retries", lambda _: None)
+    monkeypatch.setattr(
+        cap_jobs.launch, "stage_repo", lambda *_: pytest.fail("Staged a duplicate job")
+    )
+    monkeypatch.setattr(sys, "argv", ["cap_jobs", "teacher"])
+
+    cap_jobs.main()
+
+    assert checked == [job_name]
+    assert capsys.readouterr().out.strip() == job_name
+
+
+def test_cap_report_identities_track_inherited_settings(tmp_path, monkeypatch):
+    from pathlib import Path
+    from scripts.named import cap_jobs
+    from scripts.source_compatibility import source_hash
+
+    teacher, compare = cap_jobs.teacher, cap_jobs.compare
+    monkeypatch.setattr(compare, "ROOT", tmp_path)
+    prompts = tmp_path / "cohort.json"
+    prompts.write_text("[]")
+    monkeypatch.setattr(compare, "PROMPTS", prompts)
+    teacher_identity = source_hash(teacher.__file__)
+    paired_folder = compare.folder("original")
+    original = Path.read_bytes
+
+    def change_sampler(path):
+        data = original(path)
+        if path == Path(teacher.c.__file__):
+            return data + b"\nTEACHER_TOP_P = 0.75\n"
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", change_sampler)
+    assert source_hash(teacher.__file__) != teacher_identity
+    assert compare.folder("original") != paired_folder
+
+
 def test_unprepared_drafter_prints_worker_command(tmp_path):
     from types import SimpleNamespace
     from scripts.named.distillation import preview_drafter

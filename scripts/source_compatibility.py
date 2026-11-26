@@ -5,6 +5,16 @@ from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
 _DEFINITIONS = _REPO / "src/experiments"
+_SOURCE_DEPENDENCIES = {
+    "scripts/evaluation/teacher_cap_probe.py": (
+        "instruct_config.py",
+        "vllm_sps_config.py",
+    ),
+    "scripts/evaluation/qwen35_cap_compare.py": (
+        "instruct_config.py",
+        "teacher_cap_probe.py",
+    ),
+}
 _MIGRATED_SOURCES = {
     (
         "scripts/instruction/instruct_train.py",
@@ -40,13 +50,13 @@ _MIGRATED_SOURCES = {
     ): "d11762dcd5668935bfca494ea348ed73200fc70372894b94e7a1c77d9f788dc2",
     (
         "scripts/evaluation/qwen35_cap_compare.py",
-        "599e3deb53ea3111183d2e2e658df26953377caab2c73b4e7998c568f51e266a",
+        "e297836d9accfbdb66ab530cc548177e6988610608269ce4b5a0bbaf6e501b0b",
     ): "368b7c39020d6f4dda4a336ec92f8dc221e24ca187bf6539d9aec3dea2380e12",
     # Shard support in c84d1ea left the original full-cohort report design
     # unchanged. Use the published report identity for this exact migration.
     (
         "scripts/evaluation/teacher_cap_probe.py",
-        "3371a9b42d15516186739965fa7be24872be2e93b7f3eee759ab17e2dbdcd50c",
+        "4c4fe2c23ff8edd4724bed22294a23b9c46126d75fdc61ba9432dde5d8ba39d5",
     ): "5bb50eb67bff7ec297e740ea8bffdce6d220f9bf5051cc47d67a5755634f82c5",
     (
         "scripts/instruct_common.py",
@@ -169,4 +179,9 @@ def source_hash(path):
             digest = sha256(
                 bytes.fromhex(digest) + sha256(definition.read_bytes()).digest()
             ).hexdigest()
+    for dependency in _SOURCE_DEPENDENCIES.get(relative, ()):
+        digest = sha256(
+            bytes.fromhex(digest)
+            + sha256((_DEFINITIONS / dependency).read_bytes()).digest()
+        ).hexdigest()
     return _MIGRATED_SOURCES.get((relative, digest), digest)

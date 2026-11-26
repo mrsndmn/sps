@@ -12,6 +12,8 @@ from scripts import qwen35_cap_compare as compare
 from scripts import teacher_cap_probe as teacher
 from scripts.source_compatibility import source_hash
 
+PUBLISHED_TEACHER_COMMIT = "7fad856aa3c8d3bcd11c08b37f1f444e7601f2e8"
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -78,11 +80,18 @@ def main():
             launch.normalize(j["job_desc"]): j["job_name"]
             for j in get_in_progress_jobs(client_profile="default")
         }
+        identity = launch.normalize(body["job_desc"])
+        published_teacher = not args.arm and marker.parent.name == teacher.PILOT_HASH
         # Historical cap workers write report.json as their success marker.
         # Check the API for receipts whose jobs are not in the active list.
         for receipt in (root / "submissions").glob("*.json"):
             row = json.loads(receipt.read_text())
-            if row["identity"] != launch.normalize(body["job_desc"]):
+            is_published_teacher = (
+                published_teacher
+                and row["identity"] == "qwen3-teacher-cap-probe"
+                and row.get("commit") == PUBLISHED_TEACHER_COMMIT
+            )
+            if row["identity"] != identity and not is_published_teacher:
                 continue
             state = str(client.get_job_status(row["job_name"]).get("status")).casefold()
             if state not in {
@@ -96,8 +105,8 @@ def main():
                 if state in {"completed", "succeeded"}:
                     raise RuntimeError(f"Completed job missing {marker}")
                 active[row["identity"]] = row["job_name"]
+                active.setdefault(identity, row["job_name"])
         launch.reconcile_intents(active)
-        identity = launch.normalize(body["job_desc"])
         if identity in active:
             print(active[identity])
             return
