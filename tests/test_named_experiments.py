@@ -136,3 +136,33 @@ def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
         descriptions.append(json.loads(capsys.readouterr().out)["job_desc"])
     assert descriptions[0] == descriptions[1]
     assert descriptions[0] != descriptions[2]
+
+
+def test_unprepared_drafter_prints_worker_command(tmp_path):
+    from types import SimpleNamespace
+    from experiment_defs.distillation import preview_drafter
+    from experiment_defs.standalone import Job
+
+    module = SimpleNamespace(
+        __name__="scripts.distillation.qwen4b_drafter",
+        training=SimpleNamespace(DATA=tmp_path, DEFAULT_DATASET="smoltalk"),
+    )
+    plan = Job(
+        "smoltalk",
+        "eval",
+        module.__name__,
+        ("--phase", "eval", "--dataset", "smoltalk"),
+        {},
+    )
+    preview = preview_drafter(
+        plan, module, tmp_path, SimpleNamespace(PYTHON=sys.executable)
+    )
+    assert preview["pending_input"] == str(tmp_path / "manifest.json")
+    assert preview["worker_command"] == [
+        sys.executable,
+        "-m",
+        module.__name__,
+        *plan.args,
+        "--worker",
+    ]
+    assert not list(tmp_path.iterdir())

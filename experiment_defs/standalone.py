@@ -51,8 +51,8 @@ def load(name):
     return import_module("scripts." + name)
 
 
-def builds(module_name, phase, selector=None):
+def builds(module_name, phase, selector=None, *, config=None):
     module = load(module_name)
     for run in getattr(module, "job_configs", None) or module.experiment_configs:
         args = (selector, run.name) if selector else ()
-        yield job(module, phase, run, *args)
+        yield job(module, phase, run, *args, config=config)

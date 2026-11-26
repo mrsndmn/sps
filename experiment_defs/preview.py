@@ -15,6 +15,12 @@ def preview(plan):
     args = plan.args
     staged = launch.STAGING_ROOT / launch.git("rev-parse", "HEAD")
     author = ("d.tarasov", "mrsndmn")
+    if short in {"dflash_repro", "dflash_kd", "qwen4b_drafter"}:
+        from experiment_defs.distillation import preview_drafter
+
+        filled = preview_drafter(plan, module, staged, launch)
+        print(json.dumps({"settings": plan.settings, **filled}, default=str, indent=2))
+        return 0
     if short == "base50_run":
         body = module.payload(module.c.experiment_configs[0], staged)
     elif short in {"sched_run", "extend_run", "ifeval_run"}:

@@ -11,8 +11,16 @@ from scripts.suite_registry import INSTRUCT_SUITE
 def adapters():
     module = load("qwen_adapter_run")
     for run in module.experiment_configs:
-        yield job(module, "train", run, "train", "--filter", run.name)
-    yield job(module, "eval", "winner", "eval")
+        yield job(
+            module,
+            "train",
+            run,
+            "train",
+            "--filter",
+            run.name,
+            config=load("ar_sps_config"),
+        )
+    yield job(module, "eval", "winner", "eval", config=load("ar_sps_config"))
 
 
 def base50():
@@ -33,9 +41,7 @@ def readout():
         module = load("real_readout_" + workload)
         for exp in module.experiment_configs:
             selector = (
-                ("--arm", exp.arm)
-                if workload == "serving"
-                else ("--filter", exp.name)
+                ("--arm", exp.arm) if workload == "serving" else ("--filter", exp.name)
             )
             source = load("instruct_config")
             config = (source, load("vllm_sps_config"), module)
@@ -55,14 +61,31 @@ def readout():
 
 
 def provenance():
-    yield from builds("provenance_prepare", "prepare")
-    yield from builds("provenance_train", "train", "--arm")
-    yield from builds("provenance_evaluate", "eval", "--filter")
+    source = load("instruct_config")
+    prep = load("provenance_prepare")
+    yield from builds("provenance_prepare", "prepare", config=(source, prep))
+    yield from builds("provenance_train", "train", "--arm", config=(source, prep))
+    yield from builds(
+        "provenance_evaluate",
+        "eval",
+        "--filter",
+        config=(source, prep, load("ifeval_config")),
+    )
 
 
 def sampling():
+    shared = (load("instruct_config"), load("vllm_sps_config"), load("sampling_audit"))
     for suffix in ("audit", "trace", "precision", "cache_trace", "backbone_precision"):
-        yield from builds("sampling_" + suffix, "eval")
+        module = load("sampling_" + suffix)
+        conditions = [vars(run) for run in module.experiment_configs]
+        for run in getattr(module, "job_configs", module.experiment_configs):
+            yield job(
+                module,
+                "eval",
+                run,
+                config=shared,
+                parameters={"conditions": conditions},
+            )
 
 
 def mask_ablation():
