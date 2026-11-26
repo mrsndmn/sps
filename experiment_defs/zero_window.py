@@ -17,31 +17,29 @@ class Training:
     chunk_size_units: int = 1024
     probe_steps: int = 16
     seed: int = 1337
+    learning_rate: float = 6e-4
+    min_lr: float = 6e-5
+    weight_decay: float = 0.1
 
 
 @dataclass(frozen=True)
-class Pilot:
-    name: str
-    recipe: str
-    training: Training
-    reference_name: str | None = None
-    num_gpus: int = 4
-    trainable: bool = True
+class Model:
+    n_layer: int = 12
+    n_head: int = 12
+    hidden_size: int = 768
+    intermediate_size: int = 2304
+    window: int | None = None
 
-    def config(self, data_root, *, probe=False):
-        t = self.training
-        step = t.global_batch_size * t.block_size
-        if self.recipe not in {"s_sps_w0_20b", "s_full_attention_20b"}:
-            raise ValueError(f"Unknown pilot architecture: {self.recipe}")
-        sps = self.recipe == "s_sps_w0_20b"
+    def config(self, block_size):
+        sps = self.window is not None
         model = "modeling.models.sps" if sps else "modeling.models.full_attention_model"
         dimensions = dict(
-            block_size=t.block_size,
+            block_size=block_size,
             vocab_size=50304,
-            n_layer=12,
-            n_head=12,
-            hidden_size=768,
-            intermediate_size=2304,
+            n_layer=self.n_layer,
+            n_head=self.n_head,
+            hidden_size=self.hidden_size,
+            intermediate_size=self.intermediate_size,
             norm_eps=1e-6,
             dropout=0.0,
             bias=False,
@@ -51,31 +49,56 @@ class Pilot:
         )
         if sps:
             dimensions.update(
-                predict_token_id=50257, window_size=0, enable_triton_attention=True
+                predict_token_id=50257,
+                window_size=self.window,
+                enable_triton_attention=True,
             )
         else:
             dimensions.update(use_triton_full_attention=True)
+        return dict(
+            _target_=model + (".SPSModel" if sps else ".Model"),
+            config=dict(
+                _target_=model + (".SPSConfig" if sps else ".ModelConfig"), **dimensions
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class Pilot:
+    name: str
+    model: Model
+    training: Training
+    reference_name: str | None = None
+    num_gpus: int = 4
+    trainable: bool = True
+
+    @property
+    def recipe(self):
+        # Original Hydra name retained for legacy callers and experiment metadata.
+        return (
+            "s_full_attention_20b"
+            if self.model.window is None
+            else f"s_sps_w{self.model.window}_20b"
+        )
+
+    def config(self, data_root, *, probe=False):
+        t = self.training
+        step = t.global_batch_size * t.block_size
         tags = (
             [
                 "s",
                 "sps",
                 "sliding_predict_tokens",
                 "deterministic",
-                "w0",
+                f"w{self.model.window}",
                 "20b",
                 "triton",
             ]
-            if sps
+            if self.model.window is not None
             else ["s", "full_attention", "20b"]
         )
         return dict(
-            model=dict(
-                _target_=model + (".SPSModel" if sps else ".Model"),
-                config=dict(
-                    _target_=model + (".SPSConfig" if sps else ".ModelConfig"),
-                    **dimensions,
-                ),
-            ),
+            model=self.model.config(t.block_size),
             experiment=dict(name=self.name, tags=tags),
             data=dict(dataset="fineweb-edu"),
             training=dict(
@@ -102,11 +125,11 @@ class Pilot:
                 decay_lr=True,
                 warmup_tokens=step if probe else t.warmup_tokens,
                 lr_decay_tokens=step if probe else t.decay_tokens,
-                min_lr=6e-5,
+                min_lr=t.min_lr,
             ),
             optimizer=dict(
-                weight_decay=0.1,
-                learning_rate=6e-4,
+                weight_decay=t.weight_decay,
+                learning_rate=t.learning_rate,
                 beta1=0.9,
                 beta2=0.95,
                 grad_clip=1.0,
@@ -139,10 +162,12 @@ def zero_window_pilot():
         save_interval=250_000_000,
         rolling_interval=100_000_000,
     )
-    standard = Pilot("s_standard_pilot_1b", "s_full_attention_20b", training)
+    standard = Pilot(name="s_standard_pilot_1b", model=Model(), training=training)
     return [
         standard,
-        replace(standard, name="s_sps_w0_pilot_1b", recipe="s_sps_w0_20b"),
+        replace(
+            standard, name="s_sps_w0_pilot_1b", model=replace(standard.model, window=0)
+        ),
     ]
 
 
