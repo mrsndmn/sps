@@ -172,7 +172,10 @@ Its artifact directory is `qwen3-instruct-real-readout-mtp/` under the shared ro
   and `evaluated.json` for the aggregate result.
 - `submissions/` under a launcher’s artifact directory holds its job receipts.
 
-Inside the checkout, `outputs/` holds local analysis products and exports.
+In the shared SPS checkout, `outputs/` is a local symlink to
+`../sps-artifacts/outputs/`. Analysis scripts and table exports can use their
+usual paths while their files live in shared storage. A fresh clone uses a
+local output directory unless you create the same symlink.
 `run/` also contains local orchestration state, including job observations.
 The worker's output paths identify the shared results used downstream.
 
