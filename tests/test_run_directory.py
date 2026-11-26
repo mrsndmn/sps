@@ -263,3 +263,24 @@ def test_native_and_named_commands_include_the_same_schedule_arguments(tmp_path,
     publication.reserve_payload(body, output, tmp_path, phase="train", intent=tmp_path/"intent")
     assert "--instruct_config__weight_decay" in body["script"]
     assert body["script"] == preview
+
+
+def test_family_capacity_counts_pending_siblings_when_list_lags(tmp_path, monkeypatch):
+    prefix = "sps-draft-sweep eval "
+    monkeypatch.setattr(mlspace_launch, "ARTIFACTS_ROOT", tmp_path)
+    first = "lm-mpi-job-48fcb78d-e22e-4076-a28d-f92f4e1d6b0c"
+    second = "lm-mpi-job-22222222-2222-4222-8222-222222222222"
+    statuses = {first: "Running", second: "Pending"}
+    client = SimpleNamespace(get_job_status=lambda job: {"status": statuses[job]})
+    for arm, job in [("a", first), ("b", second)]:
+        row = dict(identity=prefix + arm, job_name=job, output_dir=str(tmp_path / arm))
+        mlspace_launch.store_json(tmp_path / "submissions" / f"{job}.json", row)
+    active = {}
+    mlspace_launch.reconcile_for_outputs(client, active, [tmp_path / "c"])
+    assert mlspace_launch.occupied_slots(client, active, prefix) == 2
+    active[prefix + "a"] = first
+    assert mlspace_launch.occupied_slots(client, active, prefix) == 2
+    statuses[second] = "Completed"
+    assert mlspace_launch.occupied_slots(client, active, prefix) == 1
+    mlspace_launch.store_json(tmp_path / "submission-intents" / "c.json", dict(identity=prefix + "c"))
+    assert mlspace_launch.occupied_slots(client, active, prefix) == 2

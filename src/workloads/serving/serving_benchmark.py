@@ -340,7 +340,7 @@ def submit(args):
     launch.reconcile_for_outputs(client, active, [root_for(exp) for exp in choices])
     staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
     jobs = []
-    occupied = sum(key.startswith("sps-serving-benchmark ") for key in active)
+    occupied = launch.occupied_slots(client, active, "sps-serving-benchmark ")
     deferred = []
     for exp in choices:
         if completed(exp, manifest):

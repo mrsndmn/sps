@@ -96,6 +96,33 @@ def reconcile_for_outputs(client, active, outputs):
     reconcile_intents(active, selected)
 
 
+def occupied_slots(client, active, prefix):
+    """Count family submissions during list-API lag, including unconfirmed sends."""
+    from orchestration.pilot_launch import TERMINAL_FAILURES
+
+    listed = {key: job for key, job in active.items() if key.startswith(prefix)}
+    jobs = set(listed.values())
+    received_attempts = set()
+    for path in (ARTIFACTS_ROOT / "submissions").glob("*.json"):
+        row = json.loads(path.read_text())
+        if not row["identity"].startswith(prefix):
+            continue
+        received_attempts.add((row["identity"], row.get("attempt")))
+        job = row["job_name"]
+        if job not in jobs:
+            state = str(client.get_job_status(job).get("status", "")).strip().casefold()
+            if state not in TERMINAL_FAILURES | {"completed", "succeeded"}:
+                jobs.add(job)
+    unknown = 0
+    for path in (ARTIFACTS_ROOT / "submission-intents").glob("*.json"):
+        row = json.loads(path.read_text())
+        identity = row["identity"]
+        if (identity.startswith(prefix) and identity not in listed
+                and (identity, row.get("attempt")) not in received_attempts):
+            unknown += 1
+    return len(jobs) + unknown
+
+
 def reconcile_receipts(client, active_by_desc, outputs=None):
     # A just-submitted job may not yet appear in the list API. Its durable
     # receipt prevents a second submission; only a confirmed failed/cancelled

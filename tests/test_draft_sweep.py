@@ -1,8 +1,21 @@
 import json
+import shlex
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 from workloads.serving import draft_sweep as sweep
+
+
+def test_worker_entry_point_runs_from_staged_directory():
+    staged = Path(__file__).resolve().parents[1]
+    body = sweep.payload("train", sweep.TRAINER, staged)
+    _, command = body["script"].split(" && ", 1)
+    _, *worker_args = shlex.split(command)
+    subprocess.run([sys.executable, *worker_args, "--help"], cwd=staged, check=True,
+                   stdout=subprocess.DEVNULL)
 
 
 def test_sweep_has_matched_one_gpu_evaluations(monkeypatch):

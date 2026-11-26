@@ -377,7 +377,6 @@ def payload(phase, exp, staged):
     body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(
         [
             str(launch.PYTHON),
-            "-m",
             LAUNCHER,
             "--worker",
             "--phase",
@@ -439,7 +438,7 @@ def submit(args, choices):
         )
     launch.reconcile_for_outputs(client, active, [output(exp) for exp in choices])
     staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
-    occupied = sum(key.startswith("sps-draft-sweep eval ") for key in active)
+    occupied = launch.occupied_slots(client, active, "sps-draft-sweep eval ") if phase == "eval" else 0
     jobs = []
     deferred = []
     for exp in pending:
