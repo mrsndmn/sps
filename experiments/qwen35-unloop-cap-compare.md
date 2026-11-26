@@ -17,3 +17,4 @@ Compare within prompt and weight source strata back to the original capped cohor
 ## Changelog
 
 - 2026-11-26: Added matched fresh generations on the previous cap pilot prompts.
+- 2026-11-26: Verified both pinned weight shards and submitted original `lm-mpi-job-a28ae99e-6376-42a2-8998-ed1e64869516` and Unloop `lm-mpi-job-49bf1921-f526-4260-a330-92c70428e239` to MLSpace.
