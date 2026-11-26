@@ -36,11 +36,6 @@ def _prepare(dest):
 
 
 def prepare_memmaps(dest, files, required, train_tokens, *, prefix_dir=None, prefix_files=(), parts=()):
-    from huggingface_hub import hf_hub_download, try_to_load_from_cache
-    import numpy as np
-    import pyarrow.parquet as pq
-    import tiktoken
-    from data.prepare import _is_val
 
     marker = dest / 'manifest.json'
     if marker.exists():
@@ -58,7 +53,14 @@ def prepare_memmaps(dest, files, required, train_tokens, *, prefix_dir=None, pre
     free = shutil.disk_usage(dest).free
     if free < required:
         raise RuntimeError(f'Need {required / 1e9:.0f} GB free; have {free / 1e9:.1f} GB')
-    enc = tiktoken.get_encoding('gpt2')
+    if covered < len(files):
+        from huggingface_hub import hf_hub_download, try_to_load_from_cache
+        import numpy as np
+        import pyarrow.parquet as pq
+        import tiktoken
+        from data.prepare import _is_val
+
+        enc = tiktoken.get_encoding('gpt2')
     counts = {'train': 0, 'val': 0}
     sources = []
     handles = {s: (dest / f'{s}.bin.tmp').open('wb') for s in counts}

@@ -4,6 +4,7 @@ import json
 import math
 import os
 import shlex
+import shutil
 import subprocess
 
 from experiments.paper_reproduction import PaperSPS, PrepareFineWeb, TokenizePart, TrainSPS
@@ -79,7 +80,13 @@ def main():
                 raise RuntimeError("Missing final training checkpoint")
         elif isinstance(run, TokenizePart):
             from data.pilot_data import prepare_memmaps
-            prepare_memmaps(work, run.files, corpus.free_bytes, 1)
+            # A handover from a serial worker can supply verified complete shards.
+            seed = run.output.with_name(run.output.name + "-prefix")
+            seed_files = ()
+            if seed.is_dir():
+                seed_files = json.loads((seed / "manifest.json").read_text())["files"]
+            prepare_memmaps(work, run.files, corpus.free_bytes, 1,
+                            prefix_dir=seed if seed_files else None, prefix_files=seed_files)
         else:
             from data.pilot_data import prepare_memmaps
             prefix = corpus.prefix if (corpus.prefix / "manifest.json").is_file() else None
@@ -92,6 +99,8 @@ def main():
                             max(r.recipe.max_tokens for r in training_runs),
                             prefix_dir=prefix, prefix_files=corpus.prefix_files, parts=parts)
             print(check_data(work, corpus, training_runs))
+            if prefix == work / "prefix":
+                shutil.rmtree(prefix)
         return
     commit = jobs.git("rev-parse", "HEAD")
     staged = jobs.STAGING_ROOT / commit
