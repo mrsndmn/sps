@@ -29,7 +29,7 @@ def output_dir(variant, exp, workload=None):
 
 def source_plan():
     signature()
-    plan = json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
+    plan = json.loads((e.prepared_path()).read_text())
     if (plan['design_signature'] != c.SOURCE_SIGNATURE or plan['steps'] != c.TRAIN_STEPS
             or plan['stage_steps'] != c.STAGE_STEPS):
         raise RuntimeError('Source plan mismatch')

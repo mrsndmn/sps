@@ -83,7 +83,7 @@ def main():
     if mtp.MTP_UNFREEZE:
         from workloads.speculative.mtp_common import warmstart_metadata
         parent_samples=warmstart_metadata(exp.horizons,world_size=world)['parent_samples_per_rank']
-    dest=(e.SANITY_ROOT if args.probe else e.RUN_ROOT)/'out'/exp.name
+    dest=(e.SANITY_ROOT/'out'/exp.name if args.probe else e.output_dir(exp))
     dest.mkdir(parents=True,exist_ok=True)
     signature=e.design_signature()
     start_step=0

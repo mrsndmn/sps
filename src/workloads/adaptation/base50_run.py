@@ -29,7 +29,7 @@ def plan():
 def worker():
     from data.ar_sps_data import prepare
     prepare()
-    launch.store_json(e.ARTIFACTS_ROOT/'prepared.json', plan())
+    launch.store_json(e.prepared_path(), plan())
     command = [str(e.PYTHON), '-m', 'torch.distributed.run', '--standalone',
                '--nproc_per_node=4', 'scripts/adaptation/base50_train.py', '--filter', c.experiment_configs[0].name]
     subprocess.run(command, check=True)

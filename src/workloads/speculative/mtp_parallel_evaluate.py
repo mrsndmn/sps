@@ -53,7 +53,7 @@ def aggregate(rows,baseline,n):
 
 
 @torch.inference_mode()
-def evaluate(exp):
+def evaluate(exp, *, work=None, final=None):
     if not torch.cuda.is_available(): raise RuntimeError('Production timing requires CUDA')
     trained=json.loads(e.training_marker(exp).read_text())
     validate_evaluation_inputs(trained)
@@ -96,18 +96,18 @@ def evaluate(exp):
         del model
         torch.cuda.empty_cache()
     report['native_greedy_all_equal']=all_equal
-    dest=e.output_dir(exp)
+    dest=work or e.output_dir(exp)
     write_json(dest/'evaluation.json',report)
     # Numeric mismatches are evidence, never silently substitute sequential timing.
     write_json(dest/'evaluated.json',dict(design_signature=e.design_signature(),
-        results=str(dest/'evaluation.json'),native_greedy_all_equal=all_equal))
+        results=str((final or dest)/'evaluation.json'),native_greedy_all_equal=all_equal))
     print(json.dumps(dict(name=exp.name,native_greedy_all_equal=all_equal,
-        results=str(dest/'evaluation.json'))),flush=True)
+        results=str((final or dest)/'evaluation.json'))),flush=True)
 
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('phase',choices=['eval']);p.add_argument('--filter',required=True)
-    a=p.parse_args()
+    p.add_argument('--reserved',action='store_true');a=p.parse_args()
     if e.SUITE!='mtp-parallel':raise RuntimeError('Select mtp-parallel suite')
     matches=e.collect_experiments(a.filter)
     if len(matches)!=1:raise ValueError('Select one experiment')
@@ -116,6 +116,10 @@ def main():
     signal.signal(signal.SIGALRM,expired)
     signal.alarm(mtp.MTP_PARALLEL_TIMEOUT_SECONDS)
     try:
-        evaluate(matches[0])
+        from orchestration.pilot_launch import destination
+        directory = destination("eval", matches[0])
+        with directory.writing(a.reserved) as work:
+            if work is not None:
+                evaluate(matches[0], work=work, final=directory.output)
     finally:
         signal.alarm(0)

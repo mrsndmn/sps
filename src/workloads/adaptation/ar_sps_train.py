@@ -42,7 +42,7 @@ def main():
     dist.init_process_group('nccl')
     plan = dict(steps=c.PROBE_STEPS, stage_steps=c.PROBE_STEPS//2) if args.probe else read_plan()
     steps = plan['steps']; transition = plan['stage_steps']
-    root = (e.SANITY_ROOT if args.probe else e.RUN_ROOT)/'out'/exp.name
+    root = (e.SANITY_ROOT/'out'/exp.name if args.probe else e.output_dir(exp))
     root.mkdir(parents=True, exist_ok=True)
     model = load_model(exp.recipe, device)
     teacher = load_teacher(device) if exp.distillation_weight else None

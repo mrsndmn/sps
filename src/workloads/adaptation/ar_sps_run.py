@@ -45,7 +45,9 @@ def calibrated_plan(probes):
     available = c.TRAIN_HOURS*3600-c.STARTUP_SECONDS
     steps = min(c.MAX_STEPS, int(available/(max(rates)*c.SAFETY)))
     if c.DISTILLATION:
-        parent = json.loads((e.COMMON_ROOT/c.REFERENCE_SUITE/'prepared.json').read_text())
+        source_root = e.COMMON_ROOT/c.REFERENCE_SUITE
+        report = source_root/'prepared/prepared.json'
+        parent = json.loads((report if report.exists() else source_root/'prepared.json').read_text())
         if (parent.get('design_signature') != c.REFERENCE_SIGNATURE
                 or parent.get('steps') != c.MAX_STEPS
                 or parent.get('stage_steps') != int(c.MAX_STEPS*c.STAGE_FRACTION)
@@ -74,7 +76,7 @@ def internal(phase, name):
             probes[exp.name] = json.loads((e.SANITY_ROOT/'out'/exp.name/'probe.json').read_text())
         # Native AR parity is a hard preparation gate, before marker publication.
         subprocess.run([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--audit'], check=True)
-        store_json(e.ARTIFACTS_ROOT/'prepared.json', calibrated_plan(probes))
+        store_json(e.prepared_path(), calibrated_plan(probes))
     else:
         matches = [exp for exp in e.collect_experiments() if exp.name == name]
         if len(matches) != 1:
@@ -84,7 +86,8 @@ def internal(phase, name):
             subprocess.run(e.train_command(exp), check=True)
         else:
             subprocess.run([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--filter', name], check=True)
-        store_json(e.output_dir(exp)/('trained.json' if phase == 'train' else 'evaluated.json'),
+        dest = e.phase_work('eval', e.output_dir(exp))
+        store_json(dest/('trained.json' if phase == 'train' else 'evaluated.json'),
                    dict(design_signature=e.design_signature()))
 
 

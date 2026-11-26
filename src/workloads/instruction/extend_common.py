@@ -16,7 +16,7 @@ def signature():
 
 def source_plan():
     signature()
-    plan=json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
+    plan=json.loads((e.prepared_path()).read_text())
     if plan['design_signature']!=c.SOURCE_SIGNATURE or plan['steps']!=c.START_STEP:
         raise RuntimeError('Source plan mismatch')
     return plan

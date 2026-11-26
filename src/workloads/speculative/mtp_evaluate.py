@@ -16,7 +16,7 @@ from torch.nn import functional as F
 from experiments.mtp import (MTP_INFERENCE_BACKEND, MTP_CONTEXT, MTP_EVAL_PROMPTS,
     MTP_NEW_TOKENS, MTP_PROMPT_TOKENS, MTP_SEED, MTP_SOURCE,
     MTP_TEMPERATURE, MTP_VAL_TOKENS)
-from orchestration.experiment_suite import output_dir
+from orchestration.experiment_suite import output_dir, phase_work
 from workloads.speculative.mtp_common import (TokenSequences, load_mtp, shifted_targets,
                                 validation_starts, restore_draft, load_reference)
 from modeling.models.sps.mtp import truncate_cache
@@ -389,7 +389,7 @@ def evaluate(exp, checkpoint_path):
                 speedup=(sum(row['tokens'] for row in rows)/total)/(sum(row['tokens'] for row in baseline)/baseline_total),
                 end_to_end_time_ratio=baseline_total/total,
                 greedy_full_token_equality=all(row.get('full_token_equality', True) for row in rows) if mode == 'greedy' else None)
-    destination = output_dir(exp)/'evaluation.json'
+    destination = phase_work('eval', output_dir(exp))/'evaluation.json'
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix('.json.tmp')
     temporary.write_text(json.dumps(report, indent=2, allow_nan=False)+'\n')

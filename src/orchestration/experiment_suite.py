@@ -1,5 +1,6 @@
 """Select experiment definitions and build commands for the shared MLSpace launchers."""
 
+import os
 import hashlib
 import json
 from pathlib import Path
@@ -42,6 +43,15 @@ if SUITE not in WORKER_SCRIPTS:
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == "1b" else COMMON_ROOT / SUITE
 RUN_ROOT = ARTIFACTS_ROOT / "runs"
 SANITY_ROOT = ARTIFACTS_ROOT / "sanity"
+
+if os.environ.get("SPS_WORK_PHASE") == "prepare":
+    SANITY_ROOT = Path(os.environ["SPS_PHASE_WORK"]) / "sanity"
+else:
+    from experiments.phase_outputs import families as phase_families
+    if SUITE in phase_families:
+        prepared_sanity = phase_families[SUITE].path(ARTIFACTS_ROOT, "prepare") / "sanity"
+        if prepared_sanity.is_dir():
+            SANITY_ROOT = prepared_sanity
 
 DATA_FILES = pilot.data_files(SUITE)
 MIN_FREE_BYTES = pilot.min_free_bytes(SUITE)
@@ -186,8 +196,36 @@ def eval_command(exp, task, *, result=None, checkpoint=None):
     ]
 
 
+def phase_work(phase, fallback):
+    if os.environ.get("SPS_WORK_PHASE") == phase:
+        return Path(os.environ["SPS_PHASE_WORK"])
+    return fallback
+
+
+def prepared_path():
+    from experiments.phase_outputs import families
+    current = phase_work("prepare", None)
+    if current is not None:
+        return current / "prepared.json"
+    if SUITE in families:
+        configured = families[SUITE].path(ARTIFACTS_ROOT, "prepare")
+        if configured.exists() or configured != ARTIFACTS_ROOT / "prepared":
+            return configured / "prepared.json"
+    return ARTIFACTS_ROOT / "prepared.json"
+
+
 def output_dir(exp):
-    return RUN_ROOT / "out" / exp.name
+    from experiments.phase_outputs import families
+    final = (families[SUITE].path(ARTIFACTS_ROOT, "train", exp.name)
+             if SUITE in families else RUN_ROOT / "out" / exp.name)
+    return phase_work("train", final) if os.environ.get("SPS_PHASE_RUN") == exp.name else final
+
+
+def published(path):
+    work = os.environ.get("SPS_PHASE_WORK")
+    if work and Path(path).is_relative_to(work):
+        return Path(os.environ["SPS_PUBLISHED_OUTPUT"]) / Path(path).relative_to(work)
+    return path
 
 
 def design_signature():
@@ -323,4 +361,6 @@ def training_marker(exp):
         return COMMON_ROOT / exp.suite / "runs/out" / exp.arm / "trained.json"
     if not exp.trainable:
         return None
+    if SUITE in {"1b", "10b"}:
+        return exp.output_dir / "trained.json"
     return output_dir(exp) / "trained.json"

@@ -24,7 +24,7 @@ RUN_ROOT = ROOT / 'runs'
 def source_check(exp, *, checkpoint=False):
     if e.SUITE != c.SOURCE_SUITE or e.design_signature() != c.SOURCE_SIGNATURE:
         raise RuntimeError('IFEval requires the pinned instruct design')
-    plan = json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
+    plan = json.loads((e.prepared_path()).read_text())
     if plan['design_signature'] != c.SOURCE_SIGNATURE:
         raise RuntimeError('Stale source preparation')
     if exp.trainable:

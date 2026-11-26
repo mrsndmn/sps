@@ -2,14 +2,25 @@
 
 import hashlib
 import json
+import shlex
 from pathlib import Path
 
+from experiments.phase_outputs import families as phase_outputs
+from experiments.evaluation_outputs import families as evaluation_outputs
 from orchestration.run_directory import RunDirectory
 from orchestration import experiment_suite as suite
 
 
 def destination(phase, run=None):
-    if phase == "prepare":
+    if suite.SUITE in phase_outputs:
+        output = phase_outputs[suite.SUITE].path(
+            suite.ARTIFACTS_ROOT, phase, run.name if run else None
+        )
+    elif suite.SUITE in evaluation_outputs:
+        if phase != "eval":
+            raise ValueError(f"{suite.SUITE} is evaluation-only")
+        output = evaluation_outputs[suite.SUITE].for_run(suite.COMMON_ROOT, run)
+    elif phase == "prepare":
         from experiments import pilot_1b, pilot_10b
 
         family = pilot_10b if suite.SUITE == "10b" else pilot_1b
@@ -20,7 +31,14 @@ def destination(phase, run=None):
         output = run.output_dir
     else:
         output = run.eval_output_dir
-    return RunDirectory(suite.COMMON_ROOT, output)
+    root = (
+        suite.COMMON_ROOT
+        if suite.ARTIFACTS_ROOT.is_relative_to(suite.COMMON_ROOT)
+        else suite.ARTIFACTS_ROOT
+    )
+    return RunDirectory(
+        root if output.is_relative_to(root) else suite.COMMON_ROOT, output
+    )
 
 
 def prepare_report():
@@ -28,6 +46,8 @@ def prepare_report():
     if path.is_file() or path.parent != suite.ARTIFACTS_ROOT / "prepared":
         return path
     historic = suite.ARTIFACTS_ROOT / "prepared.json"
+    if historic.is_file() and suite.SUITE in phase_outputs:
+        return historic
     if historic.is_file():
         forecasts = json.loads(historic.read_text()).get("estimates", {})
         if all(run.name in forecasts for run in suite.collect_experiments()):
@@ -84,8 +104,11 @@ def submit(args):
     runs = [
         e
         for e in suite.collect_experiments(args.filter)
-        if not args.named or e.name == args.named
+        if (not args.named or e.name == args.named)
+        and (phase != "train" or e.trainable)
     ]
+    if suite.SUITE in evaluation_outputs and phase != "eval":
+        raise ValueError(f"{suite.SUITE} is evaluation-only")
     if not runs:
         raise ValueError("No matching experiments")
     commit = launch.git("rev-parse", "HEAD")
@@ -104,13 +127,25 @@ def submit(args):
             if run is None
             else run.num_gpus,
         )
-        body["script"] += " --reserved"
+        if suite.SUITE in phase_outputs:
+            cd, command = body["script"].split(" && ", 1)
+            wrapper = shlex.join(
+                [str(suite.PYTHON), "-m", "orchestration.phase_worker", phase, name]
+            )
+            body["script"] = f"{cd} && {wrapper} {command}"
+        else:
+            body["script"] += " --reserved"
         old_identity = launch.normalize(body["job_desc"])
         key = hashlib.sha256(str(directory.output.resolve()).encode()).hexdigest()
         body["job_desc"] = (
             f"{old_identity} {key} #{args.author_name} @{args.telegram_nick}"
         )
         if args.dry:
+            if not args.named and phase == "eval" and suite.SUITE not in {"1b", "10b"}:
+                marker = suite.training_marker(run)
+                if marker is not None and not marker.is_file():
+                    print(f"Skip evaluation without trained checkpoint: {name}")
+                    continue
             if args.named:
                 settings = {
                     e.name: effective_settings(suite.SUITE, e, suite.RUN_ROOT, phase)
@@ -135,6 +170,14 @@ def submit(args):
         ):
             print(f"Skip existing output: {directory.output}")
             continue
+        if phase == "eval" and suite.SUITE in phase_outputs:
+            legacy = suite.RUN_ROOT / "out" / name
+            if (
+                directory.output == suite.ARTIFACTS_ROOT / "evaluations" / name
+                and (legacy / "evaluated.json").is_file()
+            ):
+                print(f"Skip existing evaluation: {legacy}")
+                continue
         from mls.manager.job.utils import (
             get_in_progress_jobs,
             training_job_api_from_profile,
@@ -148,9 +191,22 @@ def submit(args):
         }
         identity = launch.normalize(body["job_desc"])
         # Historic descriptions lacked a destination. Match only the original layout.
-        historic = run is None or directory.output == suite.RUN_ROOT / "out" / name / (
-            "eval" if phase == "eval" else ""
+        historic = (
+            run is None and directory.output == suite.ARTIFACTS_ROOT / "prepared"
+        ) or (
+            run is not None
+            and directory.output
+            == suite.RUN_ROOT / "out" / name / ("eval" if phase == "eval" else "")
         )
+        if suite.SUITE in phase_outputs and phase == "eval":
+            historic = directory.output in {
+                suite.RUN_ROOT / "out" / name / "eval",
+                suite.ARTIFACTS_ROOT / "evaluations" / name,
+            }
+        if suite.SUITE in evaluation_outputs:
+            historic = directory.output == suite.RUN_ROOT / "out" / name / (
+                "full" if suite.SUITE.startswith("mmlu-") else ""
+            )
         job = active.get(identity)
         if historic and not job:
             job = historical_job(suite.ARTIFACTS_ROOT, old_identity, client, active)
@@ -160,6 +216,13 @@ def submit(args):
                 directory.record(job)
             if job:
                 state = str(client.get_job_status(job).get("status", "")).lower()
+                if (
+                    state in {"completed", "succeeded"}
+                    and not directory.output.is_dir()
+                ):
+                    raise RuntimeError(
+                        f"Completed job {job} did not publish {directory.output}"
+                    )
                 if state in TERMINAL_FAILURES:
                     directory.retire()
                     job = None
@@ -172,12 +235,26 @@ def submit(args):
         if job:
             jobs.append(dict(name=name, job_name=job, reused=True))
             continue
+        if phase == "eval" and suite.SUITE in suite.AR_SPS_SUITES | {
+            suite.INSTRUCT_SUITE
+        }:
+            if not prepare_report().is_file():
+                raise RuntimeError("Complete --phase prepare first")
         if phase == "train":
             report = prepare_report()
             if not report.is_file():
                 raise RuntimeError("Complete --phase prepare first")
-            validate_forecast(run, json.loads(report.read_text()))
-        if phase == "eval":
+            if suite.SUITE not in phase_outputs:
+                validate_forecast(run, json.loads(report.read_text()))
+        if (
+            phase == "eval"
+            and suite.SUITE in evaluation_outputs.keys() | phase_outputs.keys()
+        ):
+            marker = suite.training_marker(run)
+            if marker is not None and not marker.is_file():
+                print(f"Skip evaluation without trained checkpoint: {name}")
+                continue
+        elif phase == "eval" and suite.SUITE not in phase_outputs:
             marker = run.output_dir / "trained.json"
             if not marker.is_file():
                 print(f"Skip evaluation without trained checkpoint: {name}")
@@ -189,6 +266,18 @@ def submit(args):
         body["region"] = extra["region"]
         if not directory.reserve():
             continue
+        try:
+            if suite.SUITE in suite.AR_SPS_SUITES:
+                from workloads.adaptation.ar_sps_run import reserve
+
+                reserve(phase, name)
+            elif suite.SUITE == suite.INSTRUCT_SUITE:
+                from workloads.instruction.instruct_run import reserve
+
+                reserve(phase, name)
+        except Exception:
+            directory.retire()
+            raise
         result = client.run_job(body)
         job = launch.valid_job_name(result)
         if not job:

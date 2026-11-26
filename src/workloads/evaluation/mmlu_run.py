@@ -37,12 +37,12 @@ def load_model(exp, device):
     return model.to(device).eval().requires_grad_(False)
 
 
-def evaluate(exp, limit=None):
+def evaluate(exp, limit=None, *, destination=None):
     if e.SUITE not in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'}:
         raise ValueError('Set SPS_EXPERIMENT_SUITE=mmlu-generation')
     torch.manual_seed(c.SEED)
     started = time.monotonic()
-    root = e.output_dir(exp) / ('smoke' if limit else 'full')
+    root = destination or e.output_dir(exp) / ('smoke' if limit else 'full')
     root.mkdir(parents=True, exist_ok=True)
     signature = e.design_signature()
     manifest = dict(design_signature=signature, experiment=exp.__dict__, limit=limit)
@@ -104,7 +104,7 @@ def evaluate(exp, limit=None):
                   length_rate=sum(x['stop'] == 'length' for x in saved)/len(saved),
                   context_overflow_rate=sum(x['stop'] == 'context_overflow' for x in saved)/len(saved))
     write_json(root / 'results.json', result)
-    if not limit:
+    if not limit and destination is None:
         write_json(e.output_dir(exp) / 'evaluated.json', result)
     print(json.dumps(result), flush=True)
 
@@ -114,8 +114,22 @@ def main():
     parser.add_argument('phase', choices=['eval'])
     parser.add_argument('--filter', required=True)
     parser.add_argument('--limit', type=int)
+    parser.add_argument('--reserved', action='store_true')
     args = parser.parse_args()
     matches = [x for x in c.experiment_configs if x.name == args.filter]
     if len(matches) != 1 or (args.limit is not None and args.limit <= 0):
         parser.error('Use one exact experiment name and a positive limit')
-    evaluate(matches[0], args.limit)
+    exp = matches[0]
+    if args.limit:
+        return evaluate(exp, args.limit)
+    from orchestration.pilot_launch import destination
+    directory = destination("eval", exp)
+    with directory.writing(args.reserved) as work:
+        if work is not None:
+            evaluate(exp, destination=work)
+    # Historic report readers expect the summary beside the full-results directory.
+    if directory.output == e.output_dir(exp) / "full":
+        report = directory.output / "results.json"
+        marker = e.output_dir(exp) / "evaluated.json"
+        if report.is_file() and not marker.exists():
+            write_json(marker, json.loads(report.read_text()))

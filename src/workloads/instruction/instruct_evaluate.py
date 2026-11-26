@@ -140,7 +140,7 @@ def evaluate(exp, limit=None):
     DetectorFactory.seed = c.SEED
     ensure_ifeval_resources()
     started = time.monotonic()
-    root = e.output_dir(exp) / ('eval-smoke' if limit else 'eval')
+    root = e.output_dir(exp) / 'eval-smoke' if limit else e.phase_work('eval', e.output_dir(exp) / 'eval')
     root.mkdir(parents=True, exist_ok=True)
     gate = e.SANITY_ROOT / 'generation-protocol.json'
     if not gate.exists():
@@ -177,7 +177,7 @@ def evaluate(exp, limit=None):
                                     root,signature,c.SEED,started,c.EVAL_MAX_HOURS)
     write_json(root/'results.json', result)
     if not limit:
-        write_json(e.output_dir(exp)/'evaluated.json', result)
+        write_json(e.phase_work('eval', e.output_dir(exp))/'evaluated.json', result)
     print(json.dumps(result), flush=True)
 
 

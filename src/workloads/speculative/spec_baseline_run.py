@@ -52,14 +52,14 @@ def prepare():
             trained,_=checked_state(exp)
             controls[exp.name]=dict(path=trained['checkpoint'],sha256=file_sha256(trained['checkpoint']))
     result=dict(design_signature=e.design_signature(),**identity,estimates=forecasts,controls=controls)
-    write_json(e.ARTIFACTS_ROOT/'probe-results.json',result)
+    write_json(e.phase_work('prepare', e.ARTIFACTS_ROOT)/'probe-results.json',result)
     if any(v['estimated_hours_range'][1]>spec_baselines.BASELINE_MAX_HOURS for v in forecasts.values()):
         raise RuntimeError('Baseline forecast exceeds training cap')
-    write_json(e.ARTIFACTS_ROOT/'prepared.json',result)
+    write_json(e.prepared_path(),result)
 
 
 def approved():
-    result=json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
+    result=json.loads((e.prepared_path()).read_text())
     if result['design_signature']!=e.design_signature() or any(result[k]!=v for k,v in check_inputs().items()):
         raise RuntimeError('Changed baseline preparation')
     return result
@@ -75,7 +75,7 @@ def train(exp):
     state=torch.load(checkpoint,map_location='cpu',weights_only=False,mmap=True)
     if state['tokens']!=spec_baselines.BASELINE_STEPS*spec_baselines.BASELINE_STEP_TOKENS or state['design_signature']!=e.design_signature():
         raise RuntimeError('Training did not complete the intended budget')
-    write_json(dest/'trained.json',dict(checkpoint=str(checkpoint),design_signature=e.design_signature(),
+    write_json(dest/'trained.json',dict(checkpoint=str(e.published(checkpoint)),design_signature=e.design_signature(),
         source_sha256=prepared['source_sha256'],data_manifest_sha256=prepared['data_manifest_sha256'],
         seconds=time.monotonic()-start,estimate=forecast))
 

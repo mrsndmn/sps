@@ -83,7 +83,7 @@ def restore(path, model, device):
 
 
 def read_plan():
-    plan = json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
+    plan = json.loads((e.prepared_path()).read_text())
     if plan['design_signature'] != e.design_signature():
         raise RuntimeError('Stale preparation plan')
     return plan

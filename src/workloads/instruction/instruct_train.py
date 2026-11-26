@@ -55,7 +55,7 @@ def main():
     steps = plan['steps']; transition = plan['stage_steps']
     if not 0 < transition < steps <= c.MAX_STEPS:
         raise ValueError('Invalid preparation plan')
-    root = (e.SANITY_ROOT if args.probe else e.RUN_ROOT)/'out'/exp.name
+    root = (e.SANITY_ROOT/'out'/exp.name if args.probe else e.output_dir(exp))
     root.mkdir(parents=True, exist_ok=True)
     model = load_model(exp.recipe, device)
     teacher = load_teacher(device) if exp.distillation_weight else None

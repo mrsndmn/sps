@@ -35,7 +35,7 @@ def main():
     model=construct(exp,device);params=[p for p in model.parameters() if p.requires_grad]
     optimizer=torch.optim.AdamW(params,lr=spec_baselines.BASELINE_LR[exp.recipe],betas=spec_baselines.BASELINE_BETAS,
         weight_decay=spec_baselines.BASELINE_WEIGHT_DECAY)
-    dest=(e.SANITY_ROOT if a.probe else e.RUN_ROOT)/'out'/exp.name;dest.mkdir(parents=True,exist_ok=True)
+    dest=(e.SANITY_ROOT/'out'/exp.name if a.probe else e.output_dir(exp));dest.mkdir(parents=True,exist_ok=True)
     signature=e.design_signature();identity=identities();step0=0
     if not a.probe and (dest/'latest.pt').exists():
         state=torch.load(dest/'latest.pt',map_location=device,weights_only=False)

@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -40,6 +41,22 @@ class RunDirectory:
             self.reservation.rmdir()
             return False
         return True
+
+    @contextmanager
+    def writing(self, reserved):
+        if not reserved and not self.reserve():
+            yield None
+            return
+        if not self.reservation.is_dir():
+            raise RuntimeError(f"Missing submission reservation {self.reservation}")
+        try:
+            self.work.mkdir(parents=True, exist_ok=True)
+            yield self.work
+            self.finish()
+        except Exception:
+            if not reserved and self.reservation.is_dir():
+                self.retire()
+            raise
 
     def finish(self):
         self.output.parent.mkdir(parents=True, exist_ok=True)

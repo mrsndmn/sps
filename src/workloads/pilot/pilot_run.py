@@ -161,17 +161,10 @@ def main():
     if args.phase != 'prepare':
         exp, = [run for run in collect_experiments(args.filter) if run.name == args.filter]
     directory = destination(args.phase, exp)
-    if not args.reserved and not directory.reserve():
-        return
-    if not directory.reservation.is_dir():
-        raise RuntimeError(f'Missing submission reservation {directory.reservation}')
-    try:
+    with directory.writing(args.reserved) as work:
+        if work is None:
+            return
         if args.phase == 'prepare':
-            prepare(directory.work)
+            prepare(work)
         else:
-            (train if args.phase == 'train' else evaluate)(exp, directory.work)
-        directory.finish()
-    except Exception:
-        if not args.reserved and directory.reservation.is_dir():
-            directory.retire()
-        raise
+            (train if args.phase == 'train' else evaluate)(exp, work)

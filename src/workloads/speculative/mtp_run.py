@@ -98,14 +98,14 @@ def prepare():
         warmstarts={exp.name:warmstart_metadata(exp.horizons) for exp in e.collect_experiments()}
     result=dict(design_signature=e.design_signature(),data=data,warmstarts=warmstarts,
                 source_sha256=file_digest(mtp.MTP_SOURCE),estimates=estimates)
-    write_json(e.ARTIFACTS_ROOT/'probe-results.json',result)
+    write_json(e.phase_work('prepare', e.ARTIFACTS_ROOT)/'probe-results.json',result)
     if max(x['projected_training_hours'] for x in estimates.values())>e.MAX_HOURS:
         raise RuntimeError('Measured MTP estimate exceeds approved cap; inspect probe-results.json')
-    write_json(e.ARTIFACTS_ROOT/'prepared.json',result)
+    write_json(e.prepared_path(),result)
 
 
 def train(exp):
-    prepared=json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
+    prepared=json.loads((e.prepared_path()).read_text())
     signature=e.design_signature()
     if prepared['design_signature']!=signature:raise RuntimeError('Stale MTP preparation')
     if prepared['source_sha256']!=file_digest(mtp.MTP_SOURCE):raise RuntimeError('Source checkpoint changed')
@@ -131,15 +131,15 @@ def train(exp):
     run_logged(e.train_command(exp),dest/'train.log',timeout=e.MAX_HOURS*3600)
     final=dest/'adaptation_final.pt'
     if not final.is_file():raise RuntimeError('Missing final adaptation checkpoint')
-    write_json(dest/'trained.json',dict(checkpoint=str(final),design_signature=signature,
+    write_json(dest/'trained.json',dict(checkpoint=str(e.published(final)),design_signature=signature,
         source_sha256=prepared['source_sha256'],
         data_manifest_sha256=prepared['data']['manifest_sha256'],
         seconds=time.monotonic()-start,estimate=forecast,warmstart=parent))
 
 
 def evaluate(exp):
-    dest=e.output_dir(exp)
-    trained=json.loads((dest/'trained.json').read_text())
+    dest=e.phase_work('eval', e.output_dir(exp))
+    trained=json.loads((e.output_dir(exp)/'trained.json').read_text())
     if trained['design_signature']!=e.design_signature():raise RuntimeError('Stale training identity')
     from workloads.speculative.mtp_common import validate_evaluation_inputs
     validate_evaluation_inputs(trained)
@@ -147,7 +147,7 @@ def evaluate(exp):
         dest/'eval.log',timeout=8*3600)
     if not (dest/'evaluation.json').is_file():raise RuntimeError('Missing evaluation results')
     write_json(dest/'evaluated.json',dict(design_signature=e.design_signature(),
-        results=str(dest/'evaluation.json')))
+        results=str(e.published(dest/'evaluation.json'))))
 
 
 def main():

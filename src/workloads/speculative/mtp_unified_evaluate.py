@@ -78,7 +78,7 @@ def audit(model,prompts):
         audited_rows=rows,all_horizon_probability_error=horizon_error,bitwise_native_equivalent=False)
 
 
-def evaluate(exp):
+def evaluate(exp, *, work=None, final=None):
     if torch.cuda.device_count()!=e.EVAL_NUM_GPUS:raise RuntimeError('Expected one visible evaluation GPU')
     trained,_=checked_state(exp);checkpoint=trained['checkpoint']
     model=load_mtp(exp.horizons,'cuda',checkpoint,backend='sdpa').eval()
@@ -105,17 +105,22 @@ def evaluate(exp):
         runs=[benchmark(model,p,mode,mtp.MTP_SEED+i) for i,p in enumerate(prompts)]
         report['baseline'][mode]=base
         report['variants'][str(exp.horizons-1)][mode]=summarize(runs,base,exp.horizons-1,mode)
-        write_json(e.output_dir(exp)/'evaluation.partial.json',report)
-    write_json(e.output_dir(exp)/'evaluation.json',report)
-    write_json(e.output_dir(exp)/'evaluated.json',dict(design_signature=e.design_signature(),results=str(e.output_dir(exp)/'evaluation.json')))
+        write_json((work or e.output_dir(exp))/'evaluation.partial.json',report)
+    write_json((work or e.output_dir(exp))/'evaluation.json',report)
+    write_json((work or e.output_dir(exp))/'evaluated.json',dict(design_signature=e.design_signature(),results=str((final or e.output_dir(exp))/'evaluation.json')))
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('phase',choices=['eval']);p.add_argument('--filter',required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('phase',choices=['eval']);p.add_argument('--filter',required=True);p.add_argument('--reserved',action='store_true');a=p.parse_args()
     if e.SUITE!='mtp-unified':raise RuntimeError('Select mtp-unified suite')
     matches=e.collect_experiments(a.filter)
     if len(matches)!=1:raise ValueError('Select one unified model')
     def expired(*args):raise TimeoutError('Unified evaluation time cap')
     signal.signal(signal.SIGALRM,expired);signal.alarm(mtp_unified.UNIFIED_TIMEOUT)
-    try:evaluate(matches[0])
+    try:
+        from orchestration.pilot_launch import destination
+        directory = destination("eval", matches[0])
+        with directory.writing(a.reserved) as work:
+            if work is not None:
+                evaluate(matches[0], work=work, final=directory.output)
     finally:signal.alarm(0)

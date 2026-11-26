@@ -77,13 +77,13 @@ def internal(phase, name):
         subprocess.run([str(e.PYTHON), 'scripts/instruction/instruct_evaluate.py', '--audit'], check=True)
         from data.instruct_data import rows
         plan = calibrated_plan(probes, rows('train'))
-        store_json(e.ARTIFACTS_ROOT/'prepared.json', plan)
+        store_json(e.prepared_path(), plan)
         return
     matches = [exp for exp in e.collect_experiments() if exp.name == name]
     if len(matches) != 1:
         raise ValueError('Select exactly one experiment')
     exp = matches[0]
-    prepared = json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
+    prepared = json.loads((e.prepared_path()).read_text())
     if prepared['design_signature'] != e.design_signature():
         raise RuntimeError('Stale preparation plan')
     if phase == 'train':
@@ -97,7 +97,7 @@ def internal(phase, name):
     else:
         subprocess.run([str(e.PYTHON), 'scripts/instruction/instruct_evaluate.py', '--filter', name], check=True)
         # Preserve evaluator-owned evaluated.json, including task coverage and audit.
-        marker = json.loads((e.output_dir(exp)/'evaluated.json').read_text())
+        marker = json.loads((e.phase_work('eval', e.output_dir(exp))/'evaluated.json').read_text())
         if marker['design_signature'] != e.design_signature():
             raise RuntimeError('Evaluator did not publish a matching completion marker')
 

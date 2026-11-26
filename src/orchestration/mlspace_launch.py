@@ -195,7 +195,7 @@ def main(default_phase='train', *, named=None):
     args = parser.parse_args()
     args.named = named
     launch = submit
-    if SUITE in {"1b", "10b"}:
+    if SUITE in WORKER_SCRIPTS:
         from orchestration.pilot_launch import submit as launch
     if args.dry:
         return launch(args)

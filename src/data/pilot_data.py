@@ -10,13 +10,28 @@ from orchestration.experiment_suite import (DATASET_REPO, DATASET_REVISION, DATA
 
 
 def prepare():
+    dest = RUN_ROOT / 'data' / 'fineweb-edu'
+    if (dest / 'manifest.json').is_file():
+        return _prepare(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    lock = dest / '.preparing'
+    try:
+        lock.mkdir()
+    except FileExistsError:
+        raise RuntimeError(f'Pilot memmaps are being prepared; inspect {lock} before retrying')
+    try:
+        return _prepare(dest)
+    finally:
+        lock.rmdir()
+
+
+def _prepare(dest):
     from huggingface_hub import hf_hub_download, try_to_load_from_cache
     import numpy as np
     import pyarrow.parquet as pq
     import tiktoken
     from data.prepare import _is_val
 
-    dest = RUN_ROOT / 'data' / 'fineweb-edu'
     marker = dest / 'manifest.json'
     if marker.exists():
         manifest = json.loads(marker.read_text())

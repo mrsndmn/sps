@@ -120,7 +120,7 @@ class EvaluationArgs:
     eval_batch_size: str = "auto"
     max_batch_size: int = 4096
     num_fewshot: int = 0
-    limit: Optional[int] = None
+    limit: Optional[float] = None
     eval_seed: int = 42
     min_eval_seq_len: Optional[int] = None
     required_block_size: Optional[int] = None

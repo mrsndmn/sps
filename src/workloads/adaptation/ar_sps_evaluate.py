@@ -91,7 +91,7 @@ def evaluate(exp, checkpoint=None, label='source'):
     adapter = Adapter(pretrained=model.backbone, tokenizer=tokenizer, backend='causal',
                       batch_size=c.EVAL_BATCH, max_length=c.CONTEXT, device='cuda',
                       logits_cache=False)
-    destination = e.output_dir(exp)/'eval'/label
+    destination = e.phase_work('eval', e.output_dir(exp)/'eval')/label
     destination.mkdir(parents=True, exist_ok=True)
     losses = nll(model, rows('test'), device)
     store_json(destination/'heldout.json', dict(nll=float(np.mean(losses)), per_sequence=losses,
