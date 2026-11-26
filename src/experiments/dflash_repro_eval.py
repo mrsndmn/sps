@@ -3,6 +3,18 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from .dflash_mask_ablation import family_config as models
+from .qwen4b_drafter_train import family_config as corpus
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModelArguments:
+    target: str = models.TARGET
+    target_revision: str = models.TARGET_REVISION
+    draft: str = models.DRAFT
+    draft_revision: str = models.DRAFT_REVISION
+    selection_file: Path = corpus.SELECTION_FILE
+
 
 @dataclass(frozen=True, kw_only=True)
 class GSM8KProtocol:
@@ -14,7 +26,7 @@ class GSM8KProtocol:
 
 
 @dataclass(frozen=True, kw_only=True)
-class DFlashEvalArguments(GSM8KProtocol):
+class DFlashEvalArguments(GSM8KProtocol, ModelArguments):
     name: str
     checkpoint: Path
     result: Path

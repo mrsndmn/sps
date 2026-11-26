@@ -380,6 +380,17 @@ def test_batch_skips_finished_active_and_deferred_before_charging(tmp_path, monk
             batch.submit({"job_desc": "sps-draft-sweep eval second current-hash"}, "eval", "second",
                          tmp_path / "second", legacy_prefix="sps-draft-sweep eval second ")
 
+    batch.active.clear()
+    identity = "sps-draft-sweep eval second previous"
+    old_receipt = tmp_path / "submissions" / "old.json"
+    mlspace_launch.store_json(old_receipt, dict(identity=identity, job_name=job))
+    for recorded in ("receipt", "intent"):
+        if recorded == "intent":
+            old_receipt.unlink()
+            mlspace_launch.store_json(tmp_path / "submission-intents" / "old.json", dict(identity=identity))
+        with pytest.raises(RuntimeError, match="older design"):
+            batch.submit({"job_desc": "sps-draft-sweep eval second new"}, "eval", "second",
+                         tmp_path / "second", legacy_prefix="sps-draft-sweep eval second ")
     assert len(sent) == 1 and sent[0]["region"] == "test"
     assert staged == ["commit"] and charged == ["first"]
     assert not RunDirectory(tmp_path, tmp_path / "second").reservation.exists()

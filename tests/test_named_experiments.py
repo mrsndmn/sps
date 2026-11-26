@@ -257,7 +257,7 @@ def test_second_dflash_config_reaches_worker_and_owns_its_output(tmp_path):
         stream.write(
             '\nexperiment_configs.append(Experiment(name="second", '
             f"output_root=Path({str(artifacts / 'custom')!r}), "
-            'eval_dir_pattern="eval-{step}", lr=0.0123, num_gpus=1, milestones=[]))\n'
+            'eval_dir_pattern="eval-{step}", eval_protocol=GSM8KProtocol(limit=17), lr=0.0123, num_gpus=1, milestones=[]))\n'
         )
     # Isolate NFS state while keeping both entry points and their real parsers.
     (tmp_path / "sitecustomize.py").write_text(
@@ -330,6 +330,7 @@ jobs.main()
     eval_output = output.parent / "eval-42"
     assert eval_plan["output_dir"] == str(eval_output)
     assert "lr" not in eval_plan["settings"]
+    assert eval_plan["settings"]["limit"] == 17
     command = shlex.split(shlex.split(eval_plan["payload"]["script"])[-1])
     assert json.loads(call(
         "-c",

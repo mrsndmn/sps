@@ -13,6 +13,13 @@ from workloads.distillation import qwen4b_drafter_train as previous
 from hashlib import sha256
 
 
+# Producer IDs from the two published runs, paired with their verified input digests.
+ARCHIVED_INPUTS = {
+    "ec224ca5303b0f5b8274986d0ea17af0bf7b921cf78e6ce8d4b428a1d6ae42a1": "bde4de4e00767cb8a591333607af3ef4fb62f19ac917786c3854e1600c64a800",
+    "45d1905c50658e4552dcb7fc3ba019d2056cb23d3bd7f10b6c026634d064eda5": "b6e1dae72eaab844261f354259eb20a82b14fc75120b09c2a43aa2fc8aabe341"
+}
+
+
 def settings_digest(settings):
     return sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
 
@@ -35,7 +42,7 @@ def validate_checkpoint(args):
     manifest = checkpoint / "inputs.json"
     if manifest.is_file():
         inputs = json.loads(manifest.read_text())
-        if settings_digest(inputs.pop("settings")) != args.training_settings_sha256 or inputs != training.input_provenance():
+        if settings_digest(inputs.pop("settings")) != args.training_settings_sha256 or inputs != training.input_provenance(args):
             raise ValueError("DFlash checkpoint training inputs do not match this experiment")
         return
 
@@ -44,6 +51,9 @@ def validate_checkpoint(args):
     design = published["design"]
     if not isinstance(design, str):
         raise ValueError("DFlash checkpoint is missing its training inputs")
+    actual = settings_digest({"settings_sha256": args.training_settings_sha256, **training.input_provenance(args)})
+    if ARCHIVED_INPUTS.get(design) != actual:
+        raise ValueError("DFlash checkpoint training inputs do not match this experiment")
     state = torch.load(checkpoint / "resume.pt", weights_only=True, mmap=True, map_location="meta")
     step = state["step"]
     if (state["design"] != design or step not in published["checkpoints"]
@@ -61,14 +71,14 @@ def evaluate(args):
     if torch.cuda.device_count() != 1:
         raise RuntimeError("The GSM8K benchmark requires exactly one visible GPU")
     device = torch.device("cuda:0")
-    target, tokenizer = previous.load_target(device)
+    target, tokenizer = previous.load_target(device, args.target, args.target_revision)
     eos = target.generation_config.eos_token_id
     stops = {eos} if isinstance(eos, int) else set(eos)
     spec = reference.Experiment("bidirectional", args.proposals)
     trained = training.build_draft(device, experiment=args).to(torch.bfloat16).eval()
     trained.load_state_dict(load_file(checkpoint / "weights.safetensors"), strict=True)
     published = AutoModel.from_pretrained(
-        reference.DRAFT, revision=reference.DRAFT_REVISION, code_revision=reference.DRAFT_REVISION,
+        args.draft, revision=args.draft_revision, code_revision=args.draft_revision,
         dtype=torch.bfloat16, attn_implementation="sdpa", trust_remote_code=True, local_files_only=True,
     ).to(device).eval()
     questions = gsm8k(args)
@@ -97,15 +107,15 @@ def evaluate(args):
             row.update(index=index, repeat=0, greedy_match=row["tokens"] == runs["ar"]["tokens"])
             samples[name].append(row)
         if (index + 1) % 25 == 0:
-            print(f"args.gsm8k {index + 1}/{len(questions)}", flush=True)
+            print(f"{args.gsm8k} {index + 1}/{len(questions)}", flush=True)
     summary = {name: reference.summary(samples[name], spec) for name in ("published", "trained")}
     summary["ar"] = {"requests": len(questions), "tokens_per_second": paired.decode_rate(samples["ar"])}
     summary["all_arms_matched"] = paired.matched_throughput(samples)
     summary["draft_pair"] = paired.compare_drafts(samples["published"], samples["trained"])
     launch.store_json(args.result, dict(
         design=args.name, evaluation=signature(), checkpoint=str(checkpoint),
-        target=reference.TARGET_REVISION,
-        published=reference.DRAFT_REVISION, gsm8k=args.gsm8k_revision,
+        target=args.target_revision,
+        published=args.draft_revision, gsm8k=args.gsm8k_revision,
         gpu=torch.cuda.get_device_name(), summary=summary, samples=samples,
     ))
     print(json.dumps(summary, indent=2), flush=True)

@@ -4,7 +4,7 @@ import argparse
 from dataclasses import asdict, fields, replace
 import sys
 
-from experiments.dflash_repro_eval import DFlashEvalArguments
+from experiments.dflash_repro_eval import DFlashEvalArguments, ModelArguments
 from orchestration.named.publication import submitting, work_path
 import json
 from pathlib import Path
@@ -42,6 +42,8 @@ def marker(experiment, phase, step=None):
 def worker_arguments(trainer, experiment, phase, step):
     if phase == "eval":
         return DFlashEvalArguments(
+            **asdict(experiment.eval_protocol),
+            **{f.name: getattr(experiment, f.name) for f in fields(ModelArguments)},
             name=experiment.name,
             checkpoint=trainer.checkpoint_path(step, experiment),
             result=experiment.output(phase, step) / "evaluated.json",

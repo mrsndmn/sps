@@ -29,19 +29,20 @@ from experiments.dflash_repro_train import TrainArguments, experiment_configs
 
 def training_settings(experiment):
     settings = asdict(experiment)
-    for key in ("output_root", "eval_dir_pattern"):
+    for key in ("output_root", "eval_dir_pattern", "eval_protocol", "selection_file"):
         settings.pop(key, None)
     return settings
 
 
 def training_inputs(experiment):
-    return dict(settings=training_settings(experiment), **input_provenance())
+    return dict(settings=training_settings(experiment), **input_provenance(experiment))
 
 
-def input_provenance():
+def input_provenance(experiment):
     return dict(
-        selection_sha256=instruct_data.file_hash(previous.selection_path()),
-        target_revision=reference.TARGET_REVISION, draft_revision=reference.DRAFT_REVISION,
+        selection_sha256=instruct_data.file_hash(experiment.selection_file),
+        target=experiment.target, target_revision=experiment.target_revision,
+        draft=experiment.draft, draft_revision=experiment.draft_revision,
     )
 
 
@@ -103,11 +104,11 @@ def build_draft(device, *, backend="sdpa", experiment):
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
-    pinned = dict(revision=reference.DRAFT_REVISION, local_files_only=True)
-    config = AutoConfig.from_pretrained(reference.DRAFT, **pinned)
+    pinned = dict(revision=experiment.draft_revision, local_files_only=True)
+    config = AutoConfig.from_pretrained(experiment.draft, **pinned)
     if config.block_size != experiment.width or config.num_hidden_layers != 5 or config.attention_dropout:
         raise RuntimeError("Unexpected architecture in the pinned DFlash config")
-    cls = get_class_from_dynamic_module(config.auto_map["AutoModel"], reference.DRAFT, **pinned)
+    cls = get_class_from_dynamic_module(config.auto_map["AutoModel"], experiment.draft, **pinned)
     if backend == "flex":
         compiled = torch.compile(flex_attention, dynamic=True, fullgraph=True)
 
@@ -207,12 +208,12 @@ def train(probe, experiment):
         raise RuntimeError(f"Expected {experiment.num_gpus} DDP ranks, got {world}")
     device = torch.device("cuda", local)
     design = training_inputs(experiment)
-    corpus = prepared.open_dataset()
-    train_indices = previous.selection()["train"]
+    corpus = prepared.open_dataset(experiment.corpus_repo, experiment.corpus_revision, experiment.corpus_rows)
+    train_indices = json.loads(experiment.selection_file.read_text())["train"]
     steps = total_steps(len(train_indices), experiment)
     accumulation = experiment.global_batch // world
     per_epoch = len(train_indices) // experiment.global_batch
-    target, _ = previous.load_target(device)
+    target, _ = previous.load_target(device, experiment.target, experiment.target_revision)
     model = build_draft(device, backend="flex", experiment=experiment)
     ddp = DistributedDataParallel(BlockLoss(model, target.lm_head, experiment=experiment), device_ids=[local],
                                  broadcast_buffers=False, gradient_as_bucket_view=True)

@@ -22,13 +22,13 @@ MMLU_TEST_FILE = qwen4b_drafter_data_settings.MMLU_TEST_FILE
 MIN_LOSS_TOKENS = qwen4b_drafter_data_settings.MIN_LOSS_TOKENS
 
 
-def open_dataset():
+def open_dataset(repo=REPO, revision=REVISION, source_rows=SOURCE_ROWS):
     import pyarrow as pa
     from datasets import Dataset
     from huggingface_hub import snapshot_download
 
     path = snapshot_download(
-        REPO, repo_type="dataset", revision=REVISION, cache_dir=HF_HOME / "hub",
+        repo, repo_type="dataset", revision=revision, cache_dir=HF_HOME / "hub",
         local_files_only=True,
     )
     # The snapshot declares a newer HF List feature than this environment.
@@ -40,7 +40,7 @@ def open_dataset():
         with pa.memory_map(str(folder / entry["filename"])) as source:
             tables.append(pa.ipc.open_stream(source).read_all().replace_schema_metadata(None))
     rows = Dataset(pa.concat_tables(tables))
-    if len(rows) != SOURCE_ROWS or not {"input_ids", "loss_mask", "seq_len"} <= set(rows.column_names):
+    if len(rows) != source_rows or not {"input_ids", "loss_mask", "seq_len"} <= set(rows.column_names):
         raise ValueError("Unexpected prepared DFlash dataset")
     return rows
 

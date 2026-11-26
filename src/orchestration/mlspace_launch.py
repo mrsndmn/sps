@@ -94,7 +94,7 @@ def reconcile_for_outputs(client, active, outputs):
     reconcile_intents(active, selected)
 
 
-def occupied_slots(client, active, prefix, roots=()):
+def occupied_slots(client, active, prefix, roots=(), *, legacy_only=False):
     """Count family submissions during list-API lag, including unconfirmed sends."""
     from orchestration.pilot_launch import TERMINAL_FAILURES
 
@@ -103,11 +103,14 @@ def occupied_slots(client, active, prefix, roots=()):
             for path in (root / subdirectory).glob("*.json"):
                 yield json.loads(path.read_text())
 
-    listed = {key: job for key, job in active.items() if key.startswith(prefix)}
+    def matches(identity):
+        return identity.startswith(prefix) and (not legacy_only or " output=" not in identity)
+
+    listed = {key: job for key, job in active.items() if matches(key)}
     jobs = set(listed.values())
     received_attempts = set()
     for row in records("submissions"):
-        if not row["identity"].startswith(prefix):
+        if not matches(row["identity"]):
             continue
         received_attempts.add((row["identity"], row.get("attempt")))
         job = row["job_name"]
@@ -118,7 +121,7 @@ def occupied_slots(client, active, prefix, roots=()):
     unknown = 0
     for row in records("submission-intents"):
         identity = row["identity"]
-        if not identity.startswith(prefix) or identity in listed:
+        if not matches(identity) or identity in listed:
             continue
         if (identity, row.get("attempt")) in received_attempts:
             continue
@@ -352,7 +355,7 @@ class SubmissionBatch:
             if output is None or directory
             else output_identity(body["job_desc"], output)
         )
-        if legacy_prefix and any(k.startswith(legacy_prefix) and " output=" not in k for k in self.active):
+        if legacy_prefix and occupied_slots(self.client, self.active, legacy_prefix, legacy_only=True):
             raise RuntimeError(f"An older design is already running for {name}")
         if identity in self.active:
             return dict(name=name, job_name=self.active[identity], reused=True)

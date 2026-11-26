@@ -4,11 +4,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .environment import COMMON_ROOT
+from .dflash_repro_eval import GSM8KProtocol, ModelArguments
+from .qwen4b_drafter_data import family_config as corpus
 from .qwen4b_drafter_train import family_config as qwen4b_drafter_train_settings
 
 
 @dataclass(frozen=True, kw_only=True)
-class TrainArguments:
+class TrainArguments(ModelArguments):
+    corpus_repo: str = corpus.REPO
+    corpus_revision: str = corpus.REVISION
+    corpus_rows: int = corpus.SOURCE_ROWS
     name: str
     output_root: Path
     epochs: int = 3
@@ -42,6 +47,7 @@ class TrainArguments:
 class Experiment(TrainArguments):
     milestones: list[int] = field(default_factory=lambda: [5000, 10000])
     eval_dir_pattern: str
+    eval_protocol: GSM8KProtocol = field(default_factory=GSM8KProtocol)
 
     def output(self, phase, step=None):
         if phase == "eval":

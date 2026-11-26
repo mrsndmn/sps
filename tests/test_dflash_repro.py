@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 import torch
 from torch import nn
@@ -89,11 +91,12 @@ def test_worker_payload_requests_matching_training_topology_and_single_eval_gpu(
 
 
 def test_milestone_evaluation_waits_for_published_training(tmp_path, monkeypatch):
-    from dataclasses import replace
     import pytest
     from orchestration.named import publication
 
-    exp = replace(BASELINE, output_root=tmp_path / "experiment")
+    selection = tmp_path / "selection.json"
+    selection.write_text("{}")
+    exp = replace(BASELINE, output_root=tmp_path / "experiment", selection_file=selection)
     monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
     weights = training.checkpoint_path(5000, exp) / "weights.safetensors"
     weights.parent.mkdir(parents=True)
@@ -103,6 +106,8 @@ def test_milestone_evaluation_waits_for_published_training(tmp_path, monkeypatch
         jobs.launch.SubmissionBatch, "submit", lambda *a, **kw: calls.append(a)
     )
     arguments = jobs.worker_arguments(training, exp, "eval", 5000)
+    monkeypatch.setitem(jobs.evaluation.ARCHIVED_INPUTS, "archive", jobs.evaluation.settings_digest(
+        {"settings_sha256": arguments.training_settings_sha256, **training.input_provenance(arguments)}))
     with pytest.raises(RuntimeError, match="Complete DFlash training"):
         jobs.submit_phase(exp, training, "eval", 5000, {}, "test", arguments)
     jobs.marker(exp, "train").write_text('{"design":"archive","checkpoints":[5000]}')
@@ -122,39 +127,45 @@ def test_checkpoint_inputs_detect_reordered_selection(tmp_path, monkeypatch):
     from workloads.distillation import dflash_repro_eval as evaluation
 
     selection = tmp_path / "selection.json"
-    monkeypatch.setattr(training.previous, "selection_path", lambda: selection)
+    exp = replace(BASELINE, selection_file=selection)
     selection.write_text('{"train":[1,2],"val":[3]}')
-    inputs = training.training_inputs(BASELINE)
+    inputs = training.training_inputs(exp)
     training.launch.store_json(tmp_path / "inputs.json", inputs)
     selection.write_text('{"train":[2,1],"val":[3]}')
     with pytest.raises(ValueError, match="checkpoint training inputs"):
-        from dataclasses import replace
 
         evaluation.evaluate(
             replace(
-                jobs.worker_arguments(training, BASELINE, "eval", 5000),
+                jobs.worker_arguments(training, exp, "eval", 5000),
                 checkpoint=tmp_path,
             )
         )
 
 
-def test_archived_checkpoint_must_match_published_run_and_step(tmp_path):
-    from dataclasses import replace
+def test_archived_checkpoint_must_match_published_run_and_step(tmp_path, monkeypatch):
     from workloads.distillation import dflash_repro_eval as evaluation
 
     checkpoint = tmp_path / BASELINE.name / "step-05000"
     checkpoint.mkdir(parents=True)
     args = replace(jobs.worker_arguments(training, BASELINE, "eval", 5000), checkpoint=checkpoint)
+    selection = tmp_path / "selection.json"
+    selection.write_text("{}")
+    args = replace(args, selection_file=selection)
+    monkeypatch.setitem(evaluation.ARCHIVED_INPUTS, "archived", evaluation.settings_digest(
+        {"settings_sha256": args.training_settings_sha256, **training.input_provenance(args)}))
     training.launch.store_json(checkpoint.parent / "trained.json", dict(design="archived", checkpoints=[5000]))
     torch.save(dict(step=5000, design="archived"), checkpoint / "resume.pt")
     evaluation.validate_checkpoint(args)
+    for changed in (replace(BASELINE, lr=0.3), replace(BASELINE, corpus_revision="different")):
+        digest = jobs.worker_arguments(training, changed, "eval", 5000).training_settings_sha256
+        with pytest.raises(ValueError, match="training inputs"):
+            evaluation.validate_checkpoint(replace(args, training_settings_sha256=digest))
     for step, design in ((10000, "archived"), (5000, "another")):
         torch.save(dict(step=step, design=design), checkpoint / "resume.pt")
         with pytest.raises(ValueError, match="published training run"):
             evaluation.validate_checkpoint(args)
 
 def test_archived_probe_is_reported_and_skipped_before_submission(tmp_path):
-    from dataclasses import replace
 
     design = "a" * 64
     exp = replace(BASELINE, output_root=tmp_path / design[:16])

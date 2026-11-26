@@ -113,16 +113,15 @@ def test_prepared_arrow_loader_handles_newer_hf_list_metadata(monkeypatch, tmp_p
     with pa.ipc.new_stream(tmp_path / "data.arrow", table.schema) as writer:
         writer.write_table(table)
     (tmp_path / "state.json").write_text('{"_data_files":[{"filename":"data.arrow"}]}')
-    monkeypatch.setattr(prepared, "SOURCE_ROWS", 1)
 
     def snapshot(repo, **kwargs):
-        assert repo == prepared.REPO
-        assert kwargs["revision"] == prepared.REVISION and kwargs["local_files_only"]
+        assert repo == "test/corpus"
+        assert kwargs["revision"] == "custom-revision" and kwargs["local_files_only"]
         assert kwargs["cache_dir"] == prepared.HF_HOME / "hub"
         return tmp_path
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot)
-    rows = prepared.open_dataset()
+    rows = prepared.open_dataset("test/corpus", "custom-revision", 1)
     assert rows[0] == {key: values[0] for key, values in fields.items()}
 
 

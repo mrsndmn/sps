@@ -82,15 +82,15 @@ class BlockDrafter(nn.Module):
         return self.draft(noise_embedding=inputs, **kwargs)
 
 
-def load_target(device):
+def load_target(device, repo=reference.TARGET, revision=reference.TARGET_REVISION):
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     target = AutoModelForCausalLM.from_pretrained(
-        reference.TARGET, revision=reference.TARGET_REVISION, local_files_only=True,
+        repo, revision=revision, local_files_only=True,
         dtype=torch.bfloat16, attn_implementation="sdpa",
     ).to(device).eval().requires_grad_(False)
     tokenizer = AutoTokenizer.from_pretrained(
-        reference.TARGET, revision=reference.TARGET_REVISION, local_files_only=True,
+        repo, revision=revision, local_files_only=True,
     )
     return target, tokenizer
 

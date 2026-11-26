@@ -6,6 +6,7 @@ from statistics import mean, median
 import os
 import time
 
+import json
 import torch
 import torch.distributed as dist
 from torch.nn import functional as F
@@ -97,12 +98,12 @@ def train(probe, experiment):
         raise RuntimeError(f"Expected {experiment.num_gpus} ranks, got {world}")
     device = torch.device("cuda", local)
     design = hard.training_inputs(experiment)
-    corpus = hard.prepared.open_dataset()
-    train_indices = hard.previous.selection()["train"]
+    corpus = hard.prepared.open_dataset(experiment.corpus_repo, experiment.corpus_revision, experiment.corpus_rows)
+    train_indices = json.loads(experiment.selection_file.read_text())["train"]
     steps = hard.total_steps(len(train_indices), experiment)
     accumulation = experiment.global_batch // world
     per_epoch = len(train_indices) // experiment.global_batch
-    target, _ = hard.previous.load_target(device)
+    target, _ = hard.previous.load_target(device, experiment.target, experiment.target_revision)
     model = hard.build_draft(device, backend="flex", experiment=experiment)
     initial = initial_hash(model) if rank == 0 else None
     ddp = DistributedDataParallel(SoftBlockLoss(model, target.lm_head, experiment=experiment), device_ids=[local],
