@@ -166,3 +166,49 @@ def test_unprepared_drafter_prints_worker_command(tmp_path):
         "--worker",
     ]
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("mode", ["thinking", "nonthinking"])
+def test_provenance_preview_uses_evaluation_generation(mode):
+    from experiment_defs.special_families import provenance
+    from scripts import provenance_evaluate, provenance_prepare
+
+    plans = list(provenance())
+    prep = next(plan for plan in plans if plan.phase == "prepare")
+    assert prep.settings["GENERATION"] == provenance_prepare.GENERATION
+    plan = next(plan for plan in plans if plan.name == "continued_ar-teacher--" + mode)
+    assert plan.settings["generation"] == provenance_evaluate.c.GENERATION[mode]
+    assert plan.settings["preparation_generation"] == provenance_prepare.GENERATION
+    assert plan.settings["GENERATION"] == provenance_evaluate.c.GENERATION
+
+
+@pytest.mark.parametrize(
+    "family,run",
+    [
+        ("vllm-sps-qwen3", "qwen3_sps_mtp"),
+        ("vllm-sps-draft-sweep", "qwen3_sps_mtp"),
+        ("qwen3-instruct-real-readout-mtp", "qwen3_real_readout_mtp"),
+    ],
+)
+def test_named_train_preview_includes_shared_optimizer_and_context(family, run):
+    from scripts import vllm_sps_train
+
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "run_train_jobs.py",
+            "--experiment",
+            family + "/" + run,
+            "--phase",
+            "train",
+            "--dry",
+        ],
+        text=True,
+    )
+    plan, _ = json.JSONDecoder().raw_decode(out)
+    actual = plan["settings"]
+    for field in ("CONTEXT", "EMBED_LR", "FULL_LR", "BETAS", "WEIGHT_DECAY", "CLIP"):
+        expected = getattr(vllm_sps_train.source, field)
+        assert actual[field] == (
+            list(expected) if isinstance(expected, tuple) else expected
+        )

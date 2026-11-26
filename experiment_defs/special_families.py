@@ -36,7 +36,7 @@ def base50():
 def readout():
     module = load("real_readout_run")
     for phase in ("probe", "train"):
-        yield job(module, phase, module.ARM, phase, config=module.c)
+        yield job(module, phase, module.ARM, phase, config=(module.c.source, module.c))
     for workload in ("eval", "mmlu", "gsm8k", "humaneval", "serving"):
         module = load("real_readout_" + workload)
         for exp in module.experiment_configs:
@@ -65,12 +65,20 @@ def provenance():
     prep = load("provenance_prepare")
     yield from builds("provenance_prepare", "prepare", config=(source, prep))
     yield from builds("provenance_train", "train", "--arm", config=(source, prep))
-    yield from builds(
-        "provenance_evaluate",
-        "eval",
-        "--filter",
-        config=(source, prep, load("ifeval_config")),
-    )
+    evaluator = load("provenance_evaluate")
+    for run in evaluator.experiment_configs:
+        yield job(
+            evaluator,
+            "eval",
+            run,
+            "--filter",
+            run.name,
+            config=(source, evaluator.ic),
+            parameters={
+                "generation": source.GENERATION[run.mode],
+                "preparation_generation": prep.GENERATION,
+            },
+        )
 
 
 def sampling():

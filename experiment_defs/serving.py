@@ -16,6 +16,7 @@ def serving(family):
     else:
         phases = ("audit", "eval")
         collect = load("serving_benchmark").selected
+    config = load("vllm_sps_config")
     for phase in phases:
         for run in collect(phase):
             yield job(
@@ -26,5 +27,7 @@ def serving(family):
                 phase,
                 "--filter",
                 run.name,
-                config=load("vllm_sps_config"),
+                config=(config.source, config)
+                if phase in {"train", "probe"}
+                else config,
             )
