@@ -1,60 +1,33 @@
 # SPS Experiments
 
-## Language
+## Prediction slots and attention
 
-**Zero-window SPS**:
-An SPS variant whose prediction tokens cannot attend to other prediction tokens. A prediction token may attend to itself and to causally visible input tokens.
-_Avoid_: No prediction self-attention, zero context
+**Zero-window SPS** — An SPS variant in which each prediction slot can attend only to itself and to causally visible input tokens.
 
-**Pilot comparison**:
-A shortened comparison of SPS and a standard Transformer trained on the same data with an equal training-token budget. It tests the direction of an effect without claiming numerical reproduction of the paper.
-_Avoid_: Full reproduction
+**SPS MTP group** — An ordered set of prediction slots that share one visible text prefix and predict consecutive future tokens. Each slot can attend only to that prefix, itself and earlier slots in the same group.
 
+**Prediction horizon** — The distance in tokens from the last visible text token of an SPS MTP group to the token that a slot predicts. The next token has a prediction horizon of one.
 
-**SPS speculative decoding**:
-Generation in which MTP proposals are verified against the reference SPS model, with an acceptance and correction rule preserving that reference model's output distribution.
-_Avoid_: Unverified block generation, guaranteed speedup
+## Model adaptation and quality
 
+**AR-to-SPS adaptation** — Conversion of a pretrained autoregressive (AR) language model to zero-window SPS. The adapted model uses dedicated prediction slots for next-token predictions, and the original AR model provides the quality reference.
 
-**SPS MTP group**:
-An ordered set of prediction slots sharing the same visible text prefix and predicting consecutive future tokens. Each slot may attend to earlier prediction slots within its own group, but not to slots in other groups or to future text tokens.
-_Avoid_: Ordinary zero-window SPS, teacher-forced future-token chain
+**Observed quality retention** — A pilot outcome in which every selected benchmark point estimate for the adapted model matches or exceeds the original model’s estimate, and held-out negative log-likelihood stays the same or decreases. These comparisons use matched evaluations and describe only the observed results.
 
-**Prediction horizon**:
-The offset of a future text token relative to the last visible text token of an MTP group.
-_Avoid_: Predict window, generated prefix length
+**Pilot comparison** — A shortened experiment that trains SPS and a standard Transformer on the same data with the same training-token budget. It tests the direction of an effect reported in the paper.
 
+## Speculative decoding and verification
 
-**AR-to-SPS adaptation**:
-Conversion of a pretrained autoregressive language model into zero-window SPS, with next-token predictions read from dedicated prediction slots. Quality retention refers to these SPS predictions relative to the original autoregressive model.
-_Avoid_: SPS-to-MTP adaptation, unchanged AR quality
+**SPS verifier** — The next-token distribution from the first prediction slot of an SPS model at a given prefix. It serves as the reference for accepting or correcting proposed tokens.
 
+**SPS speculative decoding** — A generation method that checks multi-token prediction (MTP) proposals against the SPS verifier. Its acceptance and correction rule preserves the verifier’s output distribution.
 
-**Observed quality retention**:
-An adapted model has no decrease in any selected benchmark point estimate and no increase in held-out negative log-likelihood relative to its original model under matched evaluation. This is an empirical pilot outcome, not proof of population-level non-inferiority.
-_Avoid_: Proven quality equivalence, statistically guaranteed no degradation
+**Shared-backbone SPS-MTP** — An SPS model that uses the same backbone weights to propose tokens at multiple prediction horizons and to verify them with the first prediction slot. Ordinary decoding uses the same model with only the first slot.
 
+## Decoding controls and performance
 
-**Matched-verifier speedup**:
-The measured speed ratio between speculative decoding and ordinary decoding of the same verifier under a matched workload. Speedups for different verifiers have separate baselines and are accompanied by absolute latency, throughput and quality.
-_Avoid_: Shared-baseline speedup across AR and SPS verifiers
+**AR Qwen control** — The original instruction-tuned autoregressive Qwen model that serves as the quality reference and verifies proposals in the EAGLE-3 control.
 
+**EAGLE-3 control** — Speculative decoding that pairs a compatible EAGLE-3 proposer with the AR Qwen control. Its speed baseline is ordinary decoding with the AR Qwen control.
 
-**Shared-backbone SPS-MTP**:
-An SPS model whose multi-horizon proposal and first-horizon verification use the same backbone weights. Its ordinary-decoding baseline uses that same model with the first prediction slot only.
-_Avoid_: Separate draft backbone, unchanged pretrained verifier
-
-
-**SPS verifier**:
-The first-prediction-slot distribution of an SPS model against which speculative proposals are accepted or corrected. In shared-backbone SPS-MTP it is a role of the same model that proposes the block.
-_Avoid_: Original AR verifier, external teacher
-
-
-**AR Qwen control**:
-The original instruction-tuned autoregressive Qwen model used as the quality reference and the verifier for the EAGLE-3 comparison arm. It is distinct from the adapted SPS verifier.
-_Avoid_: SPS baseline, continued-AR adaptation control
-
-
-**EAGLE-3 control**:
-Speculative decoding of the AR Qwen control with a compatible EAGLE-3 proposer. Its matched-verifier speedup is measured against ordinary decoding of that AR Qwen control.
-_Avoid_: EAGLE-3 verification by SPS, common-verifier comparison with SPS-MTP
+**Matched-verifier speedup** — The ratio of ordinary decoding time to speculative decoding time for the same verifier on a matched workload. Each verifier has its own baseline, and results include absolute latency, throughput and quality.
