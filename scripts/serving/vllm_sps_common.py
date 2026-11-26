@@ -7,6 +7,8 @@ from pathlib import Path
 
 from scripts import vllm_sps_config as c
 
+LEGACY_GLOBAL_BATCH = 16
+
 
 def file_hash(path):
     h = hashlib.sha256()
@@ -48,9 +50,22 @@ def matches_training_input(state):
     )
 
 
-def probe_seconds(path):
+def probe_workload():
+    return {"horizons": c.HORIZONS, "global_batch": c.GLOBAL_BATCH}
+
+
+def probe_seconds(path, *, legacy_horizons=4):
     probe = json.loads(path.read_text())
-    embedding, full = probe["embedding"], probe["full"]
+    workload = {
+        "horizons": probe.get("horizons", legacy_horizons),
+        "global_batch": probe.get("global_batch", LEGACY_GLOBAL_BATCH),
+    }
+    if workload != probe_workload():
+        raise RuntimeError(f"Training probe uses another workload: {path}")
+    if "seconds" in probe:
+        embedding, full = probe["seconds"]
+    else:
+        embedding, full = probe["embedding"], probe["full"]
     if any(not math.isfinite(value) or value <= 0 for value in (embedding, full)):
         raise RuntimeError(f"Invalid training probe timings: {path}")
     return embedding * c.STAGE_STEPS + full * (c.TRAIN_STEPS - c.STAGE_STEPS)

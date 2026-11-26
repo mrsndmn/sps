@@ -351,7 +351,7 @@ def complete(phase, exp, manifest=None, *, protocol=None):
         if not marker.exists():
             return False
         if phase == "probe":
-            common.probe_seconds(marker)
+            common.probe_seconds(marker, legacy_horizons=training.LEGACY_HORIZONS)
         else:
             bench.trained()
         return True
@@ -409,7 +409,8 @@ def submit(args, choices):
     if phase == "train":
         if not complete("probe", TRAINER):
             raise RuntimeError("Finish the 9-position probe first")
-        if 2 * common.probe_seconds(ROOT / "prepared.json") > c.TRAIN_HOURS * 3600:
+        estimate = common.probe_seconds(ROOT / "prepared.json", legacy_horizons=training.LEGACY_HORIZONS)
+        if 2 * estimate > c.TRAIN_HOURS * 3600:
             raise RuntimeError("Probe does not fit the reserved training time")
     if phase in {"audit", "eval"}:
         bench.trained()

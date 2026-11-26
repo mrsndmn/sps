@@ -5,6 +5,7 @@ from pathlib import Path
 import shlex
 
 from scripts import mlspace_launch as launch
+from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 
 ROOT = c.ROOT.parent / "qwen3-instruct-real-readout-mtp"
@@ -24,9 +25,9 @@ def trained():
 
 
 def check_probe():
-    projected = json.loads((ROOT / "prepared.json").read_text())["projected_hours"]
-    if not 0 < projected < c.TRAIN_HOURS:
-        raise RuntimeError("Training projection exceeds allocation or probe timings are invalid")
+    projected = common.probe_seconds(ROOT / "prepared.json")
+    if projected >= c.TRAIN_HOURS * 3600:
+        raise RuntimeError("Training projection exceeds allocation")
 
 
 def submit(phase, dry):

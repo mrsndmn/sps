@@ -14,6 +14,7 @@ from scripts import real_readout_run as train
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts.mmlu_results import recover_samples
+from scripts.readout.readout_archive import compatible_identity
 
 ROOT = train.ROOT / "gsm8k-generation"
 HOURS = {"thinking": 48, "nonthinking": 16}
@@ -70,8 +71,10 @@ def evaluate(exp):
     root = ROOT / "runs/out" / exp.name
     manifest, path = root / "manifest.json", root / "answers.jsonl"
     if manifest.exists():
-        if json.loads(manifest.read_text()) != ident:
+        saved = json.loads(manifest.read_text())
+        if not compatible_identity(saved, ident, marker, "gsm8k"):
             raise ValueError("Incompatible GSM8K resume")
+        ident = saved
     elif path.exists():
         raise ValueError("Orphaned GSM8K answers")
     launch.store_json(manifest, ident)
@@ -132,11 +135,13 @@ def main():
         commit = launch.git("rev-parse", "HEAD")
         staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
         for exp in selected:
-            ident = identity(exp, quality.endpoint(exp), data)
+            marker = quality.endpoint(exp)
+            ident = identity(exp, marker, data)
             root = ROOT / "runs/out" / exp.name
             if (root / "evaluated.json").exists():
                 saved = json.loads((root / "evaluated.json").read_text())
-                if saved["identity"] != ident or saved["answers_sha256"] != common.file_hash(root/"answers.jsonl"):
+                if (not compatible_identity(saved["identity"], ident, marker, "gsm8k")
+                        or saved["answers_sha256"] != common.file_hash(root/"answers.jsonl")):
                     raise ValueError("Stale completion")
                 continue
             body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")

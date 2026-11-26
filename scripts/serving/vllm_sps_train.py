@@ -16,6 +16,9 @@ from scripts import vllm_sps_config as c
 from scripts.mlspace_launch import store_json
 from scripts.vllm_sps_model import horizon_targets
 
+# Checkpoints written before the schedule fields were added used this schedule.
+LEGACY_SCHEDULE = {"training_steps": 512, "stage_steps": 102, "global_batch": common.LEGACY_GLOBAL_BATCH}
+
 
 def labels_for(row, device):
     # Fixed physical shape prevents recompiling FlexAttention per dialog length.
@@ -57,12 +60,13 @@ def optimizer_for(model, frozen):
 
 
 def matches_schedule(state, steps, transition):
+    schedule = {"training_steps": steps, "stage_steps": transition, "global_batch": c.GLOBAL_BATCH}
+    recorded = {name: state.get(name, value) for name, value in LEGACY_SCHEDULE.items()}
     step = state["step"]
     return (
         0 < step <= steps
         and state["frozen"] == (step <= transition)
-        and state.get("stage_steps", transition) == transition
-        and state.get("global_batch", c.GLOBAL_BATCH) == c.GLOBAL_BATCH
+        and schedule == recorded
     )
 
 
@@ -126,6 +130,7 @@ def main():
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "step": step,
+                "training_steps": steps,
                 "stage_steps": transition,
                 "global_batch": c.GLOBAL_BATCH,
                 "best": best,
@@ -225,6 +230,7 @@ def main():
         dist.all_reduce(measured, op=dist.ReduceOp.MAX)
         if rank == 0:
             probe = {
+                **common.probe_workload(),
                 "embedding": measured[0].item(),
                 "full": measured[1].item(),
                 "peak_memory_bytes": torch.cuda.max_memory_allocated(device),

@@ -152,7 +152,7 @@ def main():
                     score = validation(model, heldout, device)
                     record = dict(model=model.state_dict(), optimizer=optimizer.state_dict(),
                                   step=step+1, frozen=frozen, stage_steps=split,
-                                  global_batch=c.GLOBAL_BATCH,
+                                  global_batch=c.GLOBAL_BATCH, training_steps=steps,
                                   parent=str(run.PARENT), readout_audit=dict(audit), val_horizon_ce=score)
                     if step+1 == end:
                         atomic_save(root / ("stage_endpoint.pt" if frozen else "final.pt"), record)
@@ -168,7 +168,7 @@ def main():
         if rank == 0:
             projected = (measured[0]*c.STAGE_STEPS + measured[1]*(c.TRAIN_STEPS-c.STAGE_STEPS))/3600
             store_json(run.ROOT / "prepared.json", dict(
-                       seconds=measured.tolist(), projected_hours=projected.item()))
+                       **common.probe_workload(), seconds=measured.tolist(), projected_hours=projected.item()))
     elif rank == 0:
         store_json(root / "trained.json", dict(parent=str(run.PARENT),
                    checkpoint=str(root/"final.pt"), step=steps,

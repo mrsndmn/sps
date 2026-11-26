@@ -95,3 +95,12 @@ def test_direct_evaluation_reuses_only_its_live_protocol(tmp_path, monkeypatch):
     (root / "manifest.json").write_text(json.dumps(dict(manifest, design_signature="archived")))
     with pytest.raises(RuntimeError, match="different protocols"):
         launcher.check_evaluation(exp, dry=True)
+
+
+def test_legacy_probe_matches_its_measured_workload(tmp_path, monkeypatch):
+    probe = tmp_path / "probe.json"
+    probe.write_text(json.dumps({"seconds": [1, 2], "projected_hours": 0}))
+    assert common.probe_seconds(probe) == c.STAGE_STEPS + 2 * (c.TRAIN_STEPS - c.STAGE_STEPS)
+    monkeypatch.setattr(c, "GLOBAL_BATCH", 8)
+    with pytest.raises(RuntimeError, match="another workload"):
+        common.probe_seconds(probe)
