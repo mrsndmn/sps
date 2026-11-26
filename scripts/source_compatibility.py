@@ -7,6 +7,10 @@ _REPO = Path(__file__).resolve().parents[1]
 _DEFINITIONS = _REPO / "src/experiments"
 _MIGRATED_SOURCES = {
     (
+        "scripts/instruction/instruct_train.py",
+        "f382159044bb04231115fb1194463f2649bce72efa3f14550c6cf8dd5e2dfb97",
+    ): "9500513fb7b75139ea36cb0afd456289f57290ccf32b3cfd8ae5ee82ef53180e",
+    (
         "scripts/adaptation/base50_config.py",
         "6b3d2e45f9c7cd0206f9cb14aa4afa6e3262d6c2f956f66a959f02f796872e18",
     ): "ca1dc73f50ea1332bc49c0fb39d2d1d351e1f78511db2c5958f4d0a59be04d5a",
