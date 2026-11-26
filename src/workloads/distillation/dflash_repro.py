@@ -12,7 +12,6 @@ from workloads.distillation import (
     dflash_repro_train as training,
 )
 from orchestration import mlspace_launch as launch
-from workloads.distillation import qwen4b_drafter_train as previous
 
 from experiments.launch import run_filter
 from experiments.dflash_repro import family_config as dflash_repro_settings
@@ -132,13 +131,11 @@ def run(trainer, script, evaluate):
     experiment = configs[args.filter]
     phase, step = args.phase, args.step
     if phase == "eval" and step not in experiment.milestones:
-        try:
-            final = training.total_steps(len(previous.selection()["train"]), experiment)
-        except FileNotFoundError as error:
-            if not args.dry:
-                raise
-            print(json.dumps({"pending_input": error.filename}))
+        trained = marker(experiment, "train")
+        if args.dry and not trained.is_file():
+            print(json.dumps({"pending_input": str(trained)}))
             return
+        final = json.loads(trained.read_text())["steps"]
         if step is not None and step != final:
             parser.error("Choose a scheduled DFlash checkpoint")
         step = final

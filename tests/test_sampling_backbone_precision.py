@@ -47,7 +47,7 @@ def test_nested_engine_intervention_preserves_head_and_four_slots(tmp_path, monk
             return []
     fake = NS(LLM=FakeLLM)
     monkeypatch.setitem(sys.modules, 'vllm', fake)
-    monkeypatch.setattr(b, 'root', lambda: tmp_path)
+    monkeypatch.setattr(b, 'root', lambda job: tmp_path)
     b.launch.store_json(tmp_path/'identity.json', dict(audit={}))
     old = tmp_path/'old'
     b.launch.store_json(old/'prefixes.json', [])

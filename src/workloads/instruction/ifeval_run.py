@@ -1,4 +1,5 @@
 """Separate, resumable one-GPU IFEval jobs using the existing instruct protocol."""
+from experiments.launch import matching_runs
 from experiments.family_cli import worker_child
 from orchestration.named.publication import work_path
 import argparse
@@ -64,7 +65,7 @@ def reserve(name):
 
 
 def submit(args):
-    experiments = [exp for exp in e.collect_experiments(args.filter) if args.filter in (None, exp.name)]
+    experiments = matching_runs(e.collect_experiments(), args.filter)
     if not experiments:
         raise ValueError('No matching experiments')
     commit = launch.git('rev-parse', 'HEAD')

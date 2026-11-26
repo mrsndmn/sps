@@ -5,6 +5,7 @@ then compares extended greedy cached decoding with/without speculation in eager
 and graph modes. This is a diagnostic gate, not a proof of full sampling equality.
 """
 from orchestration.named.publication import work_path
+from experiments.launch import run_filter
 import argparse
 import hashlib
 import json
@@ -54,8 +55,8 @@ def live_input_identity():
 input_identity = live_input_identity
 
 
-def output_dir():
-    return work_path(ROOT/'runs/out'/experiment_configs[0].name)
+def output_dir(job=experiment_configs[0]):
+    return work_path(ROOT/'runs/out'/job.name)
 
 
 def recorded_input_identity(root):
@@ -77,7 +78,7 @@ def frequency_check(values, probabilities, trials):
                 tolerance=tolerance, passed=max(errors) <= tolerance and all(n == 0 for n,p in zip(values, probabilities) if p == 0.))
 
 
-def kernel_worker():
+def kernel_worker(job=experiment_configs[0]):
     import torch
     from types import SimpleNamespace
     from vllm.v1.sample.rejection_sampler import rejection_sample, apply_sampling_constraints
@@ -132,7 +133,7 @@ def kernel_worker():
         forced.append(dict(reject_at=reject_at, expected=expected, actual=emitted, passed=emitted==expected))
     report = dict(cases=results, forced=forced,
         passed=all(p.get('passed',True) for r in results for p in r['positions']) and all(x['passed'] for x in forced))
-    launch.store_json(output_dir()/'kernel.json', report)
+    launch.store_json(output_dir(job)/'kernel.json', report)
     if not report['passed']:
         raise RuntimeError('Rejection kernel audit failed')
 
@@ -168,14 +169,14 @@ def prepare_prefixes():
     return result
 
 
-def decode_worker(arm, execution):
+def decode_worker(arm, execution, job=experiment_configs[0]):
     import torch
     from vllm import LLM, SamplingParams
     from workloads.serving.vllm_sps_evaluate import check_runtime, engine_arguments
     check_runtime()
     if torch.cuda.device_count() != 1:
         raise RuntimeError('Exactly one GPU required')
-    identity = json.loads((output_dir()/'identity.json').read_text())
+    identity = json.loads((output_dir(job)/'identity.json').read_text())
     arguments = engine_arguments(source.Experiment(arm,arm), identity['checkpoint']['export'], source.family_config.EAGLE_REVISION)
     if execution == 'graphs':
         arguments = graphs.graph_arguments(lambda: arguments)
@@ -183,7 +184,7 @@ def decode_worker(arm, execution):
     if execution == 'graphs':
         llm.collective_rpc('sps_start_graph_tracking')
     results = []
-    prefixes = json.loads((output_dir()/'prefixes.json').read_text())
+    prefixes = json.loads((output_dir(job)/'prefixes.json').read_text())
     for i, prefix in enumerate(prefixes):
         for limit in OUTPUT_LENGTHS:
             for ignore_eos in (False, True):
@@ -194,7 +195,7 @@ def decode_worker(arm, execution):
                 results.append(dict(prefix=i, limit=limit, ignore_eos=ignore_eos, tokens=tokens,
                     stop=out.finish_reason, sampled_logprobs=[float(lp[t].logprob) for lp,t in zip(out.logprobs,tokens)]))
     replay = llm.collective_rpc('sps_stop_graph_tracking') if execution=='graphs' else None
-    launch.store_json(output_dir()/f'{arm}-{execution}.json', dict(samples=results, replay=replay))
+    launch.store_json(output_dir(job)/f'{arm}-{execution}.json', dict(samples=results, replay=replay))
     if replay and not all(x['target_replays'] > 0 for x in replay):
         raise RuntimeError('No graph replay observed')
 
@@ -219,9 +220,9 @@ def compare_decodes(groups):
     return results
 
 
-def worker():
+def worker(job=experiment_configs[0]):
     identity = input_identity()
-    root = output_dir()
+    root = output_dir(job)
     meta = root/'identity.json'
     if meta.exists() and json.loads(meta.read_text()) != identity:
         raise RuntimeError('Existing audit uses other inputs')
@@ -231,12 +232,12 @@ def worker():
     env = runtime.runtime_environment()
     env.update(SPS_VLLM_SOURCE=str(graphs.SITE), VLLM_USE_V2_MODEL_RUNNER='0')
     env['PYTHONPATH'] = str(graphs.SITE)+':'+env.get('PYTHONPATH', str(Path.cwd())+':'+str(Path.cwd()/'src'))
-    deadline = time.monotonic()+experiment_configs[0].hours*3600-300
+    deadline = time.monotonic()+job.hours*3600-300
     def child(*args):
         remaining = deadline-time.monotonic()
         if remaining <= 0:
             raise RuntimeError('Audit deadline exceeded')
-        bench.child([runtime.RUNTIME/'bin/python','scripts/serving/sampling_audit.py',*args], env,remaining/3600)
+        bench.child([runtime.RUNTIME/'bin/python','scripts/serving/sampling_audit.py', '--filter', job.name,*args], env,remaining/3600)
     child('--kernel-worker')
     groups = {}
     for execution in ('eager','graphs'):
@@ -256,20 +257,19 @@ def worker():
 def payload(exp, staged):
     body = bench.payload(source.Experiment(exp.name,'audit'),staged,'audit')
     body['job_desc'] = f'sps-sampling-audit {exp.name} #d.tarasov @mrsndmn'
-    body['script'] = f'cd {shlex.quote(str(staged))} && '+shlex.join([str(launch.PYTHON),'scripts/serving/sampling_audit.py','--worker'])
+    body['script'] = f'cd {shlex.quote(str(staged))} && '+shlex.join([str(launch.PYTHON),'scripts/serving/sampling_audit.py', '--worker', '--filter', exp.name])
     return body
 
 
-def submit(dry=False):
+def submit(exp, root, destination, input_identity, payload, dry=False):
     commit = launch.git('rev-parse','HEAD')
     staged = launch.STAGING_ROOT/commit
-    exp = experiment_configs[0]
     if dry:
-        launch.print_preview(payload(exp,staged), output_dir(), staged, "eval"); return
-    if not launch.pending(output_dir()):
+        launch.print_preview(payload(exp,staged), destination, staged, "eval"); return
+    if not launch.pending(destination):
         return
     identity = input_identity()
-    marker = output_dir()/'evaluated.json'
+    marker = destination/'evaluated.json'
     if marker.exists():
         result = json.loads(marker.read_text())
         if result['identity'] != identity or not result['passed']:
@@ -284,21 +284,21 @@ def submit(dry=False):
         if 'jobs' not in response:
             raise RuntimeError('Cannot establish active jobs')
         active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
-    launch.reconcile_for_outputs(client, active, [output_dir()])
+    launch.reconcile_for_outputs(client, active, [destination])
     body = payload(exp,staged)
-    name = launch.output_identity(body['job_desc'], output_dir())
+    name = launch.output_identity(body['job_desc'], destination)
     if name in active:
         job = dict(name=exp.name, job_name=active[name],reused=True)
     else:
         staged = launch.stage_repo(Path(launch.git('rev-parse','--show-toplevel')),commit)
         body = payload(exp,staged); body['region'] = options['region']
-        ledger_path=ROOT/'budget.json'
+        ledger_path=root/'budget.json'
         ledger=json.loads(ledger_path.read_text()) if ledger_path.exists() else {'attempts':[]}
         if sum(x['gpu_hours'] for x in ledger['attempts'])+exp.hours > 3*exp.hours:
             raise RuntimeError('Audit reservation cap exceeded')
         ledger['attempts'].append(dict(gpu_hours=exp.hours,time=time.time()))
         launch.store_json(ledger_path,ledger)
-        job=launch.submit_payload(client,body,'eval',exp.name,commit, output_dir=output_dir())
+        job=launch.submit_payload(client,body,'eval',exp.name,commit, output_dir=destination)
     print('__MLS_JOBS_JSON__'); print(json.dumps({'jobs':[job]}),flush=True)
 
 
@@ -309,10 +309,15 @@ def main():
     parser.add_argument('--kernel-worker',action='store_true')
     parser.add_argument('--decode-worker',choices=('sps','sps_mtp'))
     parser.add_argument('--execution',choices=('eager','graphs'),default='eager')
-    args=parser.parse_args()
-    if args.kernel_worker:return kernel_worker()
-    if args.decode_worker:return decode_worker(args.decode_worker,args.execution)
-    if args.worker:return worker()
-    with patch.object(launch,'ARTIFACTS_ROOT',ROOT),patch.object(launch,'RUN_ROOT',ROOT/'runs'):
-        if args.dry:return submit(True)
-        with launch.submission_lock():return submit()
+    jobs = run_filter(parser, experiment_configs)
+    args = parser.parse_args()
+    job = jobs[args.filter]
+    if args.kernel_worker:return kernel_worker(job=job)
+    if args.decode_worker:return decode_worker(args.decode_worker,args.execution, job=job)
+    if args.worker:return worker(job=job)
+    with patch.object(launch, "ARTIFACTS_ROOT", ROOT), patch.object(launch, "RUN_ROOT", ROOT / "runs"):
+        arguments = (job, ROOT, output_dir(job), input_identity, payload)
+        if args.dry:
+            return submit(*arguments, dry=True)
+        with launch.submission_lock():
+            return submit(*arguments)

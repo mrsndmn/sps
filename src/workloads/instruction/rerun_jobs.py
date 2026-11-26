@@ -1,4 +1,5 @@
 """Shared MLSpace launcher for instruct reruns and continuations."""
+from experiments.launch import matching_runs
 from experiments.family_cli import worker_child
 
 import argparse
@@ -24,7 +25,7 @@ class Rerun:
         self.script = f"scripts/instruction/{family}_run.py"
 
     def experiments(self, pattern=None):
-        return [x for x in self.sc.e.collect_experiments(pattern) if x.trainable and (pattern is None or x.name == pattern)]
+        return matching_runs((x for x in self.sc.e.collect_experiments() if x.trainable), pattern)
 
     def payload(self, variant, phase, exp, workload, staged, author, nick):
         body = launch.payload(phase, exp.name, staged, author, nick)

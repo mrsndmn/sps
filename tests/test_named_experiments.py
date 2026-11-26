@@ -319,5 +319,99 @@ jobs.main()
     directory = RunDirectory(artifacts, output)
     directory.reservation.mkdir(parents=True)
     assert "Skip unresolved reservation" in call(launcher, "--experiment", name)
+    evaluate = (launcher, "--experiment", name, "--phase", "eval", "--dry")
+    assert json.loads(call(*evaluate)) == {
+        "pending_input": str(output / "trained.json")
+    }
     output.mkdir(parents=True)
+    (output / "trained.json").write_text('{"steps": 42}')
+    assert json.loads(call(*evaluate))["output_dir"] == str(output.parent / "eval-42")
     assert "Skip existing output" in call(launcher, "--experiment", name)
+
+
+@pytest.mark.parametrize(
+    "study", ["provenance_prepare", "sampling_audit", "sampling_precision"]
+)
+def test_native_grouped_job_uses_selected_row(study, monkeypatch, tmp_path, capsys):
+    from dataclasses import replace
+    from importlib import import_module
+    import shlex
+
+    provenance = study == "provenance_prepare"
+    family = "instruct-response-provenance" if provenance else "paper-evidence-followup"
+    package = "provenance" if provenance else "serving"
+    config = import_module("experiments." + study)
+    native = import_module(f"workloads.{package}.{study}")
+    table = "job_configs" if hasattr(config, "job_configs") else "experiment_configs"
+    original = getattr(config, table)[0]
+    changes = {"name": original.name + "-second"}
+    if provenance:
+        changes["directory"] = "prepared-second"
+    second = replace(original, **changes)
+    for module in (config, native):
+        monkeypatch.setattr(module, table, [original, second])
+    monkeypatch.setattr(native, "ROOT", tmp_path)
+    run = family_runs(family)[second.name, "prepare" if provenance else "eval"]
+    monkeypatch.setattr(sys, "argv", [run.script, *run.args, "--dry"])
+    native.main()
+    preview = json.loads(capsys.readouterr().out)
+    output = tmp_path / ("prepared-second" if provenance else "runs/out/" + second.name)
+    assert preview["output_dir"] == str(output)
+    command = shlex.split(shlex.split(preview["payload"]["script"])[-1])
+    args = command[command.index(run.script) + 1 :]
+    from experiments.family_cli import PREFIX
+
+    monkeypatch.setattr(
+        sys, "argv", [run.script, *(arg for arg in args if not arg.startswith(PREFIX))]
+    )
+    seen = []
+    monkeypatch.setattr(native, "worker", lambda job: seen.append(job))
+    native.main()
+    assert seen == [second]
+
+
+def test_shared_worker_matches_exact_name_when_another_has_same_prefix(monkeypatch):
+    from dataclasses import replace
+    from orchestration import experiment_suite as suite
+
+    original = suite.experiment_configs[0]
+    monkeypatch.setattr(
+        suite,
+        "experiment_configs",
+        [original, replace(original, name=original.name + "-v2")],
+    )
+    assert suite.collect_experiments(original.name) == [original]
+
+
+def test_vllm_trainer_receives_selected_run(monkeypatch, tmp_path):
+    import argparse
+    from dataclasses import replace
+    from unittest.mock import Mock
+    from experiments import vllm_sps_config as config
+    from workloads.serving import vllm_sps_run as launcher, vllm_sps_train as trainer
+
+    original = config.collect_experiments("train")[0]
+    second = replace(original, name=original.name + "-second", num_gpus=1)
+    monkeypatch.setattr(config, "experiment_configs", [original, second])
+    monkeypatch.setattr(config.family_config, "ROOT", tmp_path)
+    popen = Mock()
+    popen.return_value.wait.return_value = 0
+    monkeypatch.setattr(launcher.subprocess, "Popen", popen)
+    launcher.worker(argparse.Namespace(phase="train", filter=second.name))
+    command = popen.call_args.args[0]
+    script = command.index("scripts/serving/vllm_sps_train.py")
+    assert "--nproc_per_node=1" in command
+    monkeypatch.setattr(sys, "argv", command[script:])
+    for key, value in {"RANK": "0", "LOCAL_RANK": "0", "WORLD_SIZE": "1"}.items():
+        monkeypatch.setenv(key, value)
+
+    class SelectedAllocation(Exception):
+        pass
+
+    monkeypatch.setattr(
+        trainer.torch.cuda, "set_device", Mock(side_effect=SelectedAllocation)
+    )
+    with pytest.raises(SelectedAllocation):
+        trainer.main()
+    assert second.output("train") == tmp_path / "runs/out" / second.name
+    assert second.output("probe") == tmp_path / "sanity/out" / second.name

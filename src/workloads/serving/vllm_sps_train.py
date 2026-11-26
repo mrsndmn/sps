@@ -11,6 +11,7 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from experiments.launch import run_filter
 from experiments import instruct_config as source
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
@@ -79,11 +80,13 @@ def restore_optimizer(optimizer, state):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", action="store_true")
+    configs = run_filter(parser, c.collect_experiments("train"))
     args = parser.parse_args()
+    exp = configs[args.filter]
     rank = int(os.environ["RANK"])
     world = int(os.environ["WORLD_SIZE"])
     local = int(os.environ["LOCAL_RANK"])
-    if world != c.experiment_configs[0].num_gpus or c.family_config.GLOBAL_BATCH % world:
+    if world != exp.num_gpus or c.family_config.GLOBAL_BATCH % world:
         raise ValueError("Unexpected training allocation")
     torch.cuda.set_device(local)
     device = torch.device("cuda", local)
@@ -97,7 +100,7 @@ def main():
     transition = steps // 2 if args.probe else c.family_config.STAGE_STEPS
     if len(data) < steps * c.family_config.GLOBAL_BATCH:
         raise RuntimeError("Insufficient instruction training data")
-    root = work_path(c.family_config.ROOT / ("sanity" if args.probe else "runs") / "out" / "qwen3_sps_mtp")
+    root = work_path(exp.output("probe" if args.probe else "train"))
     root.mkdir(parents=True, exist_ok=True)
     model = common.load_model(device)
     start = 0
@@ -233,8 +236,6 @@ def main():
                 "peak_memory_bytes": torch.cuda.max_memory_allocated(device),
             }
             store_json(root / "probe.json", probe)
-            if public_path(root) == root:
-                store_json(c.family_config.ROOT / "prepared.json", probe)
     elif rank == 0:
         save(root / "final.pt", steps)
         # Export the final checkpoint; ordinary and speculative SPS share it.

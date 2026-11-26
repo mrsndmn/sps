@@ -5,6 +5,7 @@ FP32/BF16 and vLLM BF16. The four-slot non-speculative arm is a diagnostic eager
 intervention, not a benchmark. Existing audit outputs and runtimes stay immutable.
 """
 from orchestration.named.publication import work_path
+from experiments.launch import run_filter
 import argparse
 import json
 import os
@@ -29,8 +30,8 @@ FILES = ('identity.json','prefixes.json','kernel.json','report.json',
          'sps-eager.json','sps_mtp-eager.json','sps-graphs.json','sps_mtp-graphs.json')
 
 
-def output_dir():
-    return work_path(ROOT/'runs/out'/experiment_configs[0].name)
+def output_dir(job=experiment_configs[0]):
+    return work_path(ROOT/'runs/out'/job.name)
 
 
 def identity():
@@ -86,23 +87,23 @@ def check_logprobs(values):
     return values
 
 
-def save_distributions(name, cases, arrays, metadata):
+def save_distributions(name, cases, arrays, metadata, job=experiment_configs[0]):
     if len(arrays)!=len(cases):
         raise ValueError('Missing distributions')
     matrix=np.stack([check_logprobs(x) for x in arrays])
-    root=output_dir();root.mkdir(parents=True,exist_ok=True)
+    root=output_dir(job);root.mkdir(parents=True,exist_ok=True)
     np.savez_compressed(root/f'{name}.npz',logprobs=matrix)
     launch.store_json(root/f'{name}.json',dict(cases=[x['name'] for x in cases],metadata=metadata,
                                              sha256=audit.common.file_hash(root/f'{name}.npz')))
 
 
-def engine_worker(arm):
+def engine_worker(arm, job=experiment_configs[0]):
     from vllm import LLM,SamplingParams
     from workloads.serving.vllm_sps_evaluate import check_runtime,engine_arguments
     torch,_=check_runtime()
     if torch.cuda.device_count()!=1:raise RuntimeError('One GPU required')
-    saved=json.loads((output_dir()/'identity.json').read_text())
-    cases=json.loads((output_dir()/'cases.json').read_text())
+    saved=json.loads((output_dir(job)/'identity.json').read_text())
+    cases=json.loads((output_dir(job)/'cases.json').read_text())
     arguments=engine_arguments(audit.source.Experiment(arm,'sps' if arm=='sps_four_slots' else arm),
                                saved['audit']['checkpoint']['export'],audit.source.family_config.EAGLE_REVISION)
     arguments.update(max_logprobs=-1,logprobs_mode='raw_logprobs',
@@ -121,17 +122,17 @@ def engine_worker(arm):
             raise RuntimeError('vLLM did not return every vocabulary probability')
         arrays.append([lp[i].logprob for i in range(vocab)])
         samples.append(dict(case=case['name'],sampled_token=out.token_ids[0],rank=lp[out.token_ids[0]].rank))
-    save_distributions(arm,cases,arrays,dict(arguments=arguments,intervention=intervention,samples=samples))
+    save_distributions(arm,cases,arrays,dict(arguments=arguments,intervention=intervention,samples=samples), job=job)
 
 
-def native_worker():
+def native_worker(job=experiment_configs[0]):
     import torch
     from modeling.models.sps.pretrained import PretrainedSPS
     if torch.cuda.device_count()!=1:raise RuntimeError('One GPU required')
     torch.backends.cuda.matmul.allow_tf32=False
     torch.backends.cudnn.allow_tf32=False
-    saved=json.loads((output_dir()/'identity.json').read_text())
-    cases=json.loads((output_dir()/'cases.json').read_text())
+    saved=json.loads((output_dir(job)/'identity.json').read_text())
+    cases=json.loads((output_dir(job)/'cases.json').read_text())
     model=audit.common.load_model('cpu',backend='sdpa')
     checkpoint = audit.common.checked_checkpoint(saved['audit']['checkpoint'])
     state=torch.load(checkpoint,map_location='cpu',mmap=True,weights_only=False)
@@ -155,7 +156,7 @@ def native_worker():
                 four.append(logits.log_softmax(-1).cpu().numpy())
                 del logits
         for name,arrays in (('one',one),('four',four)):
-            save_distributions(f'native-{label}-{name}',cases,arrays,dict(dtype=str(dtype),tf32=False,backend='sdpa'))
+            save_distributions(f'native-{label}-{name}',cases,arrays,dict(dtype=str(dtype),tf32=False,backend='sdpa'), job=job)
 
 
 def compare(a,b):
@@ -171,54 +172,54 @@ def compare(a,b):
         top_candidates={str(i):dict(logprob_a=float(a[i]),logprob_b=float(b[i])) for i in sorted(top)})
 
 
-def report():
-    cases=json.loads((output_dir()/'cases.json').read_text())
+def report(job=experiment_configs[0]):
+    cases=json.loads((output_dir(job)/'cases.json').read_text())
     matrices={}
     for arm in (*ARMS,*NATIVE_ARMS):
-        meta=json.loads((output_dir()/f'{arm}.json').read_text())
-        if meta['cases'] != [x['name'] for x in cases] or meta['sha256']!=audit.common.file_hash(output_dir()/f'{arm}.npz'):
+        meta=json.loads((output_dir(job)/f'{arm}.json').read_text())
+        if meta['cases'] != [x['name'] for x in cases] or meta['sha256']!=audit.common.file_hash(output_dir(job)/f'{arm}.npz'):
             raise RuntimeError('Unpaired/corrupt trace distributions')
-        matrices[arm]=np.load(output_dir()/f'{arm}.npz')['logprobs']
+        matrices[arm]=np.load(output_dir(job)/f'{arm}.npz')['logprobs']
         if len(matrices[arm])!=len(cases):raise RuntimeError('Incomplete trace matrix')
     pairs=(('sps','sps_mtp'),('sps','sps_four_slots'),('sps_four_slots','sps_mtp'),
            ('native-fp32-one','native-fp32-four'),('native-bf16-one','native-bf16-four'),
            ('native-bf16-one','sps'),('native-bf16-four','sps_mtp'))
     comparisons=[dict(case=case['name'],a=a,b=b,**compare(matrices[a][i],matrices[b][i]))
                  for i,case in enumerate(cases) for a,b in pairs]
-    value=dict(identity=json.loads((output_dir()/'identity.json').read_text()),
+    value=dict(identity=json.loads((output_dir(job)/'identity.json').read_text()),
         passed=True,diagnostic_completed=True,comparisons=comparisons,
         scope='Diagnostic completion only, NOT a passed sampling audit. Full-prefix rescoring does not reproduce cached block verification. Original greedy gate remains failed.')
-    launch.store_json(output_dir()/'report.json',value)
-    launch.store_json(output_dir()/'evaluated.json',value)
+    launch.store_json(output_dir(job)/'report.json',value)
+    launch.store_json(output_dir(job)/'evaluated.json',value)
     return value
 
 
-def worker():
+def worker(job=experiment_configs[0]):
     current=identity()
-    root=output_dir();path=root/'identity.json'
+    root=output_dir(job);path=root/'identity.json'
     if path.exists() and json.loads(path.read_text())!=current:raise RuntimeError('Trace inputs changed')
     launch.store_json(path,current)
     cases=extract_cases(json.loads((SOURCE/'prefixes.json').read_text()),
         json.loads((SOURCE/'sps-eager.json').read_text())['samples'],
         json.loads((SOURCE/'sps_mtp-eager.json').read_text())['samples'])
     launch.store_json(root/'cases.json',cases)
-    deadline=time.monotonic()+experiment_configs[0].hours*3600-300
+    deadline=time.monotonic()+job.hours*3600-300
     def child(python,args,env):
         remaining=deadline-time.monotonic()
         if remaining<=0:raise RuntimeError('Trace deadline exceeded')
-        audit.bench.child([python,'scripts/serving/sampling_trace.py',*args],env,remaining/3600)
+        audit.bench.child([python,'scripts/serving/sampling_trace.py', '--filter', job.name,*args],env,remaining/3600)
     child(launch.PYTHON,['--native-worker'],os.environ.copy())
     env=audit.runtime.runtime_environment()
     env.update(SPS_VLLM_SOURCE=str(audit.graphs.SITE),VLLM_USE_V2_MODEL_RUNNER='0')
     env['PYTHONPATH']=str(audit.graphs.SITE)+':'+env.get('PYTHONPATH',str(Path.cwd())+':'+str(Path.cwd()/'src'))
     for arm in ARMS:child(audit.runtime.RUNTIME/'bin/python',['--engine-worker',arm],env)
-    report()
+    report(job=job)
 
 
 def payload(exp,staged):
     body=audit.bench.payload(audit.source.Experiment(exp.name,'audit'),staged,'audit')
     body['job_desc']=f'sps-sampling-trace {exp.name} #d.tarasov @mrsndmn'
-    body['script']=f'cd {shlex.quote(str(staged))} && '+shlex.join([str(launch.PYTHON),'scripts/serving/sampling_trace.py','--worker'])
+    body['script']=f'cd {shlex.quote(str(staged))} && '+shlex.join([str(launch.PYTHON),'scripts/serving/sampling_trace.py', '--worker', '--filter', exp.name])
     return body
 
 
@@ -227,14 +228,16 @@ def main():
     parser.add_argument('--dry',action='store_true');parser.add_argument('--worker',action='store_true')
     parser.add_argument('--native-worker',action='store_true')
     parser.add_argument('--engine-worker',choices=ARMS)
-    args=parser.parse_args()
-    if args.native_worker:return native_worker()
-    if args.engine_worker:return engine_worker(args.engine_worker)
-    if args.worker:return worker()
+    jobs = run_filter(parser, experiment_configs)
+    args = parser.parse_args()
+    job = jobs[args.filter]
+    if args.native_worker:return native_worker(job=job)
+    if args.engine_worker:return engine_worker(args.engine_worker, job=job)
+    if args.worker:return worker(job=job)
     # Reuse the reviewed bounded/deduplicated launcher, with a distinct identity.
-    with patch.object(audit,'ROOT',ROOT),patch.object(audit,'experiment_configs',experiment_configs), \
-         patch.object(audit,'input_identity',identity),patch.object(audit,'output_dir',output_dir), \
-         patch.object(audit,'payload',payload),patch.object(launch,'ARTIFACTS_ROOT',ROOT), \
-         patch.object(launch,'RUN_ROOT',ROOT/'runs'):
-        if args.dry:return audit.submit(True)
-        with launch.submission_lock():return audit.submit()
+    with patch.object(launch, "ARTIFACTS_ROOT", ROOT), patch.object(launch, "RUN_ROOT", ROOT / "runs"):
+        arguments = (job, ROOT, output_dir(job), identity, payload)
+        if args.dry:
+            return audit.submit(*arguments, dry=True)
+        with launch.submission_lock():
+            return audit.submit(*arguments)

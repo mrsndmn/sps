@@ -41,6 +41,6 @@ def main():
         patch.object(
             trainer, "optimizer_for", partial(training_optimizer, trainer.optimizer_for)
         ),
-        patch.object(sys, "argv", [__file__] + (["--probe"] if args.probe else [])),
+        patch.object(sys, "argv", [__file__, "--filter", EXPERIMENT.name] + (["--probe"] if args.probe else [])),
     ):
         trainer.main()

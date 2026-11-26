@@ -70,7 +70,7 @@ def submit(args):
     extra = {}
     client = None
     if not args.dry:
-        experiments = [exp for exp in experiments if launch.pending(c.family_config.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name, args.profile)]
+        experiments = [exp for exp in experiments if launch.pending(exp.output(args.phase), args.profile)]
         if not experiments:
             return
         from mls.manager.job.utils import (
@@ -84,27 +84,19 @@ def submit(args):
             launch.normalize(j["job_desc"]): j["job_name"]
             for j in get_in_progress_jobs(client_profile=args.profile)
         }
-        launch.reconcile_for_outputs(client, active, [c.family_config.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name for exp in experiments])
+        launch.reconcile_for_outputs(client, active, [exp.output(args.phase) for exp in experiments])
         staged = launch.stage_repo(
             Path(launch.git("rev-parse", "--show-toplevel")), commit
         )
-        if args.phase == "train":
-            estimate = common.probe_seconds(c.family_config.ROOT / "sanity/out/qwen3_sps_mtp/probe.json")
-            if estimate * 2 > c.family_config.TRAIN_HOURS * 3600:
-                raise RuntimeError("Training exceeds bounded reservation")
     jobs = []
     for exp in experiments:
-        root = (
-            c.family_config.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name
-        )
-        marker = root / ("probe.json" if args.phase == "probe" else "trained.json")
-        if not args.dry and marker.exists():
-            if args.phase == "probe":
-                common.probe_seconds(marker)
-            else:
-                common.trained()
-            print("Skip completed:", exp.name)
+        root = exp.output(args.phase)
+        if not args.dry and root.is_dir():
             continue
+        if not args.dry and args.phase == "train":
+            estimate = common.probe_seconds(exp.output("probe") / "probe.json", num_gpus=exp.num_gpus)
+            if estimate * 2 > c.family_config.TRAIN_HOURS * 3600:
+                raise RuntimeError("Training exceeds bounded reservation")
         body = payload(args.phase, exp, staged, args.author_name, args.telegram_nick)
         identity = launch.output_identity(body["job_desc"], root)
         if identity in active:
@@ -144,7 +136,7 @@ def worker(args):
         "torch.distributed.run",
         "--standalone",
         f"--nproc_per_node={matches[0].num_gpus}",
-        "scripts/serving/vllm_sps_train.py",
+        "scripts/serving/vllm_sps_train.py", "--filter", args.filter,
     ]
     if args.phase == "probe":
         command += ["--probe"]

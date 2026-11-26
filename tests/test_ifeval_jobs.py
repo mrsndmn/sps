@@ -29,7 +29,7 @@ def test_ifeval_skips_existing_output(tmp_path, monkeypatch, capsys):
     from workloads.instruction import ifeval_run as r
     exp = SimpleNamespace(name='original', trainable=False)
     monkeypatch.setattr(r, 'RUN_ROOT', tmp_path)
-    monkeypatch.setattr(r.e, 'collect_experiments', lambda _: [exp])
+    monkeypatch.setattr(r.e, 'collect_experiments', lambda: [exp])
     monkeypatch.setattr(r, 'signature', lambda: 'current')
     monkeypatch.setattr(r.launch, 'git', lambda *args: 'commit')
     dest = r.output_dir(exp, 'thinking'); dest.mkdir(parents=True)

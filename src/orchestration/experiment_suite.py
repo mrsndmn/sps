@@ -94,7 +94,7 @@ elif SUITE == INSTRUCT_SUITE:
 
 def collect_experiments(filter_name=None):
     return [
-        e for e in experiment_configs if filter_name is None or filter_name in e.name
+        e for e in experiment_configs if filter_name is None or filter_name == e.name
     ]
 
 

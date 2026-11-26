@@ -5,6 +5,7 @@ Capture divergent histories and compare with cold full-prefix evaluation. The
 original failed correctness gate is immutable; instrumentation is not a benchmark.
 """
 from orchestration.named.publication import work_path
+from experiments.launch import run_filter
 import argparse
 import hashlib
 import json
@@ -34,8 +35,8 @@ BASE_IDENTITY = precision.recorded_identity
 LIMIT = max(audit.OUTPUT_LENGTHS)
 
 
-def root():
-    return work_path(ROOT / 'runs/out' / job_configs[0].name)
+def root(job=job_configs[0]):
+    return work_path(ROOT / 'runs/out' / job.name)
 
 
 def digest(tokens):
@@ -159,14 +160,14 @@ class CacheTraceWorkerExtension(precision.PrecisionWorkerExtension):
         return result
 
 
-def engine_worker(exp):
+def engine_worker(exp, job=job_configs[0]):
     from vllm import LLM, SamplingParams
     from workloads.serving.vllm_sps_evaluate import check_runtime, engine_arguments
     torch, _ = check_runtime()
     if torch.cuda.device_count() != 1:
         raise RuntimeError('One GPU required')
-    saved = json.loads((root() / 'identity.json').read_text())
-    cases = json.loads((root() / 'cases.json').read_text())
+    saved = json.loads((root(job) / 'identity.json').read_text())
+    cases = json.loads((root(job) / 'cases.json').read_text())
     prefixes, plain, speculative = evidence()
     arguments = engine_arguments(audit.source.Experiment(exp.name, exp.arm),
                                 saved['precision']['audit']['checkpoint']['export'], audit.source.family_config.EAGLE_REVISION)
@@ -175,7 +176,7 @@ def engine_worker(exp):
     llm = LLM(**arguments)
     if exp.arm == 'sps':
         llm.collective_rpc('sps_trace_four_slots')
-    destination = root() / exp.name
+    destination = root(job) / exp.name
     llm.collective_rpc('sps_cache_trace_start', args=(cases, str(destination)))
     samples = []
     requests = cases if exp.cold else [dict(name=f"prefix-{i}", prefix=i, tokens=prefixes[i]['tokens'])
@@ -195,46 +196,46 @@ def engine_worker(exp):
     launch.store_json(destination / 'samples.json', dict(samples=samples, observed=observed, arguments=arguments))
 
 
-def report():
-    cases = json.loads((root() / 'cases.json').read_text())
-    matrices = {e.name: precision.load_matrix(root() / e.name, 'logprobs', cases) for e in experiment_configs}
+def report(job=job_configs[0]):
+    cases = json.loads((root(job) / 'cases.json').read_text())
+    matrices = {e.name: precision.load_matrix(root(job) / e.name, 'logprobs', cases) for e in experiment_configs}
     comparisons = [dict(case=c['name'], a=a, b=b, **trace.compare(matrices[a][i], matrices[b][i]))
                    for i, c in enumerate(cases) for a, b in
                    [('sequential', 'speculative'), ('sequential', 'cold'), ('speculative', 'cold')]]
-    result = dict(identity=json.loads((root() / 'identity.json').read_text()),
+    result = dict(identity=json.loads((root(job) / 'identity.json').read_text()),
                   comparisons=comparisons, passed=True, diagnostic_completed=True,
                   scope='Observer reproduced previous outputs and validated greedy selections against actual target logits. Diagnostic completion does not pass the original sampling gate; cold BF16 backbone is not exact ground truth.')
-    launch.store_json(root() / 'report.json', result)
-    launch.store_json(root() / 'evaluated.json', result)
+    launch.store_json(root(job) / 'report.json', result)
+    launch.store_json(root(job) / 'evaluated.json', result)
 
 
-def worker():
+def worker(job=job_configs[0]):
     current = identity()
-    path = root() / 'identity.json'
+    path = root(job) / 'identity.json'
     if path.exists() and json.loads(path.read_text()) != current:
         raise RuntimeError('Cache trace inputs changed')
     launch.store_json(path, current)
     cases = select_cases(*evidence())
     if not cases:
         raise RuntimeError('No divergent histories to diagnose')
-    launch.store_json(root() / 'cases.json', cases)
+    launch.store_json(root(job) / 'cases.json', cases)
     env = audit.runtime.runtime_environment()
     env.update(SPS_VLLM_SOURCE=str(audit.graphs.SITE), VLLM_USE_V2_MODEL_RUNNER='0')
     env['PYTHONPATH'] = str(audit.graphs.SITE) + ':' + env.get('PYTHONPATH', str(Path.cwd()) + ':' + str(Path.cwd() / 'src'))
-    deadline = time.monotonic() + job_configs[0].hours * 3600 - 300
+    deadline = time.monotonic() + job.hours * 3600 - 300
     for exp in experiment_configs:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RuntimeError('Cache trace deadline exceeded')
-        audit.bench.child([audit.runtime.RUNTIME / 'bin/python', 'scripts/serving/sampling_cache_trace.py',
+        audit.bench.child([audit.runtime.RUNTIME / 'bin/python', 'scripts/serving/sampling_cache_trace.py', '--filter', job.name,
                            '--engine-worker', exp.name], env, remaining / 3600)
-    report()
+    report(job=job)
 
 
 def payload(exp, staged):
     body = audit.bench.payload(audit.source.Experiment(exp.name, 'audit'), staged, 'audit')
     body['job_desc'] = f'sps-sampling-cache-trace {exp.name} #d.tarasov @mrsndmn'
-    body['script'] = f'cd {shlex.quote(str(staged))} && ' + shlex.join([str(launch.PYTHON), 'scripts/serving/sampling_cache_trace.py', '--worker'])
+    body['script'] = f'cd {shlex.quote(str(staged))} && ' + shlex.join([str(launch.PYTHON), 'scripts/serving/sampling_cache_trace.py', '--worker', '--filter', exp.name])
     return body
 
 
@@ -243,15 +244,16 @@ def main():
     parser.add_argument('--dry', action='store_true')
     parser.add_argument('--worker', action='store_true')
     parser.add_argument('--engine-worker', choices=[e.name for e in experiment_configs])
+    jobs = run_filter(parser, job_configs)
     args = parser.parse_args()
+    job = jobs[args.filter]
     if args.engine_worker:
-        return engine_worker(next(e for e in experiment_configs if e.name == args.engine_worker))
+        return engine_worker(next(e for e in experiment_configs if e.name == args.engine_worker), job=job)
     if args.worker:
-        return worker()
-    with patch.object(audit, 'ROOT', ROOT), patch.object(audit, 'experiment_configs', job_configs), \
-         patch.object(audit, 'input_identity', identity), patch.object(audit, 'output_dir', root), \
-         patch.object(audit, 'payload', payload), patch.object(launch, 'ARTIFACTS_ROOT', ROOT), patch.object(launch, 'RUN_ROOT', ROOT / 'runs'):
+        return worker(job=job)
+    with patch.object(launch, "ARTIFACTS_ROOT", ROOT), patch.object(launch, "RUN_ROOT", ROOT / "runs"):
+        arguments = (job, ROOT, root(job), identity, payload)
         if args.dry:
-            return audit.submit(True)
+            return audit.submit(*arguments, dry=True)
         with launch.submission_lock():
-            return audit.submit()
+            return audit.submit(*arguments)

@@ -5,6 +5,7 @@ corresponding prompt from BOTH conditions. No benchmark score selects responses.
 This stage reports actual token budgets before training configurations are fixed.
 """
 from orchestration.named.publication import work_path, public_path
+from experiments.launch import run_filter
 import argparse
 from collections import Counter
 import json
@@ -30,13 +31,13 @@ MIN_PAIRED_FRACTION = provenance_prepare_settings.MIN_PAIRED_FRACTION
 ROOT = source.family_config.ROOT.parent/'instruct-response-provenance'
 
 
-def prepared_dir():
-    return ROOT / "prepared"
+def prepared_dir(job=experiment_configs[0]):
+    return ROOT / (job.directory or job.name)
 
 
-def results():
-    path = work_path(prepared_dir())
-    if path == prepared_dir() and not path.exists() and (ROOT / "prepared.json").is_file():
+def results(job=experiment_configs[0]):
+    path = work_path(prepared_dir(job))
+    if job.directory == "prepared" and path == prepared_dir(job) and not path.exists() and (ROOT / "prepared.json").is_file():
         return ROOT
     return path
 
@@ -66,11 +67,11 @@ def identity():
                 model=c.family_config.MODEL, revision=c.family_config.REVISION, generation=GENERATION)
 
 
-def record_path(row):
+def record_path(row, job=experiment_configs[0]):
     name = row['source_id']
     if len(name) != 64 or any(x not in '0123456789abcdef' for x in name):
         raise ValueError('Invalid source identifier')
-    return results()/'samples'/f'{name}.json'
+    return results(job)/'samples'/f'{name}.json'
 
 
 def validate_record(record, row, split, expected):
@@ -85,11 +86,11 @@ def validate_record(record, row, split, expected):
             raise RuntimeError('Teacher response changed prompt identity')
 
 
-def generate_worker():
+def generate_worker(job=experiment_configs[0]):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
     rank, world = int(os.environ['RANK']), int(os.environ['WORLD_SIZE'])
-    if world != experiment_configs[0].num_gpus:
+    if world != job.num_gpus:
         raise RuntimeError('Unexpected preparation allocation')
     device = f"cuda:{int(os.environ['LOCAL_RANK'])}"
     torch.cuda.set_device(device)
@@ -100,7 +101,7 @@ def generate_worker():
     for i,(split,row) in enumerate(records):
         if i % world != rank:
             continue
-        path = record_path(row)
+        path = record_path(row, job=job)
         if path.exists():
             validate_record(json.loads(path.read_text()),row,split,expected)
             continue
@@ -172,41 +173,40 @@ def summarize(rows):
     return result
 
 
-def finalize():
+def finalize(job=experiment_configs[0]):
     expected=signature()
     report=dict(identity=identity(),splits={},
         scope='Paired accepted prompts; thinking unchanged. Response length and supervised tokens are measured, not assumed equal. Training is a separate next stage.')
     for split,rows in source_rows().items():
-        samples={r['source_id']:json.loads(record_path(r).read_text()) for r in rows if r['mode']=='nonthinking'}
+        samples={r['source_id']:json.loads(record_path(r, job=job).read_text()) for r in rows if r['mode']=='nonthinking'}
         original,teacher,rejected=pair_rows(rows,samples,split,expected)
         group=dict(rejected=rejected,conditions={})
         for condition,values in (('corpus',original),('teacher',teacher)):
-            path=results()/'data'/condition/f'{split}.jsonl'
+            path=results(job)/'data'/condition/f'{split}.jsonl'
             path.parent.mkdir(parents=True,exist_ok=True)
             data.write_jsonl(path,values)
             group['conditions'][condition]=dict(path=str(public_path(path)),sha256=common.file_hash(path),by_mode=summarize(values))
         group['paired_source_ids_sha256']=data.digest([r['source_id'] for r in original])
         report['splits'][split]=group
-    data.atomic_json(results()/'prepared.json',report)
+    data.atomic_json(results(job)/'prepared.json',report)
     print(json.dumps(report,indent=2),flush=True)
 
 
-def worker():
+def worker(job=experiment_configs[0]):
     current=identity()
-    meta=results()/'identity.json'
+    meta=results(job)/'identity.json'
     if meta.exists() and json.loads(meta.read_text()) != current:
         raise RuntimeError('Preparation inputs changed')
     data.atomic_json(meta,current)
     source_rows()
-    exp=experiment_configs[0]
     bench.child([launch.PYTHON,'-m','torch.distributed.run','--standalone',
-                 f'--nproc_per_node={exp.num_gpus}','scripts/provenance/provenance_prepare.py','--generate-worker'],
-                os.environ.copy(),exp.hours-300/3600)
-    finalize()
+                 f'--nproc_per_node={job.num_gpus}','scripts/provenance/provenance_prepare.py','--generate-worker','--filter',job.name],
+                os.environ.copy(),job.hours-300/3600)
+    finalize(job=job)
 
 
-def completed():
-    marker=results()/'prepared.json'
+def completed(job=experiment_configs[0]):
+    marker=results(job)/'prepared.json'
     if not marker.exists():return False
     report=json.loads(marker.read_text())
     if report['identity'] != identity():raise RuntimeError('Stale paired preparation')
@@ -223,18 +223,17 @@ def payload(exp,staged):
     body=launch.payload('train',exp.name,staged,'d.tarasov','mrsndmn')
     body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus],
                 job_desc=f'sps-response-provenance prepare {exp.name} #d.tarasov @mrsndmn')
-    body['script']=f'cd {shlex.quote(str(staged))} && '+shlex.join([str(launch.PYTHON),'scripts/provenance/provenance_prepare.py','--worker'])
+    body['script']=f'cd {shlex.quote(str(staged))} && '+shlex.join([str(launch.PYTHON),'scripts/provenance/provenance_prepare.py','--worker','--filter',exp.name])
     return body
 
 
-def submit(dry=False):
+def submit(job, dry=False):
     commit=launch.git('rev-parse','HEAD');staged=launch.STAGING_ROOT/commit
-    exp=experiment_configs[0]
     if dry:
-        launch.print_preview(payload(exp,staged), prepared_dir(), staged, "prepare");return
-    if not launch.pending(prepared_dir()):
+        launch.print_preview(payload(job,staged), prepared_dir(job), staged, "prepare");return
+    if not launch.pending(prepared_dir(job)):
         return
-    if completed():print('Already completed');return
+    if completed(job=job):print('Already completed');return
     source_rows()
     from mls.manager.job.utils import training_job_api_from_profile
     client,options=training_job_api_from_profile('default');launch.disable_submission_retries(client)
@@ -243,20 +242,20 @@ def submit(dry=False):
         response=client.get_list_jobs(options['region'],None,status,1000,0)
         if 'jobs' not in response:raise RuntimeError('Cannot establish active jobs')
         active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
-    launch.reconcile_for_outputs(client, active, [prepared_dir()])
-    key=launch.output_identity(payload(exp,staged)['job_desc'], prepared_dir())
+    launch.reconcile_for_outputs(client, active, [prepared_dir(job)])
+    key=launch.output_identity(payload(job,staged)['job_desc'], prepared_dir(job))
     if key in active:
-        job=dict(name=exp.name,job_name=active[key],reused=True)
+        receipt=dict(name=job.name,job_name=active[key],reused=True)
     else:
         staged=launch.stage_repo(Path(launch.git('rev-parse','--show-toplevel')),commit)
-        body=payload(exp,staged);body['region']=options['region']
+        body=payload(job,staged);body['region']=options['region']
         path=ROOT/'budget.json';ledger=json.loads(path.read_text()) if path.exists() else {'attempts':[]}
-        cost=exp.hours*exp.num_gpus
+        cost=job.hours*job.num_gpus
         if sum(x['gpu_hours'] for x in ledger['attempts'])+cost > 2*cost:
             raise RuntimeError('Preparation reservation cap exceeded')
         ledger['attempts'].append(dict(gpu_hours=cost,time=time.time()));launch.store_json(path,ledger)
-        job=launch.submit_payload(client,body,'prepare',exp.name,commit, output_dir=prepared_dir())
-    print('__MLS_JOBS_JSON__');print(json.dumps({'jobs':[job]}),flush=True)
+        receipt=launch.submit_payload(client,body,'prepare',job.name,commit, output_dir=prepared_dir(job))
+    print('__MLS_JOBS_JSON__');print(json.dumps({'jobs':[receipt]}),flush=True)
 
 
 def main():
@@ -264,9 +263,11 @@ def main():
     parser.add_argument('--dry',action='store_true')
     parser.add_argument('--worker',action='store_true')
     parser.add_argument('--generate-worker',action='store_true')
+    jobs = run_filter(parser, experiment_configs)
     args=parser.parse_args()
-    if args.generate_worker:return generate_worker()
-    if args.worker:return worker()
+    job = jobs[args.filter]
+    if args.generate_worker:return generate_worker(job=job)
+    if args.worker:return worker(job=job)
     with patch.object(launch,'ARTIFACTS_ROOT',ROOT),patch.object(launch,'RUN_ROOT',ROOT/'runs'):
-        if args.dry:return submit(True)
-        with launch.submission_lock():return submit()
+        if args.dry:return submit(job, True)
+        with launch.submission_lock():return submit(job)

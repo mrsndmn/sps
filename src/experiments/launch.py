@@ -29,3 +29,12 @@ def run_filter(parser, rows):
         default=next(iter(by_name), None),
     )
     return by_name
+
+
+def matching_runs(rows, pattern):
+    """Prefer a complete run name, while retaining native batch substring filters."""
+    rows = list(rows)
+    if pattern is None:
+        return rows
+    exact = [row for row in rows if row.name == pattern]
+    return exact or [row for row in rows if pattern in row.name]

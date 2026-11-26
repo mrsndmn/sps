@@ -1,5 +1,6 @@
 """Executable design for shared-backbone Qwen3 SPS-MTP and vLLM comparison."""
 
+from experiments.launch import matching_runs
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -78,6 +79,9 @@ class Experiment:
     mode: str | None = None
     num_gpus: int = 1
 
+    def output(self, phase):
+        return family_config.ROOT / ("sanity" if phase == "probe" else "runs") / "out" / self.name
+
 
 experiment_configs = [Experiment("qwen3_sps_mtp", "train", num_gpus=4)] + [
     Experiment(f"{arm}-{mode}", arm, mode)
@@ -87,12 +91,8 @@ experiment_configs = [Experiment("qwen3_sps_mtp", "train", num_gpus=4)] + [
 
 
 def collect_experiments(phase, pattern=None):
-    return [
-        x
-        for x in experiment_configs
-        if (x.arm == "train") == (phase in {"probe", "train"})
-        and (pattern is None or pattern == x.name)
-    ]
+    rows = (exp for exp in experiment_configs if (exp.arm == "train") == (phase in {"probe", "train"}))
+    return matching_runs(rows, pattern)
 
 
 def launches(family):

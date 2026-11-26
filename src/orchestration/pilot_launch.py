@@ -104,8 +104,9 @@ def submit(args):
     phase = args.phase
     runs = [
         e
-        for e in suite.collect_experiments(args.filter)
-        if (not args.named or ("data-and-probes" if phase == "prepare" else e.name) == args.named)
+        for e in suite.collect_experiments()
+        if (not args.filter or args.filter in e.name)
+        and (not args.named or ("data-and-probes" if phase == "prepare" else e.name) == args.named)
         and (phase != "train" or e.trainable)
     ]
     if suite.SUITE in evaluation_outputs and phase != "eval":

@@ -1,4 +1,5 @@
 import copy
+import sys
 from pathlib import Path
 import pytest
 from workloads.serving import sampling_audit as a
@@ -36,4 +37,5 @@ def test_completed_audit_skips_after_code_changes(tmp_path,monkeypatch):
     monkeypatch.setattr(a,'ROOT',tmp_path)
     monkeypatch.setattr(a,'input_identity',lambda: pytest.fail('existing output should skip before preflight'))
     a.launch.store_json(a.output_dir()/'evaluated.json',dict(identity={'design_signature':'old'},passed=True))
-    a.submit()
+    monkeypatch.setattr(sys, "argv", ["scripts/serving/sampling_audit.py"])
+    a.main()

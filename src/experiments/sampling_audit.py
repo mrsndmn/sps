@@ -39,4 +39,4 @@ def launches(family):
     for study in ("audit", "trace", "precision", "cache_trace", "backbone_precision"):
         module = import_module(f"experiments.sampling_{study}")
         for job in getattr(module, "job_configs", module.experiment_configs):
-            yield Launch(job.name, "eval", f"scripts/serving/sampling_{study}.py")
+            yield Launch(job.name, "eval", f"scripts/serving/sampling_{study}.py", ("--filter", job.name))

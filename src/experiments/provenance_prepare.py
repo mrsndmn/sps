@@ -27,17 +27,17 @@ class Experiment:
     name: str = "paired-response-preparation"
     num_gpus: int = 4
     hours: int = 12
+    directory: str | None = None
 
 
-experiment_configs = [Experiment()]
+experiment_configs = [Experiment(directory="prepared")]
 
 
 def launches(family):
     from . import provenance_train, provenance_evaluate
     from .launch import Launch, filtered
 
-    for exp in experiment_configs:
-        yield Launch(exp.name, "prepare", "scripts/provenance/provenance_prepare.py")
+    yield from filtered(experiment_configs, "prepare", "scripts/provenance/provenance_prepare.py")
     for exp in provenance_train.experiment_configs:
         yield Launch(
             exp.name,

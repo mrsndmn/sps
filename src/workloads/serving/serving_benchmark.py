@@ -1,4 +1,5 @@
 """Single-GPU native vLLM gate and benchmark using the isolated serving runtime."""
+from experiments.launch import matching_runs
 from experiments.family_cli import worker_child
 from orchestration.named.publication import work_path
 
@@ -246,12 +247,8 @@ def worker(exp):
 
 
 def selected(phase, name=None):
-    return [
-        exp
-        for exp in experiment_configs
-        if (exp.arm == "audit") == (phase == "audit")
-        and (name is None or name == exp.name)
-    ]
+    rows = (exp for exp in experiment_configs if (exp.arm == "audit") == (phase == "audit"))
+    return matching_runs(rows, name)
 
 
 def payload(exp, staged, phase):

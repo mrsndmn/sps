@@ -6,6 +6,7 @@ an arithmetic-only intervention. FP16 has a smaller exponent range; nonfinite
 distributions fail validation. Original failed-gate evidence stays immutable.
 """
 from orchestration.named.publication import work_path
+from experiments.launch import run_filter
 import argparse
 import json
 import math
@@ -32,8 +33,8 @@ SOURCE = precision.root()
 BASE_IDENTITY = precision.recorded_identity
 
 
-def root():
-    return work_path(ROOT / 'runs/out' / job_configs[0].name)
+def root(job=job_configs[0]):
+    return work_path(ROOT / 'runs/out' / job.name)
 
 
 def identity():
@@ -58,7 +59,7 @@ class BackbonePrecisionWorkerExtension(precision.PrecisionWorkerExtension):
                     **self.sps_precision_info())
 
 
-def engine_worker(exp, task):
+def engine_worker(exp, task, job=job_configs[0]):
     import vllm
     original = vllm.LLM
     observed = []
@@ -74,9 +75,10 @@ def engine_worker(exp, task):
                 raise RuntimeError('FP16 weights absent or nonfinite after conversion')
             if observed[0]['head_dtype'] != 'torch.float32':
                 raise RuntimeError('Expected unchanged FP32 head')
-    with patch.object(vllm, 'LLM', BackboneLLM), patch.object(precision, 'root', root):
+    destination_root = root(job)
+    with patch.object(vllm, 'LLM', BackboneLLM), patch.object(precision, 'root', lambda job: destination_root):
         precision.engine_worker(exp, task)
-    launch.store_json(root() / exp.name / task / 'backbone.json', dict(experiment=exp.__dict__, observed=observed))
+    launch.store_json(root(job) / exp.name / task / 'backbone.json', dict(experiment=exp.__dict__, observed=observed))
 
 
 def validate_decodes(group):
@@ -86,53 +88,53 @@ def validate_decodes(group):
             raise RuntimeError("Missing or nonfinite sampled log probabilities")
 
 
-def report():
+def report(job=job_configs[0]):
     cases = json.loads((precision.TRACE_SOURCE / 'cases.json').read_text())
     matrices = {}
     for exp in experiment_configs:
-        matrices[exp.name] = precision.load_matrix(root() / exp.name / 'distributions', exp.arm, cases)
+        matrices[exp.name] = precision.load_matrix(root(job) / exp.name / 'distributions', exp.arm, cases)
     for name, arm in [('fp32head-four', 'sps_four_slots'), ('fp32head-mtp', 'sps_mtp')]:
         matrices[name] = precision.load_matrix(SOURCE / name / 'distributions', arm, cases)
     comparisons = [dict(case=c['name'], a=a, b=b, **trace.compare(matrices[a][i], matrices[b][i]))
                    for i, c in enumerate(cases) for a, b in
                    [('fp16-four', 'fp16-mtp'), ('fp32head-four', 'fp16-four'), ('fp32head-mtp', 'fp16-mtp')]]
-    decodes = {exp.name: json.loads((root() / exp.name / 'decode' /
+    decodes = {exp.name: json.loads((root(job) / exp.name / 'decode' /
                 f"{'sps' if exp.arm == 'sps_four_slots' else exp.arm}-eager.json").read_text())
                for exp in experiment_configs}
     for group in decodes.values():
         validate_decodes(group)
     cached = audit.compare_decodes({'sps-eager': decodes['fp16-four'], 'mtp': decodes['fp16-mtp']})
-    result = dict(identity=json.loads((root() / 'identity.json').read_text()), comparisons=comparisons,
+    result = dict(identity=json.loads((root(job) / 'identity.json').read_text()), comparisons=comparisons,
                   cached=cached, passed=True, diagnostic_completed=True,
                   scope='FP16-backbone numerical control with FP32 head; weight rounding and arithmetic both change from the same FP32 source export. Diagnostic completion is not a pass of the original BF16 sampling gate. Finite-weight and full-distribution checks do not prove all cached activations finite.')
-    launch.store_json(root() / 'report.json', result)
-    launch.store_json(root() / 'evaluated.json', result)
+    launch.store_json(root(job) / 'report.json', result)
+    launch.store_json(root(job) / 'evaluated.json', result)
 
 
-def worker():
+def worker(job=job_configs[0]):
     current = identity()
-    path = root() / 'identity.json'
+    path = root(job) / 'identity.json'
     if path.exists() and json.loads(path.read_text()) != current:
         raise RuntimeError('Backbone diagnostic inputs changed')
     launch.store_json(path, current)
     env = audit.runtime.runtime_environment()
     env.update(SPS_VLLM_SOURCE=str(audit.graphs.SITE), VLLM_USE_V2_MODEL_RUNNER='0')
     env['PYTHONPATH'] = str(audit.graphs.SITE) + ':' + env.get('PYTHONPATH', str(Path.cwd()) + ':' + str(Path.cwd() / 'src'))
-    deadline = time.monotonic() + job_configs[0].hours * 3600 - 300
+    deadline = time.monotonic() + job.hours * 3600 - 300
     for exp in experiment_configs:
         for task in ('distributions', 'decode'):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise RuntimeError('Backbone precision deadline exceeded')
-            audit.bench.child([audit.runtime.RUNTIME / 'bin/python', 'scripts/serving/sampling_backbone_precision.py',
+            audit.bench.child([audit.runtime.RUNTIME / 'bin/python', 'scripts/serving/sampling_backbone_precision.py', '--filter', job.name,
                                '--engine-worker', exp.name, '--task', task], env, remaining / 3600)
-    report()
+    report(job=job)
 
 
 def payload(exp, staged):
     body = audit.bench.payload(audit.source.Experiment(exp.name, 'audit'), staged, 'audit')
     body['job_desc'] = f'sps-sampling-backbone-precision {exp.name} #d.tarasov @mrsndmn'
-    body['script'] = f'cd {shlex.quote(str(staged))} && ' + shlex.join([str(launch.PYTHON), 'scripts/serving/sampling_backbone_precision.py', '--worker'])
+    body['script'] = f'cd {shlex.quote(str(staged))} && ' + shlex.join([str(launch.PYTHON), 'scripts/serving/sampling_backbone_precision.py', '--worker', '--filter', exp.name])
     return body
 
 
@@ -142,17 +144,18 @@ def main():
     parser.add_argument('--worker', action='store_true')
     parser.add_argument('--engine-worker', choices=[e.name for e in experiment_configs])
     parser.add_argument('--task', choices=('distributions', 'decode'))
+    jobs = run_filter(parser, job_configs)
     args = parser.parse_args()
+    job = jobs[args.filter]
     if args.engine_worker:
         if not args.task:
             parser.error('--engine-worker requires --task')
-        return engine_worker(next(e for e in experiment_configs if e.name == args.engine_worker), args.task)
+        return engine_worker(next(e for e in experiment_configs if e.name == args.engine_worker), args.task, job=job)
     if args.worker:
-        return worker()
-    with patch.object(audit, 'ROOT', ROOT), patch.object(audit, 'experiment_configs', job_configs), \
-         patch.object(audit, 'input_identity', identity), patch.object(audit, 'output_dir', root), \
-         patch.object(audit, 'payload', payload), patch.object(launch, 'ARTIFACTS_ROOT', ROOT), patch.object(launch, 'RUN_ROOT', ROOT / 'runs'):
+        return worker(job=job)
+    with patch.object(launch, "ARTIFACTS_ROOT", ROOT), patch.object(launch, "RUN_ROOT", ROOT / "runs"):
+        arguments = (job, ROOT, root(job), identity, payload)
         if args.dry:
-            return audit.submit(True)
+            return audit.submit(*arguments, dry=True)
         with launch.submission_lock():
-            return audit.submit()
+            return audit.submit(*arguments)

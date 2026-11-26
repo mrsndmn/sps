@@ -29,7 +29,7 @@ def test_dry_jobs_are_isolated_and_have_required_gpu_count(variant,phase,count,g
 
 
 def test_mode_filter_and_invalid_worker_routes():
-    p=run('--variant','step384','--phase','eval','--workload','ifeval-nonthinking','--filter','qwen3_instruct_staged_sps_ce','--dry')
+    p=run('--variant','step384','--phase','eval','--workload','ifeval-nonthinking','--filter','staged_sps_ce','--dry')
     assert p.returncode==0 and p.stdout.count('"instance_type"')==1
     assert run('--variant','step384','--phase','train','--dry').returncode!=0
     assert run('--variant','cosine','--phase','train','--limit','1','--dry').returncode!=0
@@ -65,7 +65,7 @@ def test_schedule_skips_existing_output(tmp_path,monkeypatch,capsys):
     from orchestration import mlspace_launch as launch
     from workloads.instruction import sched_run as r
     exp=SimpleNamespace(name='example',trainable=True)
-    monkeypatch.setattr(sc.e,'collect_experiments',lambda _: [exp])
+    monkeypatch.setattr(sc.e,'collect_experiments',lambda: [exp])
     monkeypatch.setattr(sc,'output_dir',lambda *args:tmp_path)
     monkeypatch.setattr(sc,'signature',lambda:'current')
     monkeypatch.setattr(launch,'git',lambda *args:'commit')

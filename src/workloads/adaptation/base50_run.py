@@ -30,8 +30,10 @@ def plan():
 
 def worker(exp):
     from data.ar_sps_data import prepare
-    prepare()
-    launch.store_json(e.prepared_path(), plan())
+    from orchestration.run_directory import preparation_lock
+    with preparation_lock(e.RUN_ROOT):
+        prepare()
+        launch.store_json(e.prepared_path(), plan())
     command = [str(e.PYTHON), '-m', 'torch.distributed.run', '--standalone',
                f'--nproc_per_node={exp.num_gpus}', 'scripts/adaptation/base50_train.py', '--filter', exp.name]
     subprocess.run(worker_child(command), check=True)

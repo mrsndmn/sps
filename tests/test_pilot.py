@@ -67,7 +67,8 @@ def test_pair_has_matched_budget_and_distinct_methods():
         assert a[key] == b[key]
     assert int(a['max_tokens']) % config.TOKENS_PER_STEP == 0
     assert all(e.num_gpus == 4 for e in (standard, sps))
-    assert len(config.collect_experiments('sps_w0')) == 1
+    assert config.collect_experiments(sps.name) == [sps]
+    assert not config.collect_experiments('sps_w0')
 
 
 def test_dry_plans_have_no_api_or_filesystem_side_effects(tmp_path, monkeypatch, capsys):
