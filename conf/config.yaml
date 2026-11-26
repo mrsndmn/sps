@@ -16,3 +16,5 @@ defaults:
 hydra:
   run:
     dir: ${oc.env:SPS_OUTPUT_ROOT,/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/outputs}/${now:%Y-%m-%d}/${hydra.job.name}-${now:%H-%M-%S-%f}
+  sweep:
+    dir: ${oc.env:SPS_OUTPUT_ROOT,/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/outputs}/multirun/${now:%Y-%m-%d}/${hydra.job.name}-${now:%H-%M-%S-%f}

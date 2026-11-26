@@ -195,7 +195,7 @@ Its artifact directory is `qwen3-instruct-real-readout-mtp/` under the shared ro
 
 Analysis, benchmark and table scripts use the shared NFS directory
 `../sps-artifacts/outputs/` directly. Hydra also stores its dated run metadata
-there. On another machine set `SPS_OUTPUT_ROOT` to an absolute directory before
+there, including sweeps under `multirun/`. On another machine set `SPS_OUTPUT_ROOT` to an absolute directory before
 running these commands. Per-script input and output flags still take precedence.
 `run/` also contains local orchestration state, including job observations.
 The worker's output paths identify the shared results used downstream.
