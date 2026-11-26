@@ -16,7 +16,7 @@ import time
 
 from orchestration.experiment_suite import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
-                        collect_experiments, output_dir, design_signature, SUITE, training_marker, EVAL_NUM_GPUS)
+                        collect_experiments, output_dir, SUITE, training_marker, EVAL_NUM_GPUS)
 from orchestration.pilot_headers import HEADER_ROOT
 from orchestration.suite_registry import AR_SPS_SUITES, EVAL_ONLY_SUITES, INSTRUCT_SUITE, WORKER_SCRIPTS
 

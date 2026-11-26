@@ -30,8 +30,7 @@ def load_model(exp, device):
     if exp.variant != 'base':
         checkpoint = torch.load(e.COMMON_ROOT / exp.suite / 'runs/out' / exp.arm / 'final.pt',
                                 map_location='cpu', weights_only=False, mmap=True)
-        if (checkpoint.get('design_signature') != exp.signature or
-                checkpoint.get('source') != exp.model or checkpoint.get('revision') != exp.revision):
+        if (checkpoint.get('source') != exp.model or checkpoint.get('revision') != exp.revision):
             raise ValueError(f'Checkpoint provenance mismatch: {exp.name}')
         model.load_state_dict(checkpoint['model'], strict=True)
         del checkpoint
@@ -45,7 +44,7 @@ def evaluate(exp, limit=None, *, destination=None):
     started = time.monotonic()
     root = destination or e.output_dir(exp) / ('smoke' if limit else 'full')
     root.mkdir(parents=True, exist_ok=True)
-    signature = e.design_signature()
+    signature = e.SUITE
     manifest = dict(design_signature=signature, experiment=exp.__dict__, limit=limit)
     meta = root / 'manifest.json'
     if meta.exists() and json.loads(meta.read_text()) != manifest:

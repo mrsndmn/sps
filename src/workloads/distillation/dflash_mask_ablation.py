@@ -12,7 +12,6 @@ import time
 from unittest.mock import patch
 
 from experiments.environment import COMMON_ROOT
-from orchestration.source_compatibility import source_hash
 from experiments import instruct_config as data_config, vllm_sps_config
 from workloads.evaluation import report_mmlu_stem
 from orchestration import mlspace_launch as launch
@@ -34,17 +33,7 @@ from experiments.dflash_mask_ablation import (
 
 
 def signature():
-    sources = [
-        Path(__file__),
-        Path(data_config.__file__),
-        Path(mmlu_messages.__code__.co_filename),
-        Path(select_examples.__code__.co_filename),
-        Path(report_mmlu_stem.__file__),
-        Path(vllm_sps_config.__file__),
-    ]
-    return sha256(
-        b"".join(bytes.fromhex(source_hash(path)) for path in sources)
-    ).hexdigest()
+    return "dflash-mask-ablation"
 
 
 def run_name():

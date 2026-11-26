@@ -204,7 +204,7 @@ def test_conditional_acceptance_summary_uses_reached_counts():
     assert a['emitted_per_round']==1.5 and a['native_exact_prompts']==2
 
 
-@pytest.mark.parametrize('change',[{'tokens':0},{'step':-1},{'source_sha256':'other'},{'design_signature':'other'}])
+@pytest.mark.parametrize('change',[{'tokens':0},{'step':-1},{'source_sha256':'other'}])
 def test_resume_refuses_inconsistent_identity(change):
     from orchestration import experiment_suite as e
     from workloads.speculative.spec_baseline_common import validate_resume
@@ -227,7 +227,7 @@ def test_completed_baseline_refuses_changed_checkpoint_provenance(tmp_path,monke
     torch.save(state,path)
     marker.write_text(json.dumps(dict(checkpoint=str(path),design_signature='sig',**identity)))
     monkeypatch.setattr(e,'training_marker',lambda exp:marker)
-    monkeypatch.setattr(e,'design_signature',lambda:'sig')
+
     monkeypatch.setattr(common,'validate_evaluation_inputs',lambda trained:None)
     common.checked_state(exp)
     state['source_sha256']='different';torch.save(state,path)

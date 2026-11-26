@@ -413,8 +413,6 @@ def main(argv=None):
         raise ValueError('Select exactly one MTP experiment')
     exp = matches[0]
     trained = json.loads((output_dir(exp)/'trained.json').read_text())
-    if trained['design_signature'] != experiments.design_signature():
-        raise RuntimeError('Stale training identity')
     checkpoint = Path(trained['checkpoint'])
     if not checkpoint.is_file():
         raise RuntimeError('Missing final adaptation checkpoint')

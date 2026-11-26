@@ -11,14 +11,12 @@ import shlex
 import tempfile
 from urllib.request import urlopen
 
-from orchestration.source_compatibility import source_hash
 from orchestration import mlspace_launch as launch
 from workloads.readout import real_readout_eval as quality
 from workloads.readout import real_readout_run as train
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 from workloads.evaluation.mmlu_results import recover_samples
-from workloads.readout.readout_archive import compatible_identity
 from experiments.real_readout_humaneval import (
     ROOT,
     PROMPTS,
@@ -66,16 +64,9 @@ def solution(final_text):
 
 
 def identity(exp, marker):
-    from workloads.evaluation import mmlu_generation
-    from workloads.instruction import instruct_generation
-
-    paths = (Path(__file__), Path(quality.__file__), Path(instruct_generation.__file__),
-             Path(mmlu_generation.__file__))
     return dict(arm=exp.arm, mode=exp.mode, checkpoint=marker["checkpoint_sha256"],
-                model_sources=quality.model_sources(exp),
                 prompts=PROMPT_SHA, release=RELEASE,
-                settings=SETTINGS[exp.mode], seed=c.SEED, request=REQUEST,
-                code={path.stem: source_hash(path) for path in paths})
+                settings=SETTINGS[exp.mode], seed=c.SEED, request=REQUEST)
 
 
 def paths(exp):
@@ -99,7 +90,7 @@ def evaluate(exp):
     meta, raw = root/"manifest.json", root/"raw.jsonl"
     if meta.exists():
         saved = json.loads(meta.read_text())
-        if not compatible_identity(saved, ident, marker, "humaneval"):
+        if saved != ident:
             raise ValueError("HumanEval+ manifest mismatch")
         ident = saved
     elif raw.exists() or samples.exists():
@@ -166,7 +157,7 @@ def main():
             ident = identity(exp, marker)
             if (root/"evaluated.json").exists():
                 done = json.loads((root/"evaluated.json").read_text())
-                if (not compatible_identity(done["identity"], ident, marker, "humaneval") or done["generated"] != 164
+                if (done["identity"] != ident or done["generated"] != 164
                         or done["samples_sha256"] != common.file_hash(samples)
                         or done["raw_sha256"] != common.file_hash(root/"raw.jsonl")):
                     raise ValueError("Stale HumanEval+ result")

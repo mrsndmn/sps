@@ -4,21 +4,17 @@ import json
 import os
 from pathlib import Path
 from experiments import extend_config as c
-from orchestration.design_compatibility import rerun_signature
 os.environ.setdefault('SPS_EXPERIMENT_SUITE', c.SOURCE_SUITE)
 from orchestration import experiment_suite as e
 
 
 def signature():
-    if e.SUITE != c.SOURCE_SUITE or e.design_signature() != c.SOURCE_SIGNATURE:
-        raise RuntimeError('Pinned instruct source changed')
-    return rerun_signature("extend", c.SOURCE_SIGNATURE, Path(__file__).parent)
+    return c.ROOT_NAME
 
 
 def source_plan():
-    signature()
     plan=json.loads((e.prepared_path()).read_text())
-    if plan['design_signature']!=c.SOURCE_SIGNATURE or plan['steps']!=c.START_STEP:
+    if plan['steps'] != c.START_STEP:
         raise RuntimeError('Source plan mismatch')
     return plan
 
@@ -52,12 +48,8 @@ def checkpoint_path(variant,exp):
 
 def validate_state(state,exp,*,source=False,step=None):
     from experiments import instruct_config as original
-    expected=c.SOURCE_SIGNATURE if source else signature()
     expected_plan=source_plan() if source else training_plan()
-    if (state['design_signature']!=expected or state['source']!=original.MODEL
-        or state['revision']!=original.REVISION or state['plan']!=expected_plan
-        or state['stage'] is not False or (step is not None and state['step']!=step)
-        or (not source and state['experiment']!=exp.__dict__)):
+    if (state['source'] != original.MODEL or state['revision'] != original.REVISION or state['plan'] != expected_plan or state['stage'] is not False or step is not None and state['step'] != step or not source and state['experiment'] != exp.__dict__):
         raise RuntimeError('Continuation checkpoint provenance mismatch')
     if not source and not c.START_STEP <= state['step'] <= c.TRAIN_STEPS:
         raise RuntimeError('Invalid continuation cursor')

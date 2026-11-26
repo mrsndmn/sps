@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 import shlex
 
-from orchestration.source_compatibility import source_hash
 from experiments import instruct_config as source
 from orchestration import mlspace_launch as launch
 from workloads.readout import real_readout_eval as quality
@@ -16,7 +15,6 @@ from workloads.readout import real_readout_run as train
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 from workloads.evaluation.mmlu_results import recover_samples
-from workloads.readout.readout_archive import compatible_identity
 from experiments.real_readout_gsm8k import (
     ROOT,
     HOURS,
@@ -54,16 +52,9 @@ def dataset():
 
 
 def identity(exp, marker, data):
-    from workloads.evaluation import mmlu_generation
-    from workloads.instruction import instruct_generation
-
-    paths = (Path(__file__), Path(quality.__file__), Path(instruct_generation.__file__),
-             Path(mmlu_generation.__file__))
     return dict(arm=exp.arm, mode=exp.mode, checkpoint=marker["checkpoint_sha256"],
-                model_sources=quality.model_sources(exp),
                 model=c.MODEL, revision=c.REVISION, generation=source.GENERATION[exp.mode],
-                seed=c.SEED, data=data, prompt=INSTRUCTION, code={
-                    path.stem: source_hash(path) for path in paths})
+                seed=c.SEED, data=data, prompt=INSTRUCTION)
 
 
 def evaluate(exp):
@@ -80,7 +71,7 @@ def evaluate(exp):
     manifest, path = root / "manifest.json", root / "answers.jsonl"
     if manifest.exists():
         saved = json.loads(manifest.read_text())
-        if not compatible_identity(saved, ident, marker, "gsm8k"):
+        if saved != ident:
             raise ValueError("Incompatible GSM8K resume")
         ident = saved
     elif path.exists():
@@ -150,7 +141,7 @@ def main():
             root = work_path(ROOT / "runs/out" / exp.name)
             if (root / "evaluated.json").exists():
                 saved = json.loads((root / "evaluated.json").read_text())
-                if (not compatible_identity(saved["identity"], ident, marker, "gsm8k")
+                if (saved["identity"] != ident
                         or saved["answers_sha256"] != common.file_hash(root/"answers.jsonl")):
                     raise ValueError("Stale completion")
                 continue

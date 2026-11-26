@@ -14,7 +14,6 @@ import shlex
 import time
 from unittest.mock import patch
 
-from orchestration.source_compatibility import source_hash
 from experiments import instruct_config as c
 from data import instruct_data as data
 from orchestration import mlspace_launch as launch
@@ -45,11 +44,7 @@ def results():
 
 
 def signature():
-    return data.digest(dict(code=source_hash(__file__),
-        encoder=source_hash(data.__file__),
-        source_config=source_hash(c.__file__),
-        source_reader=source_hash(common.__file__), source_signature=source.SOURCE_SIGNATURE,
-        generation=GENERATION, model=c.MODEL, revision=c.REVISION))
+    return data.digest(dict(generation=GENERATION, model=c.MODEL, revision=c.REVISION))
 
 
 def source_rows():
@@ -69,8 +64,6 @@ def source_rows():
 
 def identity():
     manifest = json.loads((source.SOURCE_ROOT/'runs/data/manifest.json').read_text())
-    if manifest['design_signature'] != source.SOURCE_SIGNATURE:
-        raise RuntimeError('Unexpected source design')
     return dict(design_signature=signature(), source_manifest=manifest,
                 model=c.MODEL, revision=c.REVISION, generation=GENERATION)
 
@@ -83,8 +76,7 @@ def record_path(row):
 
 
 def validate_record(record, row, split, expected):
-    if (record['design_signature'] != expected or record['source_id'] != row['source_id']
-            or record['source_row_sha256'] != data.digest(row) or record['split'] != split):
+    if (record['source_id'] != row['source_id'] or record['source_row_sha256'] != data.digest(row) or record['split'] != split):
         raise RuntimeError('Cached teacher response identity mismatch')
     if ('row' in record) == ('rejected' in record):
         raise RuntimeError('Teacher response must be accepted or rejected')

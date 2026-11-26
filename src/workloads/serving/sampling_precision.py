@@ -12,7 +12,6 @@ import shlex
 import time
 from unittest.mock import patch
 import numpy as np
-from orchestration.source_compatibility import source_hash
 from workloads.serving import sampling_audit as audit
 from workloads.serving import sampling_trace as trace
 from orchestration import mlspace_launch as launch
@@ -41,7 +40,7 @@ def identity():
     files=[TRACE_SOURCE/'identity.json',TRACE_SOURCE/'cases.json']
     files += [TRACE_SOURCE/f'{arm}.{suffix}' for arm in (*trace.ARMS,*trace.NATIVE_ARMS) for suffix in ('npz','json')]
     files += [AUDIT_SOURCE/'prefixes.json',AUDIT_SOURCE/'sps-eager.json',AUDIT_SOURCE/'sps_mtp-eager.json']
-    return dict(audit=current,code={p.name:source_hash(p) for p in (Path(__file__),Path(trace.__file__))},
+    return dict(audit=current,
                 evidence={str(p):audit.common.file_hash(p) for p in files})
 
 

@@ -31,10 +31,6 @@ def samples(result, task, metric):
 def compare(baseline, candidate, *, matched_exposure=False, baseline_signature=None):
     if not (baseline/'complete.json').exists() or not (candidate/'complete.json').exists():
         raise RuntimeError('Evaluation incomplete; no retention verdict')
-    for path, signature in ((baseline, baseline_signature or e.design_signature()),
-                            (candidate, e.design_signature())):
-        if json.loads((path/'complete.json').read_text())['design_signature'] != signature:
-            raise RuntimeError('Stale evaluation')
     row = dict(baseline=str(baseline), variant=str(candidate), tasks={})
     passed = True
     for task, metric in c.PRIMARY_METRICS.items():

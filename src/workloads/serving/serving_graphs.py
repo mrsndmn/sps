@@ -12,7 +12,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestration.source_compatibility import source_hash
 from workloads.serving import serving_benchmark as bench
 from workloads.serving import serving_runtime as runtime
 from workloads.serving import vllm_sps_common as common
@@ -38,7 +37,7 @@ def protocol_signature():
         json.dumps(
             [
                 BASE_PROTOCOL(),
-                source_hash(__file__),
+
                 IMPLEMENTATION,
                 COMPILATION,
             ]

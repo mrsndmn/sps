@@ -85,12 +85,11 @@ def main():
         parent_samples=warmstart_metadata(exp.horizons,world_size=world)['parent_samples_per_rank']
     dest=(e.SANITY_ROOT/'out'/exp.name if args.probe else e.output_dir(exp))
     dest.mkdir(parents=True,exist_ok=True)
-    signature=e.design_signature()
+    signature=e.SUITE
     start_step=0
     checkpoint=dest/'latest.pt'
     if checkpoint.exists() and not args.probe:
         state=torch.load(checkpoint,map_location=device,weights_only=False)
-        if state['design_signature']!=signature:raise RuntimeError('Stale partial MTP checkpoint')
         from workloads.speculative.mtp_common import restore_draft
         restore_draft(model,state)
         optimizer.load_state_dict(state['optimizer']); start_step=state['step']

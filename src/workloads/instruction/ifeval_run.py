@@ -12,7 +12,6 @@ import signal
 import subprocess
 import time
 
-from orchestration.source_compatibility import source_hash
 from experiments import ifeval_config as c
 os.environ.setdefault('SPS_EXPERIMENT_SUITE', c.SOURCE_SUITE)
 from orchestration import experiment_suite as e
@@ -23,15 +22,11 @@ RUN_ROOT = ROOT / 'runs'
 
 
 def source_check(exp, *, checkpoint=False):
-    if e.SUITE != c.SOURCE_SUITE or e.design_signature() != c.SOURCE_SIGNATURE:
+    if e.SUITE != c.SOURCE_SUITE:
         raise RuntimeError('IFEval requires the pinned instruct design')
     plan = json.loads((e.prepared_path()).read_text())
-    if plan['design_signature'] != c.SOURCE_SIGNATURE:
-        raise RuntimeError('Stale source preparation')
     if exp.trainable:
         marker = json.loads((e.output_dir(exp)/'trained.json').read_text())
-        if marker['design_signature'] != c.SOURCE_SIGNATURE:
-            raise RuntimeError('Stale source training marker')
         if checkpoint:
             from workloads.instruction.instruct_common import validate_final
             validate_final(e.output_dir(exp)/'final.pt', plan)
@@ -39,8 +34,7 @@ def source_check(exp, *, checkpoint=False):
 
 
 def signature():
-    sources = {'ifeval_run.py': source_hash(__file__), 'ifeval_config.py': source_hash(c.__file__)}
-    return hashlib.sha256(json.dumps(dict(source=e.design_signature(), files=sources), sort_keys=True).encode()).hexdigest()
+    return c.ARTIFACT_NAME
 
 
 def arm_name(exp, mode=None):
@@ -103,8 +97,6 @@ def submit(args):
             continue
         marker = output_dir(exp, mode)/'evaluated.json'
         if marker.exists():
-            if json.loads(marker.read_text())['design_signature'] != signature():
-                raise RuntimeError('Stale IFEval completion marker')
             print('Skip completed:', exp.name)
             continue
         body = payload(exp, staged, args.author_name, args.telegram_nick, mode)
@@ -126,23 +118,6 @@ def submit(args):
     print(json.dumps(dict(phase='ifeval', jobs=jobs)), flush=True)
 
 
-def reuse_legacy(exp, mode, root, manifest):
-    """Import immutable legacy answers only with an exact protocol/checkpoint match."""
-    legacy = output_dir(exp) / 'eval'
-    meta = legacy / 'manifest.json'
-    if not meta.exists():
-        return
-    expected = dict(manifest, design_signature=c.LEGACY_SIGNATURE, modes=list(c.MODES))
-    if json.loads(meta.read_text()) != expected:
-        raise RuntimeError('Legacy IFEval resume provenance mismatch')
-    src = legacy / f'ifeval-{mode}.jsonl'
-    dest = root / src.name
-    if src.exists() and not dest.exists():
-        temporary = dest.with_suffix('.importing')
-        shutil.copyfile(src, temporary)
-        temporary.replace(dest)
-
-
 def evaluate(exp, limit=None, mode=None):
     import torch
     from datasets import load_dataset
@@ -156,18 +131,16 @@ def evaluate(exp, limit=None, mode=None):
     DetectorFactory.seed = source.SEED
     ensure_ifeval_resources()
     gate = json.loads((e.SANITY_ROOT/'generation-protocol.json').read_text())
-    if gate['design_signature'] != c.SOURCE_SIGNATURE or gate['generation'] != source.GENERATION:
+    if gate['generation'] != source.GENERATION:
         raise RuntimeError('Stale source generation audit')
     evaluator_code = {Path(m.__file__).name: hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()
                       for m in (utils, instructions, instructions_registry, instructions_util)}
     original = json.loads((e.output_dir(exp)/'eval/manifest.json').read_text())
-    if (original['design_signature'] != c.SOURCE_SIGNATURE
-            or original['ifeval_code'] != evaluator_code
-            or original['lm_eval_version'] != importlib.metadata.version('lm_eval')):
+    if (original['ifeval_code'] != evaluator_code or original['lm_eval_version'] != importlib.metadata.version('lm_eval')):
         raise RuntimeError('IFEval scoring implementation differs from original evaluation')
     root = output_dir(exp, mode) / ('smoke' if limit else 'eval')
     root.mkdir(parents=True, exist_ok=True)
-    manifest = dict(design_signature=signature(), source_signature=c.SOURCE_SIGNATURE,
+    manifest = dict(design_signature=signature(), source_suite=c.SOURCE_SUITE,
                     experiment=exp.__dict__, generation=source.GENERATION, modes=(mode,) if mode else c.MODES,
                     dataset=source.IFEVAL_DATASET, revision=source.IFEVAL_REVISION,
                     evaluator_code=evaluator_code, limit=limit)
@@ -180,8 +153,6 @@ def evaluate(exp, limit=None, mode=None):
     if meta.exists() and json.loads(meta.read_text()) != manifest:
         raise RuntimeError('Parallel IFEval resume provenance mismatch')
     launch.store_json(meta, manifest)
-    if mode and not limit:
-        reuse_legacy(exp, mode, root, manifest)
     model = load_model(exp.recipe, 'cuda').eval().requires_grad_(False)
     if exp.trainable:
         restore(e.output_dir(exp)/'final.pt', model, 'cuda')
@@ -189,7 +160,7 @@ def evaluate(exp, limit=None, mode=None):
     rows = list(load_dataset(source.IFEVAL_DATASET, revision=source.IFEVAL_REVISION, split='train'))
     if limit:
         rows = rows[:limit]
-    results = dict(design_signature=signature(), source_signature=c.SOURCE_SIGNATURE,
+    results = dict(design_signature=signature(), source_suite=c.SOURCE_SUITE,
                    experiment=exp.name, tasks={})
     selected_mode = mode
     started = time.monotonic()

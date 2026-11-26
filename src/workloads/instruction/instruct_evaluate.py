@@ -146,8 +146,8 @@ def evaluate(exp, limit=None):
     if not gate.exists():
         raise ValueError('Run heldout generation audit before evaluation')
     gate_data = json.loads(gate.read_text())
-    signature = e.design_signature()
-    if gate_data['design_signature'] != signature or gate_data['generation'] != c.GENERATION:
+    signature = e.SUITE
+    if gate_data['generation'] != c.GENERATION:
         raise ValueError('Stale generation protocol audit')
     manifest = dict(design_signature=signature, experiment=exp.__dict__, limit=limit,
                     generation=c.GENERATION, datasets={c.MMLU_DATASET:c.MMLU_REVISION,c.IFEVAL_DATASET:c.IFEVAL_REVISION},
@@ -222,7 +222,7 @@ def audit():
             torch.testing.assert_close(actual, expected, atol=c.GENERATION_PARITY_ATOL, rtol=c.GENERATION_PARITY_RTOL)
             ids = ids_extended
     write_json(e.SANITY_ROOT/'generation-audit-samples.json', results)
-    write_json(e.SANITY_ROOT/'generation-protocol.json',dict(design_signature=e.design_signature(),
+    write_json(e.SANITY_ROOT/'generation-protocol.json',dict(design_signature=e.SUITE,
                generation=c.GENERATION, validation_count=len(validation), parity=parity,
                length_rates={mode:sum(x['stop']=='length' for x in results if x['mode']==mode)/len(validation)
                              for mode in c.GENERATION}))

@@ -192,10 +192,5 @@ def test_serving_protocol_tracks_generation_configuration(monkeypatch):
     protocols = (bench.protocol_signature, serving_graphs.protocol_signature,
                  draft_sweep.protocol_signature)
     before = [protocol() for protocol in protocols]
-    original = bench.evaluator.source_hash
-    monkeypatch.setattr(
-        bench.evaluator,
-        "source_hash",
-        lambda path: "changed" if Path(path).name == "instruct_config.py" else original(path),
-    )
+    monkeypatch.setitem(bench.evaluator.c.GENERATION, "new-mode", {"temperature": 0.5})
     assert all(protocol() != old for protocol, old in zip(protocols, before, strict=True))

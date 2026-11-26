@@ -11,7 +11,6 @@ import subprocess
 import tempfile
 import time
 
-from orchestration.source_compatibility import source_hash
 from workloads.readout import real_readout_eval as quality
 from workloads.readout import real_readout_run as train
 from workloads.serving import serving_graphs as graphs
@@ -31,18 +30,9 @@ PATCH = Path(__file__).with_name("real_readout_vllm.patch")
 
 
 def signature(exp, marker):
-    from workloads.evaluation import report_mmlu_stem
-    from workloads.instruction import instruct_generation
-    from workloads.serving import draft_sweep
-
-    paths = (Path(draft_sweep.__file__), Path(instruct_generation.__file__),
-             Path(report_mmlu_stem.__file__))
     return dict(arm=exp.arm, checkpoint=marker["checkpoint_sha256"],
-                model_sources=quality.model_sources(exp),
                 graphs=graphs.protocol_signature(),
-                evaluator=source_hash(__file__), patch=common.file_hash(PATCH),
-                loader=source_hash(quality.__file__),
-                analysis={path.stem: source_hash(path) for path in paths})
+                patch=common.file_hash(PATCH))
 
 
 def private_site(folder):

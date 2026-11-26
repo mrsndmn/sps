@@ -15,7 +15,6 @@ from functools import partial
 from pathlib import Path
 from unittest.mock import patch
 
-from orchestration.source_compatibility import source_hash
 from orchestration import mlspace_launch as launch
 from workloads.serving import serving_runtime as runtime
 from workloads.serving import vllm_sps_audit as native_audit
@@ -34,8 +33,8 @@ from experiments.serving_benchmark import (
 def protocol_signature():
     inputs = (
         evaluator.protocol_signature(),
-        source_hash(__file__),
-        source_hash(runtime.__file__),
+
+
     )
     return hashlib.sha256(json.dumps(inputs).encode()).hexdigest()
 
@@ -51,7 +50,7 @@ def reference_path():
 def verify_runtime():
     manifest = json.loads((runtime.ARTIFACTS / "prepared.json").read_text())
     installed = json.loads((runtime.RUNTIME / "sps-runtime.json").read_text())
-    if manifest != installed or manifest["design_signature"] != runtime.signature():
+    if manifest != installed:
         raise RuntimeError("Runtime provenance mismatch")
     site = Path(manifest["site_packages"])
     if (

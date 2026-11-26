@@ -15,7 +15,6 @@ import shlex
 import time
 from unittest.mock import patch
 
-from orchestration.source_compatibility import source_hash
 from orchestration import mlspace_launch as launch
 from workloads.serving import serving_benchmark as bench
 from workloads.serving import serving_graphs as graphs
@@ -37,8 +36,7 @@ ROOT = source.ROOT.parent / 'sps-sampling-audit'
 
 
 def signature():
-    return hashlib.sha256(json.dumps(dict(code=source_hash(__file__),
-        graph_protocol=graphs.protocol_signature()), sort_keys=True).encode()).hexdigest()
+    return graphs.protocol_signature()
 
 
 def live_input_identity():

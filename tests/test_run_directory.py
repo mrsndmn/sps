@@ -203,7 +203,7 @@ def test_shared_submission_requires_current_preparation(tmp_path, monkeypatch, f
     monkeypatch.setattr(suite, "ARTIFACTS_ROOT", tmp_path)
     monkeypatch.setattr(suite, "RUN_ROOT", tmp_path / "runs")
     monkeypatch.setattr(suite, "collect_experiments", lambda *args: [run])
-    monkeypatch.setattr(suite, "design_signature", lambda: "current")
+
     monkeypatch.setattr(family_cli, "worker_command", lambda command, *args: command)
     api = ModuleType("mls.manager.job.utils")
     api.get_in_progress_jobs = lambda **kwargs: []
@@ -212,9 +212,6 @@ def test_shared_submission_requires_current_preparation(tmp_path, monkeypatch, f
     monkeypatch.setattr(mlspace_launch, "disable_submission_retries", lambda _: None)
     monkeypatch.setattr(sys, "argv", ["run_eval.py", "--filter", "original"])
     with pytest.raises(RuntimeError, match="prepare"):
-        mlspace_launch.main("eval")
-    (tmp_path / "prepared.json").write_text('{"design_signature":"obsolete"}')
-    with pytest.raises(RuntimeError, match="Stale"):
         mlspace_launch.main("eval")
 
 

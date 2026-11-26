@@ -18,7 +18,6 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.checkpoint import checkpoint
 
 from experiments.environment import COMMON_ROOT
-from orchestration.source_compatibility import source_hash
 from workloads.distillation import dflash_mask_ablation as reference
 from data import instruct_data
 from orchestration import mlspace_launch as launch
@@ -45,9 +44,7 @@ from experiments.dflash_repro_train import (
 
 
 def signature():
-    sources = (Path(__file__), Path(previous.__file__), Path(prepared.__file__),
-               Path(reference.__file__), previous.selection_path())
-    return sha256("".join(source_hash(path) for path in sources).encode()).hexdigest()
+    return EXPERIMENT.name
 
 
 def run_root():

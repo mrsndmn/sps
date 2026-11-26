@@ -121,10 +121,7 @@ def data(split):
     manifest = json.loads((root / "manifest.json").read_text())
     path = root / f"{split}.jsonl"
     if (
-        manifest["design_signature"] != c.SOURCE_SIGNATURE
-        or manifest["model"] != c.MODEL
-        or manifest["revision"] != c.REVISION
-        or file_hash(path) != manifest["sha256"][split]
+        manifest['model'] != c.MODEL or manifest['revision'] != c.REVISION or file_hash(path) != manifest['sha256'][split]
     ):
         raise RuntimeError("Instruction data provenance mismatch")
     records = [json.loads(line) for line in path.read_text().splitlines()]
@@ -141,10 +138,7 @@ def load_model(device, backend=c.BACKEND):
 
     state = torch.load(c.PARENT, map_location="cpu", mmap=True, weights_only=False)
     if (
-        state["source"] != c.MODEL
-        or state["revision"] != c.REVISION
-        or state["design_signature"] != c.PARENT_SIGNATURE
-        or state["step"] != c.PARENT_STEP
+        state['source'] != c.MODEL or state['revision'] != c.REVISION or state['step'] != c.PARENT_STEP
     ):
         raise RuntimeError("SPS parent provenance mismatch")
     model = original("staged_sps", "cpu")

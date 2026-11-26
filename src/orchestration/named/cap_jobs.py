@@ -10,17 +10,8 @@ from unittest.mock import patch
 from orchestration import mlspace_launch as launch
 from workloads.evaluation import qwen35_cap_compare as compare
 from workloads.evaluation import teacher_cap_probe as teacher
-from orchestration.source_compatibility import source_hash
 from experiments import qwen35_cap_compare as comparison_config
 from experiments import teacher_cap_probe as teacher_config
-
-PUBLISHED_TEACHER_COMMIT = "7fad856aa3c8d3bcd11c08b37f1f444e7601f2e8"
-PUBLISHED_COMPARISON_COMMIT = "4e626e62f8af700b2e04c9ad2ab7e502a5e3a81a"
-PUBLISHED_COMPARISON_DESIGN = (
-    "368b7c39020d6f4dda4a336ec92f8dc221e24ca187bf6539d9aec3dea2380e12",
-    "185b483f6ef8312477e2f7895f7d879835cb129c6332c4aa3966d44317042406",
-)
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -101,35 +92,7 @@ def main():
             for j in get_in_progress_jobs(client_profile="default")
         }
         identity = launch.output_identity(body["job_desc"], marker.parent, active)
-        published_receipt = None
-        if (
-            args.arm
-            and marker.relative_to(root).parts[:2] == PUBLISHED_COMPARISON_DESIGN
-        ):
-            published_receipt = (f"qwen35-cap-{args.arm}", PUBLISHED_COMPARISON_COMMIT)
-        elif not args.arm and marker.parent.name == teacher.PILOT_HASH:
-            published_receipt = ("qwen3-teacher-cap-probe", PUBLISHED_TEACHER_COMMIT)
-        # Historical cap workers write report.json as their success marker.
-        # Check the API for receipts whose jobs are not in the active list.
-        for receipt in (root / "submissions").glob("*.json"):
-            row = json.loads(receipt.read_text())
-            historical_identity = (row["identity"], row.get("commit"))
-            if row["identity"] != identity and historical_identity != published_receipt:
-                continue
-            state = str(client.get_job_status(row["job_name"]).get("status")).casefold()
-            if state not in {
-                "failed",
-                "cancelled",
-                "canceled",
-                "terminated",
-                "stopped",
-                "deleted",
-            }:
-                if state in {"completed", "succeeded"}:
-                    raise RuntimeError(f"Completed job missing {marker}")
-                active[row["identity"]] = row["job_name"]
-                active.setdefault(identity, row["job_name"])
-        launch.reconcile_intents(active, {marker.parent})
+        launch.reconcile_for_outputs(client, active, [marker.parent])
         if identity in active:
             print(active[identity])
             return

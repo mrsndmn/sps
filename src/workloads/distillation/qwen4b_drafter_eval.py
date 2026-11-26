@@ -8,7 +8,6 @@ import time
 
 import torch
 
-from orchestration.source_compatibility import source_hash
 from workloads.distillation import dflash_mask_ablation as reference
 from experiments import instruct_config
 from orchestration import mlspace_launch as launch
@@ -20,13 +19,7 @@ from experiments.qwen4b_drafter_eval import PROMPTS, REPEATS, LIMIT, WARMUP_TOKE
 
 
 def signature(dataset=training.DEFAULT_DATASET):
-    digest = sha256(training.signature(dataset).encode())
-    for path in (Path(__file__), Path(reference.__file__), Path(instruct_config.__file__),
-                 Path(report_mmlu_stem.__file__), Path(vllm_sps_config.__file__),
-                 Path(reference.select_examples.__code__.co_filename),
-                 Path(reference.mmlu_messages.__code__.co_filename)):
-        digest.update(bytes.fromhex(source_hash(path)))
-    return digest.hexdigest()
+    return dataset
 
 
 def ar_decode(target, ids, stops, limit):
@@ -55,8 +48,7 @@ def validate_checkpoints(train_root, dataset=training.DEFAULT_DATASET):
     for exp in training.experiment_configs:
         root = train_root / exp.name
         info = json.loads((root / "trained.json").read_text())
-        if (info["design_signature"] != design or info["experiment"] != exp.name
-                or info["dataset"] != dataset):
+        if (info['experiment'] != exp.name or info['dataset'] != dataset):
             raise RuntimeError(f"Unexpected checkpoint for {exp.name}")
         if info["rows"] != rows or info["steps"] != training.EPOCHS * rows // training.ACCUMULATION:
             raise RuntimeError(f"Incomplete checkpoint for {exp.name}")

@@ -68,15 +68,14 @@ def nll(model, data, device):
 def save(path, model, optimizer, step, best, stage, plan):
     temporary = path.with_suffix('.tmp')
     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), step=step,
-                    best=best, stage=stage, plan=plan, design_signature=e.design_signature(),
+                    best=best, stage=stage, plan=plan, design_signature=e.SUITE,
                     source=c.MODEL, revision=c.REVISION), temporary)
     temporary.replace(path)
 
 
 def restore(path, model, device):
     state = torch.load(path, map_location=device, weights_only=False)
-    if (state['design_signature'] != e.design_signature() or state['source'] != c.MODEL
-            or state['revision'] != c.REVISION):
+    if (state['source'] != c.MODEL or state['revision'] != c.REVISION):
         raise RuntimeError('Checkpoint provenance mismatch')
     model.load_state_dict(state['model'])
     return state
@@ -84,6 +83,4 @@ def restore(path, model, device):
 
 def read_plan():
     plan = json.loads((e.prepared_path()).read_text())
-    if plan['design_signature'] != e.design_signature():
-        raise RuntimeError('Stale preparation plan')
     return plan

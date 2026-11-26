@@ -136,23 +136,6 @@ def test_payload_quotes_staging_path():
     assert '\n' not in body['script']
 
 
-def test_design_signature_tracks_inherited_configs(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, 'REPO_ROOT', tmp_path)
-    for name in ('scripts/train.py', 'scripts/evaluate.py', 'scripts/pilot/pilot_run.py',
-                 'scripts/pilot/named_worker.py', 'src/workloads/pilot/pilot_run.py', 'src/training/train.py', 'src/modeling/evaluation/evaluate.py', 'src/experiments/pilot_1b.py',
-                 'src/experiments/worker_args.py', 'src/orchestration/experiment_suite.py', 'src/orchestration/suite_registry.py',
-                 'src/experiments/environment.py', 'src/experiments/pilot.py', 'src/experiments/types.py', 'src/experiments/suite.py'):
-        p = tmp_path / name
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text('initial')
-    before = config.design_signature()
-    (tmp_path / 'src/experiments/pilot_1b.py').write_text('changed model dimensions')
-    assert config.design_signature() != before
-    before = config.design_signature()
-    (tmp_path / 'src/experiments/worker_args.py').write_text('changed optimizer')
-    assert config.design_signature() != before
-
-
 def test_submission_lock_prevents_concurrent_entry_and_releases(tmp_path, monkeypatch):
     monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
     with mlspace_launch.submission_lock():
@@ -302,24 +285,6 @@ def test_staging_uses_linked_worktree_commit(tmp_path, monkeypatch):
     assert (staged / "tracked").read_text() == "experiment"
     assert (main / "tracked").read_text() == "dirty main"
     assert not (staged / ".git" / "worktrees").exists()
-
-
-def test_routing_refactor_preserves_known_pilot_design():
-    from orchestration.design_compatibility import canonical_signature
-    migrated = '4780e1816b74ecdf53e3e98bc439c1e5f775274129ebcc5df958a0f56f49169a'
-    parent = '344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f'
-    assert canonical_signature(migrated) == parent
-
-
-def test_parallel_marker_rejects_unfreeze_worker():
-    script = '''
-from orchestration import experiment_suite as e
-before = e.design_signature()
-e.WORKER_SCRIPTS[e.SUITE] = e.WORKER_SCRIPTS['mtp-unfreeze']
-assert e.design_signature() != before
-'''
-    env = dict(os.environ, SPS_EXPERIMENT_SUITE='mtp-parallel')
-    subprocess.run([sys.executable, '-c', script], env=env, check=True)
 
 
 def test_existing_pilot_outputs_skip_before_api(monkeypatch, tmp_path, capsys):

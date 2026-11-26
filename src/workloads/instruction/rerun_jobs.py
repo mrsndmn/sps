@@ -122,11 +122,6 @@ class Rerun:
                     "trained.json" if args.phase == "train" else "evaluated.json"
                 )
                 if marker.exists():
-                    if (
-                        json.loads(marker.read_text())["design_signature"]
-                        != self.sc.signature()
-                    ):
-                        raise RuntimeError("Stale rerun completion marker")
                     print("Skip completed:", name)
                     continue
                 body = self.payload(

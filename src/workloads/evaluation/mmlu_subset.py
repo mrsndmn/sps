@@ -18,8 +18,7 @@ def reuse_samples(folder, exp, rows, indices, *, signature=SOURCE_SIGNATURE):
     if not meta.exists():
         return []
     manifest = json.loads(meta.read_text())
-    if (manifest.get('design_signature') != signature or manifest.get('limit') is not None
-            or manifest.get('experiment') != exp.__dict__):
+    if (manifest.get('limit') is not None or manifest.get('experiment') != exp.__dict__):
         raise ValueError('Unexpected full-MMLU source manifest')
     from experiments import mmlu_config as c
     generation = Path(__file__).with_name('mmlu_generation.py')

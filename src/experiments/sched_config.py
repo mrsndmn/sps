@@ -8,9 +8,6 @@ from .family_arguments import configure, export_fields
 @dataclass(frozen=True, kw_only=True)
 class FamilyConfig:
     SOURCE_SUITE: str = "ar-sps-qwen3-1.7b-instruct"
-    SOURCE_SIGNATURE: str = (
-        "761505551994ceec0a907401b3ee875ffea744b69bc94c7007b23c58181b466b"
-    )
     ROOT_NAMES: dict[str, str] = field(
         default_factory=lambda: {
             "step384": "qwen3-instruct-step384",

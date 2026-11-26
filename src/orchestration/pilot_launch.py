@@ -285,13 +285,6 @@ def submit(args):
                 report = prepare_report()
                 if not report.is_file():
                     raise RuntimeError("Complete --phase prepare first")
-                if (
-                    json.loads(report.read_text()).get("design_signature")
-                    != suite.design_signature()
-                ):
-                    raise RuntimeError(
-                        "Stale preparation report for the selected workload"
-                    )
             if phase == "train":
                 report = prepare_report()
                 if not report.is_file():

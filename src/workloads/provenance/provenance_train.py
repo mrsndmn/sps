@@ -15,7 +15,6 @@ import sys
 import time
 from unittest.mock import patch
 
-from orchestration.source_compatibility import source_hash
 from workloads.provenance import provenance_prepare as prep
 from experiments import instruct_config as c
 from workloads.instruction import instruct_common as common
@@ -95,22 +94,17 @@ def make_plan(values):
 
 
 def identity(exp, report, plan):
-    files = [Path(__file__), Path(trainer.__file__), Path(common.__file__), Path(c.__file__),
-             Path(prep.__file__), Path('src/modeling/models/sps/pretrained.py')]
-    return dict(experiment=exp.__dict__, preparation=report, plan=plan,
-                code={p.name: source_hash(p) for p in files})
+    return dict(experiment=exp.__dict__, preparation=report, plan=plan)
 
 
 @contextmanager
 def training_context(exp, values, ident):
-    signature = prep.data.digest(ident)
     e = trainer.e
     def rows(split):
         records = values[exp.condition][split]
         return ordered_train(records) if split == 'train' else records
     with patch.object(e, 'output_dir', output_dir), patch.object(e, 'RUN_ROOT', ROOT / 'runs'), \
          patch.object(e, 'collect_experiments', lambda name: [exp] if name == exp.name else []), \
-         patch.object(e, 'design_signature', lambda: signature), \
          patch.object(trainer, 'rows', rows), patch.object(trainer, 'read_plan', lambda: ident['plan']):
         yield
 

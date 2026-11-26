@@ -23,7 +23,7 @@ def payload(exp, staged):
 def plan():
     return dict(steps=config.STEPS, stage_steps=config.STAGE_STEPS,
                 text_tokens=config.STEPS*c.GLOBAL_BATCH*c.CONTEXT,
-                design_signature=e.design_signature())
+                design_signature=e.SUITE)
 
 
 def worker():
@@ -43,8 +43,6 @@ def submit(dry):
     if not dry and not launch.pending(marker.parent):
         return
     if marker.exists():
-        if json.loads(marker.read_text())['design_signature'] != e.design_signature():
-            raise RuntimeError('Stale terminal marker')
         print('Already completed'); return
     if dry:
         print(json.dumps(payload(exp, staged), indent=2)); return

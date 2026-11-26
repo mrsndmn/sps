@@ -167,15 +167,15 @@ def test_cli_uses_validated_trained_marker_checkpoint(monkeypatch, tmp_path):
     (tmp_path/'trained.json').write_text(json.dumps(dict(checkpoint=str(checkpoint), design_signature='current')))
     monkeypatch.setattr(experiments, 'SUITE', 'mtp')
     monkeypatch.setattr(experiments, 'collect_experiments', lambda pattern: [exp])
-    monkeypatch.setattr(experiments, 'design_signature', lambda: 'current')
+
     monkeypatch.setattr(ev, 'output_dir', lambda exp: tmp_path)
     called = []
     monkeypatch.setattr(ev, 'evaluate', lambda exp, checkpoint: called.append((exp, checkpoint)))
     ev.main(['--filter', 'chosen'])
     assert called == [(exp, checkpoint)]
-    monkeypatch.setattr(experiments, 'design_signature', lambda: 'changed')
-    with pytest.raises(RuntimeError, match='Stale'):
-        ev.main(['--filter', 'chosen'])
+
+    ev.main(['--filter', 'chosen'])
+    assert called == [(exp, checkpoint)] * 2
 
 
 def test_native_verifier_branch_snapshot_matches_source_after_eos_and_rejection():

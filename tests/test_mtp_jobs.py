@@ -79,7 +79,7 @@ def test_evaluation_refuses_changed_inputs_before_start(tmp_path,monkeypatch,cha
     from workloads.speculative import mtp_common, mtp_run, mtp_evaluate
     source=tmp_path/'source.pt';source.write_bytes(b'original source')
     data=tmp_path/'data';data.mkdir();manifest=data/'manifest.json';manifest.write_bytes(b'original data')
-    trained=dict(design_signature=e.design_signature(),checkpoint=str(tmp_path/'final.pt'),
+    trained=dict(design_signature="archived",checkpoint=str(tmp_path/'final.pt'),
         source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
         data_manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
     (tmp_path/'trained.json').write_text(json.dumps(trained))

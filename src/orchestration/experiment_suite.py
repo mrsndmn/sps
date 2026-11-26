@@ -5,7 +5,6 @@ import hashlib
 import json
 from pathlib import Path
 
-from orchestration.design_compatibility import canonical_signature
 from orchestration.suite_registry import (
     AR_SPS_SUITES,
     INSTRUCT_SUITE,
@@ -212,123 +211,6 @@ def published(path):
     return path
 
 
-def design_signature():
-    """Reject stale completion/probe markers after a design change."""
-    repo = REPO_ROOT
-    definitions = repo / "src/experiments"
-    inputs = sorted(
-        [
-            *repo.glob("src/modeling/**/*.py"),
-            *repo.glob("src/training/**/*.py"),
-            *repo.glob("src/data/**/*.py"),
-            *repo.glob("src/plotting/**/*.py"),
-            repo / "src/training/train.py",
-            repo / "src/modeling/evaluation/evaluate.py",
-        ]
-    )
-    inputs += [
-        repo / "src/orchestration/experiment_suite.py",
-        repo / "src/orchestration/suite_registry.py",
-        definitions / "environment.py",
-        definitions / "pilot.py",
-        definitions / "types.py",
-        definitions / "suite.py",
-    ]
-    if SUITE in {"1b", "10b"}:
-        inputs += [definitions / "worker_args.py", definitions / f"pilot_{SUITE}.py"]
-    if SUITE in {
-        "mtp",
-        "mtp-unfreeze",
-        "mtp-parallel",
-        "spec-baselines",
-        "mtp-unified",
-    }:
-        inputs += [
-            definitions / "mtp.py",
-            definitions / "mtp_design.py",
-            definitions / "mtp_unified.py",
-            definitions / "spec_baselines.py",
-            *repo.glob("src/workloads/speculative/mtp*.py"),
-            *repo.glob("src/workloads/speculative/spec_baseline*.py"),
-        ]
-    if SUITE in AR_SPS_SUITES:
-        inputs += [
-            definitions / "ar_sps_config.py",
-            definitions / "ar_sps.py",
-            *repo.glob("src/workloads/adaptation/ar_sps*.py"),
-        ]
-    if SUITE in MMLU_SUITES:
-        inputs += [
-            definitions / "mmlu_config.py",
-            definitions / "mmlu.py",
-            *repo.glob("src/workloads/evaluation/mmlu*.py"),
-            repo / "src/workloads/evaluation/report_mmlu_stem.py",
-        ]
-    if SUITE == INSTRUCT_SUITE:
-        inputs += [
-            definitions / "instruct_config.py",
-            repo / "src/data/instruct_data.py",
-            definitions / "mmlu_config.py",
-            definitions / "mmlu.py",
-            *repo.glob("src/workloads/instruction/instruct*.py"),
-            *repo.glob("src/workloads/evaluation/mmlu*.py"),
-            repo / "src/workloads/evaluation/report_mmlu_stem.py",
-            repo / "src/orchestration/mlspace_launch.py",
-            repo / "pyproject.toml",
-            repo / "uv.lock",
-            repo / "requirements-instruct.txt",
-        ]
-    scripts = repo / "scripts"
-    worker_script = Path(WORKER_SCRIPTS[SUITE])
-    inputs += [
-        scripts / "train.py",
-        scripts / "evaluate.py",
-        repo / worker_script,
-        repo / "src/workloads" / worker_script.relative_to("scripts"),
-    ]
-    sources = {
-        str(path.relative_to(repo)): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in inputs
-    }
-    design = dict(
-        suite=SUITE,
-        worker=WORKER_SCRIPTS[SUITE],
-        repo=DATASET_REPO,
-        revision=DATASET_REVISION,
-        files=DATA_FILES,
-        val_fraction=VAL_FRACTION,
-        val_seed=VAL_SEED,
-        commands=[train_command(e) for e in experiment_configs if e.trainable],
-        probes=[
-            train_command(e, probe=True) for e in experiment_configs if e.trainable
-        ],
-        tasks=TASKS,
-        sources=sources,
-    )
-    if SUITE in {"1b", "10b"}:
-        design["evaluation_commands"] = [
-            eval_command(exp, task) for exp in experiment_configs for task in TASKS
-        ]
-        design["configs"] = [
-            (exp.config(RUN_ROOT), exp.config(SANITY_ROOT, probe=True))
-            for exp in experiment_configs
-        ]
-    if SUITE in LARGE_AR_SPS_SUITES:
-        from experiments import ar_sps_config as c
-
-        design["large_ce"] = dict(
-            suite=SUITE,
-            model=c.MODEL,
-            revision=c.REVISION,
-            micro_batch=c.MICRO_BATCH,
-            eval_batch=c.EVAL_BATCH,
-        )
-    if SUITE == INSTRUCT_SUITE:
-        from experiments import instruct_config as c
-
-        design["instruct"] = dict(suite=SUITE, model=c.MODEL, revision=c.REVISION)
-    digest = hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
-    return canonical_signature(digest)
 
 
 def training_marker(exp):

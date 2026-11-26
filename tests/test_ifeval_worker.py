@@ -71,23 +71,3 @@ def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch
     manifest.write_text(json.dumps(data))
     with pytest.raises(RuntimeError,match='resume provenance'):
         r.evaluate(exp, mode=mode)
-
-
-def test_legacy_import_preserves_answers_and_rejects_protocol_changes(tmp_path, monkeypatch):
-    from workloads.instruction import ifeval_run as r
-    monkeypatch.setattr(r, 'RUN_ROOT', tmp_path)
-    exp = SimpleNamespace(name='example')
-    legacy = r.output_dir(exp)/'eval'; legacy.mkdir(parents=True)
-    dest = r.output_dir(exp, 'nonthinking')/'eval'; dest.mkdir(parents=True)
-    current = dict(design_signature='new', modes=['nonthinking'], checkpoint={'mtime':1})
-    old = dict(current, design_signature=r.c.LEGACY_SIGNATURE, modes=list(r.c.MODES))
-    (legacy/'manifest.json').write_text(json.dumps(old))
-    samples = b'{"index": 0}\n{"partial":'
-    (legacy/'ifeval-nonthinking.jsonl').write_bytes(samples)
-    r.reuse_legacy(exp, 'nonthinking', dest, current)
-    assert (dest/'ifeval-nonthinking.jsonl').read_bytes()==samples
-    (dest/'ifeval-nonthinking.jsonl').write_text('progress')
-    r.reuse_legacy(exp, 'nonthinking', dest, current)
-    assert (dest/'ifeval-nonthinking.jsonl').read_text()=='progress'
-    with pytest.raises(RuntimeError, match='Legacy'):
-        r.reuse_legacy(exp, 'nonthinking', dest, dict(current, checkpoint={'mtime':2}))

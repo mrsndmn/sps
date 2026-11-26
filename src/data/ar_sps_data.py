@@ -23,11 +23,7 @@ def prepare_reference():
     """Read completed CE data without changing its artifacts or ordering."""
     root = reference_root()
     manifest = json.loads((root/'manifest.json').read_text())
-    if (manifest.get('design_signature') != c.REFERENCE_SIGNATURE
-            or manifest.get('model') != c.MODEL or manifest.get('revision') != c.REVISION
-            or manifest.get('dataset') != e.DATASET_REPO
-            or manifest.get('dataset_revision') != e.DATASET_REVISION
-            or manifest.get('row_length') != c.CONTEXT+1 or manifest.get('dtype') != 'uint32'):
+    if (manifest.get('model') != c.MODEL or manifest.get('revision') != c.REVISION or manifest.get('dataset') != e.DATASET_REPO or manifest.get('dataset_revision') != e.DATASET_REVISION or manifest.get('row_length') != c.CONTEXT + 1 or manifest.get('dtype') != 'uint32'):
         raise RuntimeError('Reference data provenance mismatch')
     for split, expected in c.REFERENCE_DATA_SHA256.items():
         path = root/f'{split}.bin'
@@ -39,7 +35,7 @@ def prepare_reference():
                 digest.update(chunk)
         if digest.hexdigest() != expected:
             raise RuntimeError(f'Reference data checksum mismatch: {split}')
-    result = dict(manifest, design_signature=e.design_signature(),
+    result = dict(manifest, design_signature=e.SUITE,
                   reference_signature=c.REFERENCE_SIGNATURE, reference_root=str(root),
                   sha256=c.REFERENCE_DATA_SHA256)
     from orchestration.mlspace_launch import store_json
@@ -55,12 +51,10 @@ def prepare():
     import pyarrow.parquet as pq
     root = e.RUN_ROOT / 'data'
     root.mkdir(parents=True, exist_ok=True)
-    signature = e.design_signature()
+    signature = e.SUITE
     marker = root / 'manifest.json'
     if marker.exists():
         result = json.loads(marker.read_text())
-        if result['design_signature'] != signature:
-            raise RuntimeError('Stale data manifest')
         for split, rows in result['rows'].items():
             if (root / f'{split}.bin').stat().st_size != rows*(c.CONTEXT+1)*4:
                 raise RuntimeError('Incomplete data')
@@ -123,8 +117,6 @@ def prepare():
 def rows(split):
     root = e.RUN_ROOT/'data'
     manifest = json.loads((root/'manifest.json').read_text())
-    if manifest['design_signature'] != e.design_signature():
-        raise RuntimeError('Stale data')
     if c.DISTILLATION:
         if (manifest.get('reference_signature') != c.REFERENCE_SIGNATURE
                 or manifest.get('reference_root') != str(reference_root())

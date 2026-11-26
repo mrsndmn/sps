@@ -36,8 +36,7 @@ def evaluate(sc, c, variant, exp, workload, limit=None):
     root.mkdir(parents=True, exist_ok=True)
     gate = json.loads((sc.e.SANITY_ROOT / "generation-protocol.json").read_text())
     if (
-        gate["design_signature"] != c.SOURCE_SIGNATURE
-        or gate["generation"] != source.GENERATION
+        gate['generation'] != source.GENERATION
     ):
         raise RuntimeError("Source generation protocol mismatch")
     DetectorFactory.seed = source.SEED
@@ -48,14 +47,12 @@ def evaluate(sc, c, variant, exp, workload, limit=None):
     }
     original = json.loads((sc.e.output_dir(exp) / "eval/manifest.json").read_text())
     if (
-        original["design_signature"] != c.SOURCE_SIGNATURE
-        or original["ifeval_code"] != evaluator_code
-        or original["lm_eval_version"] != importlib.metadata.version("lm_eval")
+        original['ifeval_code'] != evaluator_code or original['lm_eval_version'] != importlib.metadata.version('lm_eval')
     ):
         raise RuntimeError("Scoring implementation differs from source evaluation")
     manifest = {
         "design_signature": sc.signature(),
-        "source_signature": c.SOURCE_SIGNATURE,
+        "source_suite": c.SOURCE_SUITE,
         "experiment": exp.__dict__,
         "checkpoint": checkpoint,
         "workload": workload,

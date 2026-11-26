@@ -58,7 +58,7 @@ def test_scoped_training_wiring_and_per_arm_signature():
             assert t.trainer.e.collect_experiments(exp.name)==[exp]
             assert t.trainer.read_plan()==plan
             assert t.trainer.rows('val')==values[exp.condition]['val']
-            signatures.append(t.trainer.e.design_signature())
+            signatures.append(t.prep.data.digest(ident))
     assert signatures[0]!=signatures[1]
     assert t.trainer.rows is original
 

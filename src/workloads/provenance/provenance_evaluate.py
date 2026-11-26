@@ -10,7 +10,6 @@ import shlex
 import time
 from unittest.mock import patch
 
-from orchestration.source_compatibility import source_hash
 from workloads.provenance import provenance_train as train
 from workloads.instruction import instruct_evaluate as evaluator
 from workloads.instruction import instruct_generation as generation
@@ -61,20 +60,15 @@ def protocol():
     hashes = {Path(m.__file__).name: train.prep.common.file_hash(m.__file__)
               for m in (utils, instructions, instructions_registry, instructions_util)}
     version = importlib.metadata.version('lm_eval')
-    if (gate['design_signature'] != ic.SOURCE_SIGNATURE or gate['generation'] != c.GENERATION
-            or original['design_signature'] != ic.SOURCE_SIGNATURE
-            or original['ifeval_code'] != hashes or original['lm_eval_version'] != version):
+    if (gate['generation'] != c.GENERATION or original['ifeval_code'] != hashes or original['lm_eval_version'] != version):
         raise RuntimeError('Scoring or generation protocol differs from source evaluation')
     return dict(ifeval_code=hashes, lm_eval_version=version, generation=c.GENERATION,
                 dataset=c.IFEVAL_DATASET, revision=c.IFEVAL_REVISION, seed=c.SEED)
 
 
 def identity(exp):
-    files = [Path(__file__), Path(evaluator.__file__), Path(generation.__file__), Path(decoding.__file__),
-             Path(train.common.__file__), Path(train.__file__), Path(c.__file__)]
     return dict(experiment=exp.__dict__, checkpoint=checkpoint(exp.arm), protocol=protocol(),
-                preparation_sha256=train.prep.common.file_hash(train.prep.results() / 'prepared.json'),
-                code={p.name: source_hash(p) for p in files})
+                preparation_sha256=train.prep.common.file_hash(train.prep.results() / 'prepared.json'))
 
 
 def input_path(commit, exp):
@@ -109,8 +103,6 @@ def evaluate(exp):
     arm = training_arm(exp)
     model = train.common.load_model(arm.recipe, 'cuda').eval().requires_grad_(False)
     state = torch.load(cp['path'], map_location='cpu', mmap=True, weights_only=False)
-    if state['design_signature'] != cp['training_signature']:
-        raise RuntimeError('Loaded checkpoint design changed')
     model.load_state_dict(state['model']); del state
     tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
     documents = list(load_dataset(c.IFEVAL_DATASET, revision=c.IFEVAL_REVISION, split='train'))

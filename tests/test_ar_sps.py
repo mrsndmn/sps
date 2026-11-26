@@ -103,7 +103,7 @@ def test_content_split_and_paired_intervals():
 def test_report_exposure_and_per_task_retention(tmp_path, monkeypatch):
     from workloads.adaptation import ar_sps_report as report
     monkeypatch.setattr(report.c, 'PRIMARY_METRICS', {'task_a': 'acc,none', 'task_b': 'acc,none'})
-    monkeypatch.setattr(report.e, 'design_signature', lambda: 'test')
+
     def write(root, step, scores):
         root.mkdir(parents=True, exist_ok=True)
         (root/'complete.json').write_text(json.dumps({'design_signature': 'test'}))

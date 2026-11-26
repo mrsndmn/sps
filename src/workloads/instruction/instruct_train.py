@@ -145,5 +145,5 @@ def main():
         dist.all_reduce(values, op=dist.ReduceOp.MAX)
         if rank == 0:
             store_json(root/'probe.json', dict(embedding=values[0].item(), full=values[1].item(),
-                                              design_signature=e.design_signature()))
+                                              design_signature=e.SUITE))
     dist.barrier(); dist.destroy_process_group()

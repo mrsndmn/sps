@@ -7,7 +7,6 @@ from pathlib import Path
 import torch
 
 from experiments.environment import HF_HOME
-from orchestration.source_compatibility import source_hash
 from workloads.distillation import dflash_mask_ablation as reference, dflash_repro_train as training
 from orchestration import mlspace_launch as launch
 from workloads.distillation import qwen4b_drafter_eval as paired
@@ -20,10 +19,7 @@ from experiments.dflash_repro_eval import LIMIT, WARMUP_TOKENS
 
 
 def signature():
-    digest = sha256()
-    for path in (Path(__file__), Path(paired.__file__)):
-        digest.update(bytes.fromhex(source_hash(path)))
-    return digest.hexdigest()
+    return "gsm8k"
 
 
 def gsm8k():

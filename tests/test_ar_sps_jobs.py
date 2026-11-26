@@ -75,7 +75,6 @@ assert c.GPU_HOURS == c.PREPARE_HOURS*4+c.TRAIN_HOURS*4+c.EVAL_HOURS
 assert len(e.collect_experiments())==1
 exp=e.collect_experiments()[0]
 assert exp.trainable and exp.recipe=='staged_sps' and exp.distillation_weight==.5
-before=e.design_signature();c.MODEL='different';assert e.design_signature()!=before;c.MODEL=sys.argv[2]
 e.COMMON_ROOT=Path(sys.argv[4]);p=e.COMMON_ROOT/c.REFERENCE_SUITE;p.mkdir()
 (p/'prepared.json').write_text(json.dumps(dict(design_signature=c.REFERENCE_SIGNATURE,steps=c.MAX_STEPS,stage_steps=int(c.MAX_STEPS*c.STAGE_FRACTION),text_tokens=c.MAX_STEPS*c.GLOBAL_BATCH*c.CONTEXT)))
 assert calibrated_plan({'staged':{'embedding':.5,'full':1.5}})['steps']==4096
@@ -110,7 +109,6 @@ probes[arms[2].name]['full']=100.
 try: calibrated_plan(probes)
 except RuntimeError as exc: assert 'matched exposure' in str(exc)
 else: raise AssertionError('Slow KD arm reduced exposure')
-sig=e.design_signature();c.MODEL='other';assert e.design_signature()!=sig
 '''
     subprocess.run([sys.executable,'-c',code],env=dict(os.environ,SPS_EXPERIMENT_SUITE=suite),check=True)
 

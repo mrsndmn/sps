@@ -15,7 +15,6 @@ from unittest.mock import patch
 
 import numpy as np
 
-from orchestration.source_compatibility import source_hash
 from workloads.serving import sampling_audit as audit
 from orchestration import mlspace_launch as launch
 
@@ -38,7 +37,6 @@ def output_dir():
 
 def identity():
     return dict(audit=audit.recorded_input_identity(SOURCE),
-                code_sha256=source_hash(__file__),
                 evidence={name:audit.common.file_hash(SOURCE/name) for name in FILES})
 
 

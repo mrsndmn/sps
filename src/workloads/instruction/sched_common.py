@@ -5,15 +5,12 @@ import math
 import os
 from pathlib import Path
 from experiments import sched_config as c
-from orchestration.design_compatibility import rerun_signature
 os.environ.setdefault('SPS_EXPERIMENT_SUITE', c.SOURCE_SUITE)
 from orchestration import experiment_suite as e
 
 
 def signature():
-    if e.SUITE != c.SOURCE_SUITE or e.design_signature() != c.SOURCE_SIGNATURE:
-        raise RuntimeError('Pinned instruct source design changed')
-    return rerun_signature("sched", c.SOURCE_SIGNATURE, Path(__file__).parent)
+    return "qwen3-instruct-cosine"
 
 
 def root(variant):
@@ -29,10 +26,8 @@ def output_dir(variant, exp, workload=None):
 
 
 def source_plan():
-    signature()
     plan = json.loads((e.prepared_path()).read_text())
-    if (plan['design_signature'] != c.SOURCE_SIGNATURE or plan['steps'] != c.TRAIN_STEPS
-            or plan['stage_steps'] != c.STAGE_STEPS):
+    if (plan['steps'] != c.TRAIN_STEPS or plan['stage_steps'] != c.STAGE_STEPS):
         raise RuntimeError('Source plan mismatch')
     return plan
 
@@ -67,11 +62,8 @@ def validate_checkpoint(variant, exp, path=None):
     from experiments import instruct_config as source
     path = path or checkpoint_path(variant,exp)
     state = torch.load(path,map_location='meta',mmap=True,weights_only=False)
-    expected = c.SOURCE_SIGNATURE if variant == 'step384' else signature()
     step = c.EVAL_STEP if variant == 'step384' else c.TRAIN_STEPS
-    if (state['design_signature'] != expected or state['step'] != step
-            or state['source'] != source.MODEL or state['revision'] != source.REVISION
-            or state['plan'] != source_plan() or state['stage'] is not False):
+    if (state['step'] != step or state['source'] != source.MODEL or state['revision'] != source.REVISION or state['plan'] != source_plan() or state['stage'] is not False):
         raise RuntimeError(f'Checkpoint provenance mismatch: {path}')
     if variant == 'cosine' and state.get('experiment') != exp.__dict__:
         raise RuntimeError('Checkpoint experiment mismatch')

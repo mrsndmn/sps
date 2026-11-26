@@ -13,7 +13,6 @@ from pathlib import Path
 from statistics import median
 from unittest.mock import patch
 
-from orchestration.source_compatibility import source_hash
 from workloads.serving import draft_sweep_train as training
 from workloads.serving import serving_benchmark as bench
 from workloads.serving import serving_graphs as graph
@@ -44,8 +43,8 @@ def protocol_signature():
     parts = (
         HORIZONS,
         graph.BASE_PROTOCOL(),
-        source_hash(__file__),
-        source_hash(graph.__file__),
+
+
         runtime.signature(),
         graph.IMPLEMENTATION,
     )

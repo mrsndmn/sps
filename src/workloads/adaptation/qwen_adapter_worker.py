@@ -51,8 +51,8 @@ def initial(arm, device):
     with io.BytesIO(parent_bytes) as snapshot:
         state = torch.load(snapshot, map_location='cpu', weights_only=True)
     del parent_bytes
-    if (state['step'], state['stage'], state['source'], state['revision'], state['design_signature']) != (
-            cfg.START, True, c.MODEL, c.REVISION, cfg.SIGNATURE):
+    if (state['step'], state['stage'], state['source'], state['revision']) != (
+            cfg.START, True, c.MODEL, c.REVISION):
         raise RuntimeError('Unexpected parent checkpoint')
     model.load_state_dict(state['model'])
     del state

@@ -4,7 +4,6 @@ import argparse
 from orchestration.named.publication import work_path
 from hashlib import sha256
 
-from orchestration.design_compatibility import canonical_signature
 import json
 from pathlib import Path
 import shlex
@@ -17,7 +16,7 @@ from orchestration import mlspace_launch as launch
 
 
 def evaluation_signature():
-    return canonical_signature(sha256(evaluation.signature().encode() + Path(__file__).read_bytes()).hexdigest())
+    return evaluation.signature()
 
 
 def arm_name(phase, step):

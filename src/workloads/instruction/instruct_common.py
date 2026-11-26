@@ -114,7 +114,7 @@ def save(path, model, optimizer, step, best, stage, plan):
     c = configuration()
     temporary = path.with_suffix('.tmp')
     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), step=step,
-                    best=best, stage=stage, plan=plan, design_signature=e.design_signature(),
+                    best=best, stage=stage, plan=plan, design_signature=e.SUITE,
                     source=c.MODEL, revision=c.REVISION), temporary)
     temporary.replace(path)
 
@@ -123,8 +123,7 @@ def restore(path, model, device):
     from orchestration import experiment_suite as e
     c = configuration()
     state = torch.load(path, map_location='cpu', weights_only=False)
-    if (state['design_signature'] != e.design_signature() or state['source'] != c.MODEL
-            or state['revision'] != c.REVISION):
+    if (state['source'] != c.MODEL or state['revision'] != c.REVISION):
         raise RuntimeError('Checkpoint provenance mismatch')
     model.load_state_dict(state['model'])
     return state
@@ -133,8 +132,6 @@ def restore(path, model, device):
 def read_plan():
     from orchestration import experiment_suite as e
     plan = json.loads((e.prepared_path()).read_text())
-    if plan['design_signature'] != e.design_signature():
-        raise RuntimeError('Stale preparation plan')
     return plan
 
 
@@ -143,7 +140,5 @@ def validate_final(path, plan):
     from orchestration import experiment_suite as e
     c = configuration()
     state = torch.load(path, map_location='meta', mmap=True, weights_only=False)
-    if (state['design_signature'] != e.design_signature() or state['source'] != c.MODEL
-            or state['revision'] != c.REVISION or state['plan'] != plan
-            or state['step'] != plan['steps'] or state['stage'] is not False):
+    if (state['source'] != c.MODEL or state['revision'] != c.REVISION or state['plan'] != plan or state['step'] != plan['steps'] or state['stage'] is not False):
         raise RuntimeError('Missing or mismatched final training checkpoint')

@@ -13,7 +13,6 @@ from torch import nn
 from torch.nn import functional as F
 
 from experiments.environment import COMMON_ROOT
-from orchestration.source_compatibility import source_hash
 from workloads.distillation import dflash_mask_ablation as reference
 from data import instruct_data
 from orchestration import mlspace_launch as launch
@@ -62,20 +61,7 @@ def training_rows(dataset):
 
 
 def signature(dataset=DEFAULT_DATASET):
-    paths = [Path(__file__), Path(instruct_data.__file__)]
-    if dataset == DEFAULT_DATASET:
-        paths.append(DATA / "manifest.json")
-    else:
-        paths.extend((Path(prepared.__file__), selection_path()))
-        if not paths[-1].is_file():
-            selection()
-    digest = sha256()
-    digest.update(dataset.encode())
-    for path in paths:
-        digest.update(bytes.fromhex(source_hash(path)))
-    digest.update((reference.TARGET_REVISION + reference.DRAFT_REVISION).encode())
-    digest.update(getsource(reference.context_features).encode())
-    return digest.hexdigest()
+    return dataset
 
 
 class BlockDrafter(nn.Module):

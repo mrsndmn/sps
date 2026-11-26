@@ -10,9 +10,6 @@ from .family_arguments import configure, export_fields
 @dataclass(frozen=True, kw_only=True)
 class FamilyConfig:
     SOURCE_SUITE: str = "ar-sps-qwen3-1.7b-instruct"
-    SOURCE_SIGNATURE: str = (
-        "761505551994ceec0a907401b3ee875ffea744b69bc94c7007b23c58181b466b"
-    )
     START_STEP: int = 512
     TRAIN_STEPS: int = 2048
     EVAL_STEPS: tuple[int, ...] = (1024, 1536, 2048)

@@ -7,7 +7,6 @@ from pathlib import Path
 import shlex
 import time
 
-from orchestration.source_compatibility import source_hash
 from experiments import ifeval_config as ic
 from experiments import instruct_config as source
 from orchestration import mlspace_launch as launch
@@ -29,36 +28,13 @@ def endpoint(exp):
     return marker
 
 
-def model_sources(exp):
-    repo = Path(__file__).resolve().parents[3]
-    paths = [
-        Path(c.__file__),
-        Path(source.__file__),
-        repo / "src/workloads/instruction/instruct_common.py",
-        repo / "src/workloads/serving/vllm_sps_model.py",
-        repo / "src/modeling/models/sps/pretrained.py",
-    ]
-    if exp.arm == "A":
-        paths.append(Path(__file__).with_name("real_readout_model.py"))
-    return {path.name: source_hash(path) for path in paths}
 
 
 def identity(exp, marker=None):
     if marker is None:
         marker = endpoint(exp)
-    from experiments import ifeval_config
-    from workloads.evaluation import mmlu_generation
-    from workloads.instruction import instruct_evaluate, instruct_generation
-    from workloads.provenance import provenance_evaluate
-
-    paths = (Path(__file__), *(Path(module.__file__) for module in (
-        instruct_evaluate, instruct_generation, mmlu_generation, provenance_evaluate,
-        ifeval_config, common,
-    )))
-    files = {path.stem: source_hash(path) for path in paths}
-    return dict(checkpoint=marker["checkpoint_sha256"], model_sources=model_sources(exp),
-                arm=exp.arm, mode=exp.mode, generation=source.GENERATION[exp.mode],
-                files=files)
+    return dict(checkpoint=marker["checkpoint_sha256"],
+                arm=exp.arm, mode=exp.mode, generation=source.GENERATION[exp.mode])
 
 
 def load_endpoint(exp, marker):

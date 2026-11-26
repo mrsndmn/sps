@@ -10,14 +10,12 @@ import shlex
 import subprocess
 import tempfile
 
-from orchestration.source_compatibility import source_hash
 from experiments import instruct_config as source
 from orchestration import mlspace_launch as launch
 from workloads.readout import real_readout_eval as quality
 from workloads.readout import real_readout_serving as serving
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
-from workloads.readout.readout_archive import compatible_identity
 from experiments.real_readout_mmlu import (
     ROOT,
     HOURS,
@@ -44,7 +42,7 @@ def identity(exp, marker, digest):
     return dict(serving=serving.signature(exp, marker), mode=exp.mode, layout="sequential",
                 model=c.MODEL, revision=c.REVISION, seed=c.SEED, settings=c.GENERATION[exp.mode],
                 dataset=source.MMLU_DATASET, dataset_revision=source.MMLU_REVISION,
-                split="all/test", dataset_sha256=digest, code=source_hash(__file__))
+                split="all/test", dataset_sha256=digest)
 
 
 def score(row, index, doc, mode, stats):
@@ -88,7 +86,7 @@ def generate(exp, export):
     root = work_path(ROOT / "runs/out" / exp.name)
     marker = quality.endpoint(exp)
     ident = json.loads((root/"manifest.json").read_text())
-    if not compatible_identity(ident, identity(exp, marker, digest), marker, "mmlu"):
+    if ident != identity(exp, marker, digest):
         raise ValueError("Export or evaluation identity changed")
     model = serving.engine(exp, "sps", export)
     tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
@@ -138,7 +136,7 @@ def worker(exp):
     meta = root/"manifest.json"
     if meta.exists():
         saved = json.loads(meta.read_text())
-        if not compatible_identity(saved, ident, marker, "mmlu"):
+        if saved != ident:
             raise ValueError("Incompatible MMLU resume")
         ident = saved
     elif (root/"answers.jsonl").exists():
@@ -188,7 +186,7 @@ def main():
             ident = identity(exp, marker, digest)
             if (root/"evaluated.json").exists():
                 done = json.loads((root/"evaluated.json").read_text())
-                if (not compatible_identity(done["identity"], ident, marker, "mmlu") or done["count"] != COUNT
+                if (done["identity"] != ident or done["count"] != COUNT
                         or done["answers_sha256"] != common.file_hash(root/"answers.jsonl")):
                     raise ValueError("Stale full MMLU result")
                 continue

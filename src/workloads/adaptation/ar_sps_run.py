@@ -48,10 +48,7 @@ def calibrated_plan(probes):
         source_root = e.COMMON_ROOT/c.REFERENCE_SUITE
         report = source_root/'prepared/prepared.json'
         parent = json.loads((report if report.exists() else source_root/'prepared.json').read_text())
-        if (parent.get('design_signature') != c.REFERENCE_SIGNATURE
-                or parent.get('steps') != c.MAX_STEPS
-                or parent.get('stage_steps') != int(c.MAX_STEPS*c.STAGE_FRACTION)
-                or parent.get('text_tokens') != c.MAX_STEPS*c.GLOBAL_BATCH*c.CONTEXT):
+        if (parent.get('steps') != c.MAX_STEPS or parent.get('stage_steps') != int(c.MAX_STEPS * c.STAGE_FRACTION) or parent.get('text_tokens') != c.MAX_STEPS * c.GLOBAL_BATCH * c.CONTEXT):
             raise RuntimeError('Reference training plan mismatch')
         if steps != parent['steps']:
             raise RuntimeError('Distillation cannot fit matched exposure within the time cap')
@@ -61,7 +58,7 @@ def calibrated_plan(probes):
         raise RuntimeError('No meaningful common training budget fits the cap')
     return dict(steps=steps, stage_steps=max(1, int(steps*c.STAGE_FRACTION)),
                 text_tokens=steps*c.GLOBAL_BATCH*c.CONTEXT, probes=probes,
-                design_signature=e.design_signature())
+                design_signature=e.SUITE)
 
 
 def internal(phase, name):
@@ -90,7 +87,7 @@ def internal(phase, name):
             subprocess.run([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--filter', name], check=True)
         dest = e.phase_work('eval', e.output_dir(exp))
         store_json(dest/('trained.json' if phase == 'train' else 'evaluated.json'),
-                   dict(design_signature=e.design_signature()))
+                   dict(design_signature=e.SUITE))
 
 
 def main():

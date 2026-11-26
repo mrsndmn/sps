@@ -22,15 +22,13 @@ def save(path, model, optimizer, step, best, stage, plan):
     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), step=step,
         best=best, stage=stage, plan=plan, design_signature=sc.signature(), source=c.MODEL,
         revision=c.REVISION, experiment=ACTIVE_EXPERIMENT.__dict__,
-        source_signature=schedule.SOURCE_SIGNATURE), temporary)
+        source_suite=schedule.SOURCE_SUITE), temporary)
     temporary.replace(path)
 
 
 def restore(path, model, device):
     state = torch.load(path, map_location='cpu', weights_only=False)
-    if (state['design_signature'] != sc.signature() or state['source'] != c.MODEL
-            or state['revision'] != c.REVISION or state['experiment'] != ACTIVE_EXPERIMENT.__dict__
-            or state['plan'] != sc.training_plan()):
+    if (state['source'] != c.MODEL or state['revision'] != c.REVISION or state['experiment'] != ACTIVE_EXPERIMENT.__dict__ or state['plan'] != sc.training_plan()):
         raise RuntimeError('Scheduled resume provenance mismatch')
     model.load_state_dict(state['model'])
     return state

@@ -14,7 +14,6 @@ import shlex
 import time
 from unittest.mock import patch
 
-from orchestration.source_compatibility import source_hash
 from workloads.serving import sampling_precision as precision
 from workloads.serving import sampling_cache_trace as cache
 from workloads.serving import sampling_audit as audit
@@ -46,8 +45,7 @@ def identity():
         files.append(SOURCE / name / 'decode' / f'{arm}-eager.json')
         dist_arm = 'sps_four_slots' if arm == 'sps' else arm
         files += [SOURCE / name / 'distributions' / f'{dist_arm}.{s}' for s in ('json', 'npz')]
-    return dict(audit=prior['audit'], precision=prior, code=source_hash(__file__),
-                evidence={str(p): audit.common.file_hash(p) for p in files})
+    return dict(audit=prior['audit'], precision=prior, evidence={str(p): audit.common.file_hash(p) for p in files})
 
 
 class BackbonePrecisionWorkerExtension(precision.PrecisionWorkerExtension):

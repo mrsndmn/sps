@@ -85,7 +85,7 @@ def evaluate(exp, *, work=None, final=None):
     data=TokenSequences('val',mtp_unified.UNIFIED_PROMPT_TOKENS,exp.horizons)
     starts=validation_starts(len(data.tokens),mtp_unified.UNIFIED_PROMPT_TOKENS,mtp_unified.UNIFIED_PROMPTS)
     prompts=[data[i][:mtp_unified.UNIFIED_PROMPT_TOKENS].cuda() for i in starts]
-    report=dict(name=exp.name,design_signature=e.design_signature(),**identities(),checkpoint=checkpoint,
+    report=dict(name=exp.name,design_signature=e.SUITE,**identities(),checkpoint=checkpoint,
         checkpoint_sha256=file_sha256(checkpoint),target='P1 of the same adapted checkpoint',
         prediction_horizons=exp.horizons,proposal_horizons=list(range(2,exp.horizons+1)),
         numerical_audit=audit(model,prompts),baseline={},variants={},
@@ -107,7 +107,7 @@ def evaluate(exp, *, work=None, final=None):
         report['variants'][str(exp.horizons-1)][mode]=summarize(runs,base,exp.horizons-1,mode)
         write_json((work or e.output_dir(exp))/'evaluation.partial.json',report)
     write_json((work or e.output_dir(exp))/'evaluation.json',report)
-    write_json((work or e.output_dir(exp))/'evaluated.json',dict(design_signature=e.design_signature(),results=str((final or e.output_dir(exp))/'evaluation.json')))
+    write_json((work or e.output_dir(exp))/'evaluated.json',dict(design_signature=e.SUITE,results=str((final or e.output_dir(exp))/'evaluation.json')))
 
 
 def main():

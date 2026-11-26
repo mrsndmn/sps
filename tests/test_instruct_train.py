@@ -117,7 +117,7 @@ def test_checkpoint_provenance_and_stage_metadata(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from workloads.instruction import instruct_common as common
     monkeypatch.setattr(common, 'configuration', lambda: SimpleNamespace(MODEL='test/model', REVISION='pinned'))
-    monkeypatch.setattr(e, 'design_signature', lambda: 'signature')
+
     model = tiny('qwen3')
     model.set_stage(True)
     optimizer = torch.optim.AdamW([model.prediction], lr=.01)
@@ -133,7 +133,7 @@ def test_checkpoint_provenance_and_stage_metadata(tmp_path, monkeypatch):
         common.validate_final(path, plan)
     common.save(path, model, optimizer, 8, 3.5, False, plan)
     common.validate_final(path, plan)
-    monkeypatch.setattr(e, 'design_signature', lambda: 'different')
+    monkeypatch.setattr(common, 'configuration', lambda: SimpleNamespace(MODEL='test/model', REVISION='different'))
     with pytest.raises(RuntimeError, match='provenance'):
         common.restore(path, restored, torch.device('cpu'))
 

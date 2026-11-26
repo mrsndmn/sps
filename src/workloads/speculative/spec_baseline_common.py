@@ -73,7 +73,6 @@ def checked_state(exp):
                 or state.get('source')!=str(mtp.MTP_SOURCE)):
             raise RuntimeError('Changed existing MTP control')
         return trained,None
-    if trained.get('design_signature')!=e.design_signature():raise RuntimeError('Stale baseline checkpoint')
     state=torch.load(trained['checkpoint'],map_location='cpu',weights_only=False,mmap=True)
     if (state.get('design_signature')!=trained['design_signature'] or state.get('recipe')!=exp.recipe
             or state.get('tokens')!=spec_baselines.BASELINE_STEPS*spec_baselines.BASELINE_STEP_TOKENS
@@ -86,7 +85,7 @@ def checked_state(exp):
 
 def validate_resume(state,signature,identity):
     step=state.get('step')
-    if (state.get('design_signature')!=signature or any(state.get(k)!=v for k,v in identity.items())
+    if (any(state.get(k)!=v for k,v in identity.items())
             or not isinstance(step,int) or isinstance(step,bool) or not 0<=step<=spec_baselines.BASELINE_STEPS
             or state.get('tokens')!=step*spec_baselines.BASELINE_STEP_TOKENS):
         raise RuntimeError('Changed or inconsistent baseline resume identity')

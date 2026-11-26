@@ -55,8 +55,6 @@ for arm in arms[1:]:
     assert 'scripts/instruction/instruct_train.py' in command and '--probe' not in command
     assert '--probe' in e.train_command(arm, probe=True)
     assert e.SUITE in str(e.training_marker(arm))
-old = e.design_signature(); c.REVISION = 'changed'
-assert old != e.design_signature()
 ''')
 
 

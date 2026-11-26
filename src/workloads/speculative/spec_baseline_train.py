@@ -36,7 +36,7 @@ def main():
     optimizer=torch.optim.AdamW(params,lr=spec_baselines.BASELINE_LR[exp.recipe],betas=spec_baselines.BASELINE_BETAS,
         weight_decay=spec_baselines.BASELINE_WEIGHT_DECAY)
     dest=(e.SANITY_ROOT/'out'/exp.name if a.probe else e.output_dir(exp));dest.mkdir(parents=True,exist_ok=True)
-    signature=e.design_signature();identity=identities();step0=0
+    signature=e.SUITE;identity=identities();step0=0
     if not a.probe and (dest/'latest.pt').exists():
         state=torch.load(dest/'latest.pt',map_location=device,weights_only=False)
         step0=validate_resume(state,signature,identity)

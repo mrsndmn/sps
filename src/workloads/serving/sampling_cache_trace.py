@@ -14,7 +14,6 @@ import time
 from unittest.mock import patch
 
 import numpy as np
-from orchestration.source_compatibility import source_hash
 from workloads.serving import sampling_precision as precision
 from workloads.serving import sampling_audit as audit
 from workloads.serving import sampling_trace as trace
@@ -50,8 +49,7 @@ def identity():
     files = [SOURCE / 'report.json', SOURCE / 'identity.json',
              SOURCE / 'fp32head-four/decode/sps-eager.json',
              SOURCE / 'fp32head-mtp/decode/sps_mtp-eager.json']
-    return dict(precision=prior, code=source_hash(__file__),
-                evidence={str(p): audit.common.file_hash(p) for p in files})
+    return dict(precision=prior, evidence={str(p): audit.common.file_hash(p) for p in files})
 
 
 def evidence():

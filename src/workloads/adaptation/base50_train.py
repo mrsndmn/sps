@@ -31,7 +31,7 @@ def finalize(root, model, optimizer, step, best, frozen, plan):
     if step != plan['steps'] or frozen:
         raise RuntimeError('Cannot complete unfinished training')
     save(root/'final.pt', model, optimizer, step, best, frozen, plan)
-    store_json(root/'trained.json', dict(design_signature=e.design_signature(), step=step,
+    store_json(root/'trained.json', dict(design_signature=e.SUITE, step=step,
                                        checkpoint=str(public_path(root/'final.pt')), reminder=config.REMINDER))
 
 

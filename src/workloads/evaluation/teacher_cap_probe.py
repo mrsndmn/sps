@@ -5,7 +5,6 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from orchestration.source_compatibility import source_hash
 from experiments import instruct_config as c
 from data import instruct_data as data
 from workloads.serving import vllm_sps_common as common
@@ -27,7 +26,6 @@ def sample(config):
 
     train_ids = {r['source_id'] for r in common.data('train')}
     selection = json.loads((ARCHIVE/'selection.json').read_bytes())
-    assert selection['design_signature'] == source.SOURCE_SIGNATURE
     candidates = {}
     for row in selection['records']:
         if row['split'] != 'train':
@@ -37,7 +35,7 @@ def sample(config):
             train_ids.remove(key)
         elif row['mode'] == 'thinking':
             record = json.loads((ARCHIVE/'samples'/f'{key}.json').read_bytes())
-            if (record['source_id'] != key or record['design_signature'] != source.SOURCE_SIGNATURE):
+            if (record['source_id'] != key):
                 raise ValueError('Archived response identity mismatch')
             if record.get('rejected') and len(record['generated_ids']) == config.caps[0]:
                 candidates[key] = (row, record)
@@ -69,17 +67,10 @@ def sample(config):
     return selected
 
 
-# Published one-GPU pilot to which these helpers contribute. Keep its immutable
-# source as the protocol authority whenever an assistant shard is requested.
-PILOT_HASH = '5bb50eb67bff7ec297e740ea8bffdce6d220f9bf5051cc47d67a5755634f82c5'
 from experiments.teacher_cap_probe import SHARDS
 
 
 def run(shard=None):
-    identity = source_hash(__file__)
-    if shard is not None and identity != PILOT_HASH:
-        raise RuntimeError('Assist mode requires the published teacher-cap design')
-
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 

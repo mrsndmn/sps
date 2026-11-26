@@ -22,10 +22,7 @@ from workloads.serving.vllm_sps_train import labels_for, matches_schedule, optim
 
 def parent():
     state = torch.load(run.PARENT, map_location="cpu", mmap=True, weights_only=False)
-    if (state["design_signature"] != c.PARENT_SIGNATURE or state["step"] != c.PARENT_STEP
-            or state["source"] != c.MODEL or state["revision"] != c.REVISION
-            or state["experiment"]["name"] != run.PARENT.parent.name
-            or state["experiment"]["recipe"] != "continued_ar" or state["experiment"]["distillation_weight"]):
+    if (state['step'] != c.PARENT_STEP or state['source'] != c.MODEL or state['revision'] != c.REVISION or state['experiment']['name'] != run.PARENT.parent.name or state['experiment']['recipe'] != 'continued_ar' or state['experiment']['distillation_weight']):
         raise ValueError("Unexpected AR parent")
     wrapper = load_model("continued_ar", "cpu")
     wrapper.load_state_dict(state["model"])

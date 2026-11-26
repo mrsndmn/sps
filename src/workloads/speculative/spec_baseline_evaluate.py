@@ -145,5 +145,5 @@ def evaluate(exp):
                 tokens_per_second=result['tokens_per_second'],native_exact_prompts=result['native_exact_prompts'])),flush=True)
             write_json(e.phase_work("eval", e.output_dir(exp))/'evaluation.partial.json',report)
     write_json(e.phase_work("eval", e.output_dir(exp))/'evaluation.json',report)
-    write_json(e.phase_work("eval", e.output_dir(exp))/'evaluated.json',dict(design_signature=e.design_signature(),
+    write_json(e.phase_work("eval", e.output_dir(exp))/'evaluated.json',dict(design_signature=e.SUITE,
         results=str(e.published(e.phase_work('eval', e.output_dir(exp))/'evaluation.json'))))

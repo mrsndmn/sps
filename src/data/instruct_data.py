@@ -148,8 +148,6 @@ def _select(tokenizer, root, signature, c):
     selection = root/'selection.json'
     if selection.exists():
         obj = json.loads(selection.read_text())
-        if obj['design_signature'] != signature:
-            raise RuntimeError('Stale instruct selection')
         return obj['records']
     from huggingface_hub import hf_hub_download
     import pyarrow.parquet as pq
@@ -218,7 +216,7 @@ def prepare():
             dist.barrier()
     root = e.RUN_ROOT/'data'
     root.mkdir(parents=True, exist_ok=True)
-    signature = e.design_signature()
+    signature = e.SUITE
     if (root/'manifest.json').exists():
         for split in c.DATA_ROWS:
             list(rows(split))
@@ -228,8 +226,6 @@ def prepare():
         _select(tokenizer, root, signature, c)
     barrier()
     selection = json.loads((root/'selection.json').read_text())
-    if selection['design_signature'] != signature:
-        raise RuntimeError('Selection signature mismatch')
     samples = root/'samples'
     samples.mkdir(exist_ok=True)
     device = f'cuda:{int(os.environ.get("LOCAL_RANK", 0))}'
@@ -241,8 +237,6 @@ def prepare():
         output = samples/f'{source["source_id"]}.json'
         if output.exists():
             cached = json.loads(output.read_text())
-            if cached['design_signature'] != signature:
-                raise RuntimeError('Stale teacher sample')
             continue
         messages = source['messages']
         record = dict(design_signature=signature, source_id=source['source_id'], split=source['split'], mode=source['mode'])
@@ -281,8 +275,6 @@ def prepare():
         rejected = {}
         for source in selection['records']:
             record = json.loads((samples/f'{source["source_id"]}.json').read_text())
-            if record['design_signature'] != signature:
-                raise RuntimeError('Sample signature mismatch')
             split = source['split']
             if 'row' in record and len(accepted[split]) < c.DATA_ROWS[split]:
                 accepted[split].append(record['row'])
@@ -317,7 +309,7 @@ def rows(split, verify=True):
         raise ValueError(f'Unknown split {split}')
     root = e.RUN_ROOT/'data'
     manifest = json.loads((root/'manifest.json').read_text())
-    if manifest['design_signature'] != e.design_signature() or manifest['model'] != c.MODEL or manifest['revision'] != c.REVISION:
+    if manifest['model'] != c.MODEL or manifest['revision'] != c.REVISION:
         raise RuntimeError('Stale instruct data provenance')
     path = root/f'{split}.jsonl'
     if verify and file_hash(path) != manifest['sha256'][split]:

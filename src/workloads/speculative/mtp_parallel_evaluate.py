@@ -99,7 +99,7 @@ def evaluate(exp, *, work=None, final=None):
     dest=work or e.output_dir(exp)
     write_json(dest/'evaluation.json',report)
     # Numeric mismatches are evidence, never silently substitute sequential timing.
-    write_json(dest/'evaluated.json',dict(design_signature=e.design_signature(),
+    write_json(dest/'evaluated.json',dict(design_signature=e.SUITE,
         results=str((final or dest)/'evaluation.json'),native_greedy_all_equal=all_equal))
     print(json.dumps(dict(name=exp.name,native_greedy_all_equal=all_equal,
         results=str((final or dest)/'evaluation.json'))),flush=True)

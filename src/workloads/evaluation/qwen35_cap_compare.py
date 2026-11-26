@@ -5,6 +5,7 @@ from collections import Counter
 import json
 import os
 from pathlib import Path
+from experiments import teacher_cap_probe as teacher_config
 import subprocess
 
 from experiments.qwen35_cap_compare import OUTPUT_PARENT
@@ -23,7 +24,7 @@ def prepare():
     rows = []
     for domain, size, row, archived in pilot.sample(pilot.Probe()):
         key = row['source_id']
-        prev = json.loads((pilot.ROOT/pilot.PILOT_HASH/'samples'/f'{key}.json').read_bytes())
+        prev = json.loads((pilot.ROOT/teacher_config.family_config.OUTPUT_NAME/'samples'/f'{key}.json').read_bytes())
         messages = row['messages'][:-1]
         if prev['identity']['input_hash'] != data.digest([messages, archived['generated_ids']]):
             raise ValueError('Previous probe input differs')

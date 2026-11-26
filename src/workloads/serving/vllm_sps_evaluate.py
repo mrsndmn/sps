@@ -9,7 +9,6 @@ import sys
 import time
 from pathlib import Path
 
-from orchestration.source_compatibility import source_hash
 from experiments import instruct_config as source
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
@@ -17,21 +16,7 @@ from orchestration.mlspace_launch import store_json
 
 
 def protocol_signature():
-    repo = Path(__file__).resolve().parents[3]
-    files = (
-        Path(__file__),
-        Path(c.__file__),
-        Path(common.__file__),
-        Path(__file__).with_name("vllm_sps_audit.py"),
-        Path(__file__).with_name("vllm_sps_model.py"),
-        Path(source.__file__),
-        repo / "src/workloads/instruction/instruct_common.py",
-        repo / "src/workloads/instruction/instruct_generation.py",
-        repo / "src/workloads/evaluation/report_mmlu_stem.py",
-        repo / "src/modeling/models/sps/pretrained.py",
-    )
-    hashes = [source_hash(path) for path in files]
-    return hashlib.sha256(json.dumps(hashes).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(c.GENERATION, sort_keys=True).encode()).hexdigest()
 
 
 def select_examples(rows):

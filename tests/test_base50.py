@@ -28,12 +28,11 @@ def test_isolation_and_dry_payload(tmp_path):
     env={**os.environ,'SPS_EXPERIMENT_SUITE':c.SOURCE_SUITE}
     code='''from orchestration import experiment_suite as e
 from workloads.adaptation import base50_config as c
-old_root=str(e.ARTIFACTS_ROOT); old_sig=e.design_signature()
+old_root=str(e.ARTIFACTS_ROOT)
 e, source=c.configure()
 from workloads.adaptation.base50_run import plan, payload
 from pathlib import Path
 assert str(e.ARTIFACTS_ROOT)!=old_root
-assert e.design_signature()!=old_sig
 assert c.configure()[0] is e
 assert source.MAX_DATA_ROWS==1600000
 assert source.MODEL=="Qwen/Qwen3-1.7B-Base"

@@ -14,8 +14,6 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.checkpoint import checkpoint
 
 from experiments.environment import COMMON_ROOT
-from orchestration.design_compatibility import canonical_signature
-from orchestration.source_compatibility import source_hash
 from workloads.distillation import dflash_repro_train as hard
 from orchestration import mlspace_launch as launch
 from orchestration.named.publication import work_path
@@ -28,8 +26,7 @@ from experiments.dflash_kd_train import (
 
 
 def signature():
-    base = hard.signature().encode()
-    return canonical_signature(sha256(base + bytes.fromhex(source_hash(__file__))).hexdigest())
+    return EXPERIMENT.name
 
 
 def run_root():

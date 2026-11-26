@@ -7,7 +7,6 @@ from pathlib import Path
 import random
 
 from experiments.environment import HF_HOME
-from orchestration.source_compatibility import source_hash
 from workloads.distillation import dflash_mask_ablation as reference
 from experiments import instruct_config
 from data import instruct_data
@@ -44,7 +43,6 @@ def selection_path(root, context, horizon, validation, accumulation, seed):
     design = (
         REVISION, reference.TARGET_REVISION, instruct_config.MMLU_REVISION,
         sorted(STEM_SUBJECTS), context, horizon, validation, accumulation, seed,
-        source_hash(__file__), source_hash(instruct_data.__file__),
     )
     identity = sha256(json.dumps(design).encode()).hexdigest()[:16]
     return root / "data" / NAME / f"{identity}.json"

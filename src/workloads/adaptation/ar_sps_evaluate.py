@@ -69,7 +69,7 @@ def audit():
     batch = torch.tensor(rows('val')[:1].astype('int64'), device=device)[:, :c.AUDIT_LENGTH]
     metrics = audit_model(model, batch, c.AUDIT_PREFIX)
     store_json(e.SANITY_ROOT/'native-parity.json', dict(metrics=metrics,
-                                                      design_signature=e.design_signature()))
+                                                      design_signature=e.SUITE))
 
 
 def evaluate(exp, checkpoint=None, label='source'):
@@ -95,7 +95,7 @@ def evaluate(exp, checkpoint=None, label='source'):
     destination.mkdir(parents=True, exist_ok=True)
     losses = nll(model, rows('test'), device)
     store_json(destination/'heldout.json', dict(nll=float(np.mean(losses)), per_sequence=losses,
-               step=metadata['step'] if metadata else 0, design_signature=e.design_signature()))
+               step=metadata['step'] if metadata else 0, design_signature=e.SUITE))
     # Task-scoped outputs survive a later timeout and retain per-example pairing.
     for task in e.TASKS:
         result = evaluator.simple_evaluate(model=adapter, tasks=[task], num_fewshot=0,
@@ -103,7 +103,7 @@ def evaluate(exp, checkpoint=None, label='source'):
                                           random_seed=c.SEED, numpy_random_seed=c.SEED,
                                           torch_random_seed=c.SEED, fewshot_random_seed=c.SEED)
         (destination/f'{task}.json').write_text(json.dumps(result, default=lambda v: v.tolist() if hasattr(v, 'tolist') else str(v)))
-    store_json(destination/'complete.json', dict(design_signature=e.design_signature()))
+    store_json(destination/'complete.json', dict(design_signature=e.SUITE))
 
 
 def main():

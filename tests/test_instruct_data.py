@@ -99,7 +99,7 @@ def _load_worker(monkeypatch):
             types.SimpleNamespace(name='ar', recipe='continued_ar', trainable=True)]
     registry = types.ModuleType('orchestration.experiment_suite')
     registry.collect_experiments = lambda: exps
-    registry.design_signature = lambda: 'sig'
+    registry.SUITE = 'instruct'
     monkeypatch.setitem(sys.modules, 'orchestration.experiment_suite', registry)
     monkeypatch.setitem(sys.modules, 'experiments.instruct_config', config)
     import experiments
@@ -134,6 +134,6 @@ def test_plan_rejects_missing_or_stale_probes(monkeypatch):
     worker = _load_worker(monkeypatch)
     with pytest.raises(RuntimeError, match='Missing'):
         worker.calibrated_plan({}, [])
-    probes = {name:dict(embedding=1.,full=2.,design_signature='wrong') for name in ('ce','ar')}
-    with pytest.raises(RuntimeError, match='Stale'):
+    probes = {name:dict(embedding=1.,full=-1.) for name in ('ce','ar')}
+    with pytest.raises(RuntimeError, match='throughput'):
         worker.calibrated_plan(probes, [])

@@ -79,8 +79,7 @@ def main():
             samples = []
         else:
             manifest = json.loads(meta.read_text())
-            if (manifest['design_signature'] != signature or manifest['limit'] is not None
-                    or manifest['experiment'] != exp.__dict__):
+            if (manifest['limit'] is not None or manifest['experiment'] != exp.__dict__):
                 raise ValueError(f'Unexpected source evaluation: {exp.name}')
             samples = read_samples(folder / 'samples.jsonl')
         results[exp.name] = summarize(samples, dataset)
