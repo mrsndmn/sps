@@ -23,5 +23,5 @@ verification, then explicitly confirmed: “Да, единый бэкбон - и
 the same final backbone. Existing group-local prediction visibility remains as
 accepted in [ADR-0001](0001-group-local-sps-mtp.md); this decision does not replace
 that mask policy. Relevant existing contracts are `SPSMTP` in
-`src/modeling/models/sps/mtp.py`, `adaptation_loss` in `scripts/mtp_train.py`, and
+`src/modeling/models/sps/mtp.py`, `adaptation_loss` in `scripts/speculative/mtp_train.py`, and
 `PretrainedSPS` in `src/modeling/models/sps/pretrained.py`.

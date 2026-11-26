@@ -107,7 +107,7 @@ def _load_worker(monkeypatch):
     launcher = types.ModuleType('scripts.mlspace_launch')
     launcher.store_json = lambda *_: None
     monkeypatch.setitem(sys.modules, 'scripts.mlspace_launch', launcher)
-    spec = spec_from_file_location('instruct_worker_test', 'scripts/instruct_run.py')
+    spec = spec_from_file_location('instruct_worker_test', 'scripts/instruction/instruct_run.py')
     worker = module_from_spec(spec)
     spec.loader.exec_module(worker)
     return worker

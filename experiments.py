@@ -197,17 +197,18 @@ def design_signature():
     inputs = sorted([*repo.glob('conf/**/*.yaml'), *repo.glob('src/**/*.py'),
                      repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
     if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified'}:
-        inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py'), *repo.glob('scripts/spec_baseline*.py')]
+        inputs += [repo / 'experiments.py', *repo.glob('scripts/speculative/mtp*.py'), *repo.glob('scripts/speculative/spec_baseline*.py')]
     if SUITE in AR_SPS_SUITES:
-        inputs += [repo / 'experiments.py', *repo.glob('scripts/ar_sps*.py')]
+        inputs += [repo / 'experiments.py', *repo.glob('scripts/adaptation/ar_sps*.py')]
     if SUITE in MMLU_SUITES:
-        inputs += [repo / 'experiments.py', *repo.glob('scripts/mmlu*.py'), repo / 'scripts/report_mmlu_stem.py']
+        inputs += [repo / 'experiments.py', *repo.glob('scripts/evaluation/mmlu*.py'), repo / 'scripts/report_mmlu_stem.py']
     if SUITE == INSTRUCT_SUITE:
-        inputs += [repo / 'experiments.py', *repo.glob('scripts/instruct*.py'),
-                   *repo.glob('scripts/mmlu*.py'), repo / 'scripts/report_mmlu_stem.py',
+        inputs += [repo / 'experiments.py', *repo.glob('scripts/instruct*.py'), *repo.glob('scripts/instruction/instruct*.py'),
+                   *repo.glob('scripts/evaluation/mmlu*.py'), repo / 'scripts/report_mmlu_stem.py',
                    repo / 'scripts/mlspace_launch.py', repo / 'pyproject.toml', repo / 'uv.lock',
                    repo / 'requirements-instruct.txt']
-    sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
+    # Keep the logical filenames used in historical design manifests.
+    sources = {(f'scripts/{p.name}' if p.is_relative_to(repo / 'scripts') else str(p.relative_to(repo))): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
     design = dict(suite=SUITE, worker=WORKER_MODULES[SUITE], repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
                   val_fraction=VAL_FRACTION, val_seed=VAL_SEED,
