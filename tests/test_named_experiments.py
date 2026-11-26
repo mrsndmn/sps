@@ -138,13 +138,15 @@ def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
     assert descriptions[0] != descriptions[2]
 
 
-def test_teacher_cap_receipt_uses_worker_report_identity(monkeypatch, capsys):
+def test_teacher_cap_receipt_reuses_published_report_identity(monkeypatch, capsys):
     from hashlib import sha256
     from scripts.named import cap_jobs
 
     monkeypatch.setattr(sys, "argv", ["cap_jobs", "teacher", "--dry"])
     cap_jobs.main()
-    path = f"{cap_jobs.teacher.source_hash(cap_jobs.teacher.__file__)}/report.json"
+    teacher = cap_jobs.teacher
+    assert teacher.source_hash(teacher.__file__) == teacher.PILOT_HASH
+    path = f"{teacher.PILOT_HASH}/report.json"
     identity = sha256(path.encode()).hexdigest()
     assert identity in json.loads(capsys.readouterr().out)["job_desc"]
 
