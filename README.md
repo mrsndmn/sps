@@ -150,8 +150,9 @@ function and records results and conclusions. The implementation defines the run
 | --- | --- |
 | `conf/`, `scripts/train.py`, `scripts/evaluate.py` | Hydra recipes and entry points for direct training and evaluation. |
 | `src/`, `lm_eval_tasks/` | Model implementations, data preparation, training utilities, and evaluation tasks. |
-| `run_train_jobs.py`, `run_eval.py` | Shared MLSpace launchers. Look up the suite's worker in `scripts/suite_registry.py` and its experiment definitions in `experiments.py` or the configuration module it imports. |
-| `scripts/` | Also contains independently launched experiment families. For example, `scripts/readout/real_readout_run.py` defines training and `scripts/readout/real_readout_mmlu.py` evaluates its checkpoints. |
+| `run_train_jobs.py`, `run_eval.py` | Shared MLSpace launchers. Use `--list` for the family catalog and `--list FAMILY` for run names. |
+| `experiment_defs/` | Named family definitions and adapters for existing submission protocols. |
+| `scripts/` | Family-specific workers and submission protocols. For example, `scripts/readout/real_readout_run.py` defines training and `scripts/readout/real_readout_mmlu.py` evaluates its checkpoints. |
 | `tests/` | Experiment, worker and orchestration tests. Model tests also live under `src/modeling/tests/`. |
 | `docs/paper/`, `figures/` | Manuscript sources and supporting material in the former, figures for the original SPS paper in the latter. |
 
@@ -170,9 +171,8 @@ also resolve to the grouped sources.
 | `serving/` | Qwen3 SPS-MTP training and vLLM evaluation, draft-length sweep, runtime setup, graph benchmarks and sampling diagnostics. |
 | `analysis/`, `figures/`, `tables/`, `benchmark/` | Analysis, plots, table exports and performance measurements for the original paper. |
 
-The top level holds the direct commands, shared launcher, registry and shared
-protocol sources. Start the Qwen3 vLLM pilot from `scripts/serving/vllm_sps_run.py`
-and the draft-length sweep from `scripts/serving/draft_sweep.py`.
+Browse the Qwen3 vLLM pilot with `python run_train_jobs.py --list vllm-sps-qwen3`
+and the draft sweep with `python run_train_jobs.py --list vllm-sps-draft-sweep`.
 
 SPS-MTP training and its native-readout control use checkpoint metadata and
 SHA-256 checksums instead of a hash of the training scripts. Existing checkpoints

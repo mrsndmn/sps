@@ -37,7 +37,21 @@ def readout():
                 if workload in {"serving", "likelihood"}
                 else ("--filter", exp.name)
             )
-            yield job(module, "eval", exp, *selector, name=f"{workload}-{exp.name}")
+            source = load("instruct_config")
+            config = (source, load("vllm_sps_config"), module)
+            effective = {}
+            if exp.mode is not None:
+                modes = getattr(module, "SETTINGS", source.GENERATION)
+                effective["generation"] = modes[exp.mode]
+            yield job(
+                module,
+                "eval",
+                exp,
+                *selector,
+                name=f"{workload}-{exp.name}",
+                config=config,
+                parameters=effective,
+            )
 
 
 def provenance():

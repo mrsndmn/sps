@@ -140,6 +140,8 @@ def design_signature():
                   probes=[train_command(e, probe=True) for e in experiment_configs if e.trainable],
                   tasks=TASKS, sources=sources)
     if SUITE in {'1b', '10b'}:
+        design['evaluation_commands'] = [
+            eval_command(exp, task) for exp in experiment_configs for task in TASKS]
         design['configs'] = [(exp.config(RUN_ROOT), exp.config(SANITY_ROOT, probe=True))
                              for exp in experiment_configs]
         worker_path = repo / 'scripts/pilot/named_worker.py'

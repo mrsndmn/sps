@@ -48,6 +48,10 @@ def test_readout_named_preview_uses_its_checkpoint_and_worker():
         [sys.executable, "run_eval.py", "--experiment", name, "--dry"], text=True
     )
     plan = json.loads(out)
+    from scripts import instruct_config
+
+    assert plan["settings"]["generation"] == instruct_config.GENERATION["nonthinking"]
+    assert plan["settings"]["REVISION"] == instruct_config.REVISION
     assert plan["payload"]["instance_type"] == "a100.1gpu"
     assert (
         "scripts.real_readout_gsm8k --worker --filter A-nonthinking"
@@ -103,3 +107,32 @@ def test_named_mask_ablation_selects_submission_mode(monkeypatch):
     assert calls == [
         [sys.executable, "-m", "scripts.distillation.dflash_mask_ablation", "--submit"]
     ]
+
+
+def test_pilot_signature_tracks_final_evaluation_arguments(monkeypatch):
+    import experiments
+
+    original = experiments.eval_command
+    previous = experiments.design_signature()
+    monkeypatch.setattr(
+        experiments,
+        "eval_command",
+        lambda run, task: [*original(run, task), "+limit=20"],
+    )
+    assert experiments.design_signature() != previous
+
+
+def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
+    from experiment_defs import cap_jobs
+
+    monkeypatch.setattr(cap_jobs.compare, "ROOT", tmp_path)
+    prompts = tmp_path / "cohort.json"
+    monkeypatch.setattr(cap_jobs.compare, "PROMPTS", prompts)
+    monkeypatch.setattr(sys, "argv", ["cap_jobs", "compare", "original", "--dry"])
+    descriptions = []
+    for cohort in (["same"], ["same"], ["changed"]):
+        prompts.write_text(json.dumps(cohort))
+        cap_jobs.main()
+        descriptions.append(json.loads(capsys.readouterr().out)["job_desc"])
+    assert descriptions[0] == descriptions[1]
+    assert descriptions[0] != descriptions[2]

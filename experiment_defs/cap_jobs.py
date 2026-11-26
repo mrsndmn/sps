@@ -1,6 +1,7 @@
 """Submit the existing cap-study evaluation workers with one GPU."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import shlex
@@ -28,14 +29,34 @@ def main():
     name = args.arm or "continuations"
     commit = launch.git("rev-parse", "HEAD")
     staged = launch.STAGING_ROOT / commit
-    body = launch.payload("eval", name, staged, "d.tarasov", "mrsndmn")
-    body.update(
-        job_desc=f"sps-{root.name} eval {name} #d.tarasov @mrsndmn",
-        script=f"cd {shlex.quote(str(staged))} && "
-        + shlex.join([str(launch.PYTHON), "-m", *worker]),
-    )
+
+    def payload(marker):
+        if marker is None:
+            identity = "cohort-pending"
+        else:
+            # The worker chooses a fresh output directory for a changed design
+            # or paired cohort. Receipts and active jobs use the same identity.
+            relative = marker.relative_to(root).as_posix()
+            identity = hashlib.sha256(relative.encode()).hexdigest()
+        body = launch.payload("eval", name, staged, "d.tarasov", "mrsndmn")
+        body.update(
+            job_desc=f"sps-{root.name} eval {name} {identity} #d.tarasov @mrsndmn",
+            script=f"cd {shlex.quote(str(staged))} && "
+            + shlex.join([str(launch.PYTHON), "-m", *worker]),
+        )
+        return body
+
+    def report_path():
+        folder = (
+            compare.folder(args.arm)
+            if args.arm
+            else root / teacher.common.file_hash(Path(teacher.__file__))
+        )
+        return folder / "report.json"
+
     if args.dry:
-        print(json.dumps(body, indent=2))
+        marker = None if args.arm and not compare.PROMPTS.is_file() else report_path()
+        print(json.dumps(payload(marker), indent=2))
         return
     from mls.manager.job.utils import (
         get_in_progress_jobs,
@@ -45,11 +66,8 @@ def main():
     with patch.object(launch, "ARTIFACTS_ROOT", root), launch.submission_lock():
         if args.arm:
             compare.prepare()
-            marker = compare.folder(args.arm) / "report.json"
-        else:
-            marker = (
-                root / teacher.common.file_hash(Path(teacher.__file__)) / "report.json"
-            )
+        marker = report_path()
+        body = payload(marker)
         if marker.is_file():
             print(f"Completed {name}: {marker}")
             return
