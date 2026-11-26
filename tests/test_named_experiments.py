@@ -161,8 +161,8 @@ def test_named_cap_preview_matches_worker_timeout(name, hours):
     out = subprocess.check_output(
         [sys.executable, "scripts/run_eval.py", "--experiment", name, "--dry"], text=True
     )
-    preview, end = json.JSONDecoder().raw_decode(out)
-    payload = json.loads(out[end:])
+    preview = json.loads(out)
+    payload = preview["payload"]
     assert preview["settings"]["EVAL_HOURS"] == hours
     assert f"timeout {hours}h" in payload["script"]
 
@@ -213,6 +213,8 @@ def test_cap_reuses_active_published_receipt(arm, tmp_path, monkeypatch, capsys)
             )
         )
     )
+    from orchestration.named import publication
+    monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
     checked = []
 
     class Client:

@@ -81,6 +81,11 @@ class Rerun:
             else ([args.workload] if args.workload else self.c.WORKLOADS)
         )
         if not args.dry:
+            pending = {(exp.name, workload) for exp in exps for workload in workloads
+                       if launch.pending(self.sc.output_dir(args.variant, exp, workload), args.profile)}
+            exps = [exp for exp in exps if any((exp.name, workload) in pending for workload in workloads)]
+            if not exps:
+                return
             self.sc.source_plan()
             if self.continuation:
                 for exp in exps:
@@ -109,6 +114,8 @@ class Rerun:
         jobs = []
         for exp in exps:
             for workload in workloads:
+                if not args.dry and (exp.name, workload) not in pending:
+                    continue
                 name = self.sc.arm_name(exp, workload)
                 if self.continuation and workload:
                     name += f"--step{args.variant}"
@@ -132,7 +139,7 @@ class Rerun:
                     args.author_name,
                     args.telegram_nick,
                 )
-                identity = launch.normalize(body["job_desc"])
+                identity = launch.output_identity(body["job_desc"], marker.parent, active)
                 if identity in active:
                     jobs.append(
                         {"name": name, "job_name": active[identity], "reused": True}
@@ -143,9 +150,10 @@ class Rerun:
                     continue
                 body["region"] = extra["region"]
                 self.reserve(args.variant, args.phase, name, workload)
-                job = launch.submit_payload(client, body, args.phase, name, commit)
+                job = launch.submit_payload(client, body, args.phase, name, commit, output_dir=marker.parent)
                 jobs.append(job)
-                active[identity] = job["job_name"]
+                if job.get("job_name"):
+                    active[identity] = job["job_name"]
                 print(json.dumps(job), flush=True)
         print("__MLS_JOBS_JSON__")
         print(

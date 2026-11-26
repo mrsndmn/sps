@@ -92,3 +92,22 @@ def test_adapter_roundtrip(scope, index, select_scope):
     other.load_state_dict({name: p for name, p in model.named_parameters() if p.requires_grad}, strict=False)
     torch.testing.assert_close(model(ids).logits, other(ids).logits)
     assert not torch.equal(before, other(ids).logits)
+
+
+def test_archived_winner_uses_the_checkpoint_cohort(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "ROOT", tmp_path)
+    for i, arm in enumerate(cfg.experiment_configs):
+        folder = cfg.directory(arm)
+        folder.mkdir(parents=True)
+        weights = folder / "final.pt"
+        weights.write_bytes(arm.name.encode())
+        (folder / "trained.json").write_text(json.dumps(dict(
+            arm=arm.name, step=cfg.END, commit="archived", val_nll=i,
+            sha256=cfg.digest(weights))))
+    assert cfg.winner() == cfg.experiment_configs[0]
+    marker = folder / "trained.json"
+    row = json.loads(marker.read_text())
+    row["commit"] = "another cohort"
+    marker.write_text(json.dumps(row))
+    with pytest.raises(ValueError):
+        cfg.winner()

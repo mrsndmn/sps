@@ -142,8 +142,45 @@ def valid_job_name(result):
     return None
 
 
-def submit_payload(client, body, phase, name, commit):
-    identity = normalize(body['job_desc'])
+def pending(output, profile="default"):
+    from orchestration.named.publication import pending_output
+    return pending_output(output, profile)
+
+
+def output_identity(description, output, active=None):
+    """Only pre-migration jobs lack a destination in their description."""
+    original = normalize(description)
+    key = hashlib.sha256(str(Path(output).resolve()).encode()).hexdigest()
+    identity = f"{original} output={key}"
+    if active and original in active and identity not in active:
+        receipt = ARTIFACTS_ROOT / "submissions" / f"{active[original]}.json"
+        if receipt.is_file():
+            record = json.loads(receipt.read_text())
+            if published := record.get("output_dir"):
+                return original if Path(published) == output else identity
+            name = record.get("name")
+            historical = {ARTIFACTS_ROOT / "probe", ARTIFACTS_ROOT / "prepared",
+                          ARTIFACTS_ROOT / "evaluations/winner"}
+            if name:
+                historical |= {RUN_ROOT / "out" / name, ARTIFACTS_ROOT / "sanity/out" / name}
+            return original if output in historical else identity
+        raise RuntimeError(f"Active legacy job lacks a destination receipt: {active[original]}")
+    return identity
+
+
+def scope_payload(body, output):
+    identity = output_identity(body["job_desc"], output)
+    tags = re.findall(r"(?:^|\s)([#@]\S+)", body["job_desc"])
+    body["job_desc"] = " ".join([identity, *tags])
+
+
+def submit_payload(client, body, phase, name, commit, *, output_dir=None):
+    output = os.environ.get("SPS_SUBMIT_OUTPUT") or output_dir
+    if output:
+        scope_payload(body, output)
+        identity = normalize(body["job_desc"])
+    else:
+        identity = normalize(body["job_desc"])
     intent = ARTIFACTS_ROOT / 'submission-intents' / (
         hashlib.sha256(identity.encode()).hexdigest() + '.json')
     if intent.exists():
@@ -152,16 +189,19 @@ def submit_payload(client, body, phase, name, commit):
     # resubmission, even if the server's job list has not caught up yet.
     data = dict(phase=phase, identity=identity, name=name, commit=commit,
                 attempted_at=time.time())
-    store_json(intent, data)
     directory = None
-    if output := os.environ.get('SPS_SUBMIT_OUTPUT'):
+    if output:
         from orchestration.named.publication import reserve_payload
-        directory = reserve_payload(body, Path(output), STAGING_ROOT / commit)
+        directory = reserve_payload(body, Path(output), STAGING_ROOT / commit, original=output_dir, selected=name)
         if directory is None:
-            intent.unlink()
-            return dict(name=name, reused=True, output_dir=output)
-        data['output_dir'] = output
+            return dict(name=name, reused=True, output_dir=str(output))
+        data['output_dir'] = str(output)
+    try:
         store_json(intent, data)
+    except Exception:
+        if directory:
+            directory.retire()
+        raise
     result = client.run_job(body)
     job_name = valid_job_name(result)
     if directory and not job_name and isinstance(result, dict) and result.get('error_code') == 1:
@@ -215,98 +255,9 @@ def main(default_phase='train', *, named=None):
     parser.add_argument('--dry', action='store_true')
     args = parser.parse_args()
     args.named = named
-    launch = submit
-    if SUITE in WORKER_SCRIPTS:
-        from orchestration.pilot_launch import submit as launch
-        return launch(args)
-    if args.dry:
-        return launch(args)
-    with submission_lock():
-        return launch(args)
+    return submit(args)
 
 
 def submit(args):
-    if SUITE in EVAL_ONLY_SUITES and args.phase != 'eval':
-        raise ValueError(f'{SUITE} is evaluation-only')
-    repo = Path(git('rev-parse', '--show-toplevel'))
-    commit = git('rev-parse', 'HEAD')
-    candidates = [('data-and-probes', ARTIFACTS_ROOT / 'prepared.json')] if args.phase == 'prepare' else [
-        (exp.name, output_dir(exp) / ('trained.json' if args.phase == 'train' else 'evaluated.json'))
-        for exp in collect_experiments(args.filter) if (args.phase != 'train' or exp.trainable)
-        and (not getattr(args, 'named', None) or exp.name == args.named)]
-    if not candidates:
-        raise ValueError('No matching experiments')
-    if not args.dry:
-        needs_ar_preparation = SUITE in AR_SPS_SUITES or SUITE == INSTRUCT_SUITE
-        if (args.phase == 'train' or (needs_ar_preparation and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
-            raise RuntimeError('Complete --phase prepare and inspect measured estimates first')
-        if needs_ar_preparation and args.phase in {'train', 'eval'}:
-            prepared = json.loads((ARTIFACTS_ROOT / 'prepared.json').read_text())
-            if prepared.get('design_signature') != design_signature():
-                raise RuntimeError('Stale AR-SPS preparation marker')
-        # mls is an optional submission-host dependency; dry plans need neither
-        # it, credentials nor an API connection.
-        from mls.manager.job.utils import training_job_api_from_profile, get_in_progress_jobs
-        client, extra = training_job_api_from_profile(args.profile)
-        disable_submission_retries(client)
-        active = get_in_progress_jobs(client_profile=args.profile)
-        active_by_desc = {normalize(j['job_desc']): j['job_name'] for j in active}
-        reconcile_receipts(client, active_by_desc)
-        reconcile_intents(active_by_desc)
-        staged = stage_repo(repo, commit)
-    else:
-        staged = STAGING_ROOT / commit
-        extra = {'region': 'SR004'}
-        active_by_desc = {}
-    jobs = []
-    for name, marker in candidates:
-        resources = {}
-        if SUITE in {'1b', '10b'} and args.phase != 'eval':
-            pool = collect_experiments(None if args.phase == 'prepare' else name)
-            resources['training_gpus'] = max(e.num_gpus for e in pool
-                                             if args.phase == 'prepare' or e.name == name)
-        if args.dry and getattr(args, 'named', None):
-            # A named dry run previews the worker even when a historical run
-            # has finished or its artifact tree is not mounted locally.
-            runs = collect_experiments() if args.phase == 'prepare' else [
-                run for run in collect_experiments() if run.name == name]
-            preview = payload(args.phase, name, staged, args.author_name, args.telegram_nick, **resources)
-            from orchestration.experiment_suite import SANITY_ROOT
-            from orchestration.named.registry import effective_settings
-            probe = args.phase == 'prepare'
-            settings = {run.name: effective_settings(SUITE, run, SANITY_ROOT if probe else RUN_ROOT, args.phase)
-                        for run in runs}
-            print(json.dumps(dict(payload=preview, settings=settings, marker=str(marker)), indent=2, default=str))
-            continue
-        if marker.exists():
-            if json.loads(marker.read_text()).get('design_signature') != design_signature():
-                raise RuntimeError(f'Stale completion marker at {marker}; use a new artifact root/run name')
-            print(f'Skip completed: {name}')
-            continue
-        train_marker = training_marker(next(e for e in collect_experiments() if e.name == name)) if args.phase == 'eval' else None
-        if args.phase == 'eval' and train_marker is not None and not train_marker.exists():
-            print(f'Skip evaluation without trained checkpoint: {name}')
-            continue
-        body = payload(args.phase, name, staged, args.author_name, args.telegram_nick, **resources)
-        body['region'] = extra['region']
-        identity = normalize(body['job_desc'])
-        if identity in active_by_desc:
-            jobs.append(dict(name=name, job_name=active_by_desc[identity], reused=True))
-            continue
-        if args.dry:
-            print(json.dumps(body, indent=2))
-            continue
-        # Single submission attempt: never hold an ephemeral shell retrying a
-        # quota failure. The caller may retry after the allocation changes.
-        if SUITE in AR_SPS_SUITES:
-            from workloads.adaptation.ar_sps_run import reserve
-            reserve(args.phase, name)
-        if SUITE == INSTRUCT_SUITE:
-            from workloads.instruction.instruct_run import reserve
-            reserve(args.phase, name)
-        jobs.append(submit_payload(client, body, args.phase, name, commit))
-        active_by_desc[identity] = jobs[-1]['job_name']
-        print(json.dumps(jobs[-1]))
-    print('__MLS_JOBS_JSON__')
-    print(json.dumps(dict(phase=args.phase, jobs=jobs)))
-    return 0
+    from orchestration.pilot_launch import submit as submit_directory
+    return submit_directory(args)

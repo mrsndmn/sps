@@ -78,6 +78,12 @@ def submit(args):
     staged = e.STAGING_ROOT / commit
     active = {}; client = None; extra = {}
     if not args.dry:
+        modes = [args.mode] if args.mode else c.MODES
+        pending = {(exp.name, mode) for exp in experiments for mode in modes
+                   if launch.pending(output_dir(exp, mode), args.profile)}
+        experiments = [exp for exp in experiments if any((exp.name, mode) in pending for mode in modes)]
+        if not experiments:
+            return
         for exp in experiments:
             source_check(exp)
         from mls.manager.job.utils import training_job_api_from_profile, get_in_progress_jobs
@@ -94,6 +100,8 @@ def submit(args):
         staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
     jobs = []
     for exp, mode in ((x, m) for x in experiments for m in ([args.mode] if args.mode else c.MODES)):
+        if not args.dry and (exp.name, mode) not in pending:
+            continue
         marker = output_dir(exp, mode)/'evaluated.json'
         if marker.exists():
             if json.loads(marker.read_text())['design_signature'] != signature():
@@ -101,7 +109,7 @@ def submit(args):
             print('Skip completed:', exp.name)
             continue
         body = payload(exp, staged, args.author_name, args.telegram_nick, mode)
-        identity = launch.normalize(body['job_desc'])
+        identity = launch.output_identity(body['job_desc'], marker.parent, active)
         if identity in active:
             jobs.append(dict(name=arm_name(exp, mode), job_name=active[identity], reused=True))
             continue
@@ -110,8 +118,10 @@ def submit(args):
             continue
         body['region'] = extra['region']
         reserve(arm_name(exp, mode))
-        job = launch.submit_payload(client, body, 'eval', arm_name(exp, mode), commit)
-        jobs.append(job); active[identity] = job['job_name']
+        job = launch.submit_payload(client, body, 'eval', arm_name(exp, mode), commit, output_dir=marker.parent)
+        jobs.append(job)
+        if job.get('job_name'):
+            active[identity] = job['job_name']
         print(json.dumps(job), flush=True)
     print('__MLS_JOBS_JSON__')
     print(json.dumps(dict(phase='ifeval', jobs=jobs)), flush=True)

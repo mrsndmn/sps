@@ -130,3 +130,76 @@ def test_specialized_worker_round_trips_family_settings(tmp_path, monkeypatch):
     assert decoded.ROWS == family.family_config.ROWS
     assert decoded.LENGTHS == family.family_config.LENGTHS
     assert decoded.ROOT == family.family_config.ROOT
+
+
+def test_native_and_named_submission_share_the_same_reservation(tmp_path, monkeypatch):
+    import json
+    import shlex
+    from orchestration.named import publication
+
+    output = tmp_path / "eval"
+    monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
+    monkeypatch.setattr(mlspace_launch, "ARTIFACTS_ROOT", tmp_path)
+    monkeypatch.setenv("SPS_FAMILY_SCHEMAS", "")
+    submitted = []
+    job = "lm-mpi-job-48fcb78d-e22e-4076-a28d-f92f4e1d6b0c"
+    client = SimpleNamespace(run_job=lambda body: submitted.append(dict(body)) or {"job_name": job})
+    body = {"job_desc": "evaluate arm #a @b", "script": "echo done"}
+    native = mlspace_launch.submit_payload(client, dict(body), "eval", "arm", "commit", output_dir=output)
+    assert native["job_name"] == job
+    directory = RunDirectory(tmp_path, output)
+    assert directory.job_name() == job
+    assert not output.exists()
+    assert "orchestration.named.publication" in shlex.split(submitted[0]["script"])
+    monkeypatch.setenv("SPS_SUBMIT_OUTPUT", str(output))
+    assert mlspace_launch.submit_payload(client, dict(body), "eval", "arm", "commit")["reused"]
+    assert len(submitted) == 1
+    other = tmp_path / "second"
+    identity = mlspace_launch.normalize(submitted[0]["job_desc"])
+    assert mlspace_launch.output_identity(body["job_desc"], output, {identity: job}) == identity
+    assert mlspace_launch.output_identity(body["job_desc"], other, {identity: job}) != identity
+    assert json.loads((directory.reservation / "submission.json").read_text())["identity"] == identity
+
+
+def test_dflash_worker_uses_explicit_run_fields(monkeypatch):
+    import json
+    from experiments import dflash_kd_train
+    from experiments.family_arguments import configure_runs
+    from experiments.family_cli import arguments, encode, parse
+
+    group = "dflash_kd_train"
+    exp = dflash_kd_train.EXPERIMENT
+    values = arguments([group], exp.name)
+    flags = encode(values)
+    flags.extend(["--dflash_kd_train__experiment_configs__0__epochs", "7"])
+    monkeypatch.setenv("SPS_FAMILY_ARGUMENTS", json.dumps(parse(values, flags)))
+    (selected,) = configure_runs(dflash_kd_train.__name__, "experiment_configs", [exp])
+    assert selected.epochs == 7
+    assert selected.global_batch == exp.global_batch
+    assert selected.output_root == exp.output_root
+
+
+@pytest.mark.parametrize("family", ["ar-sps", "ar-sps-qwen3-1.7b-instruct"])
+def test_shared_submission_requires_current_preparation(tmp_path, monkeypatch, family):
+    from experiments import family_cli
+
+    suite = pilot_launch.suite
+    run = SimpleNamespace(name="original", trainable=False, num_gpus=1)
+    monkeypatch.setattr(suite, "SUITE", family)
+    monkeypatch.setattr(suite, "COMMON_ROOT", tmp_path)
+    monkeypatch.setattr(suite, "ARTIFACTS_ROOT", tmp_path)
+    monkeypatch.setattr(suite, "RUN_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(suite, "collect_experiments", lambda *args: [run])
+    monkeypatch.setattr(suite, "design_signature", lambda: "current")
+    monkeypatch.setattr(family_cli, "worker_command", lambda command, *args: command)
+    api = ModuleType("mls.manager.job.utils")
+    api.get_in_progress_jobs = lambda **kwargs: []
+    api.training_job_api_from_profile = lambda profile: (SimpleNamespace(), {})
+    monkeypatch.setitem(sys.modules, api.__name__, api)
+    monkeypatch.setattr(mlspace_launch, "disable_submission_retries", lambda _: None)
+    monkeypatch.setattr(sys, "argv", ["run_eval.py", "--filter", "original"])
+    with pytest.raises(RuntimeError, match="prepare"):
+        mlspace_launch.main("eval")
+    (tmp_path / "prepared.json").write_text('{"design_signature":"obsolete"}')
+    with pytest.raises(RuntimeError, match="Stale"):
+        mlspace_launch.main("eval")

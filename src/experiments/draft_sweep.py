@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from . import vllm_sps_config as c
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -36,3 +36,4 @@ experiment_configs = [
     for mode in c.GENERATION
     for arm in ("eagle3", "sps_mtp")
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

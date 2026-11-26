@@ -19,6 +19,7 @@ class Job:
     output_dir: Path | None = None
 
     schemas: tuple[str, ...] = ()
+    selected_run: str | None = None
 
     @property
     def script(self):
@@ -48,7 +49,9 @@ def family_schemas(sources):
         if name in visited:
             continue
         visited.add(name)
-        if "family_config" in vars(source):
+        if name.startswith("experiments.") and (
+            "family_config" in vars(source) or "experiment_configs" in vars(source)
+        ):
             names.add(name.rsplit(".", 1)[-1])
         if not name.startswith("experiments."):
             definition = "experiments." + name.rsplit(".", 1)[-1]
@@ -93,6 +96,7 @@ def job(
         submit_flag,
         output_dir,
         family_schemas((*sources, module)),
+        run if isinstance(run, str) else getattr(run, "name", name),
     )
 
 

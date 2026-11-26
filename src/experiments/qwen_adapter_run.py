@@ -1,10 +1,11 @@
 """Executable definitions for qwen adapter run."""
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .environment import COMMON_ROOT as COMMON
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -76,3 +77,10 @@ SWEEPS = {
         (Arm("dora-attention-mlp-standard-1e-4", True, False, 1e-4),),
     ),
 }
+
+
+def arms(scope):
+    return configure_runs(__name__, "experiment_configs", list(SWEEPS[scope].arms))
+
+
+experiment_configs = arms(os.environ.get("SPS_ADAPTER_SCOPE", "attention"))

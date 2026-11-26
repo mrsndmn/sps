@@ -1,4 +1,4 @@
-"""Submit pilot phases with the configured result directory as their identity."""
+"""Submit shared MLSpace phases with the configured result directory as their identity."""
 
 from contextlib import nullcontext
 import hashlib
@@ -118,6 +118,9 @@ def submit(args):
     for run in [None] if phase == "prepare" else runs:
         name = "data-and-probes" if run is None else run.name
         directory = destination(phase, run)
+        if not args.dry and directory.output.is_dir():
+            print(f"Skip existing output: {directory.output}")
+            continue
         guard = nullcontext(True) if args.dry else directory.submitting()
         with guard as ready:
             if not ready:
@@ -149,13 +152,13 @@ def submit(args):
                 elif suite.SUITE == suite.INSTRUCT_SUITE:
                     schemas = ("instruct_config",)
                 elif suite.SUITE.startswith("mmlu-"):
-                    schemas = ("mmlu",)
+                    schemas = ("mmlu", "mmlu_config")
                 else:
                     schemas = ("mtp",) + {
                         "spec-baselines": ("spec_baselines",),
                         "mtp-unified": ("mtp_unified",),
                     }.get(suite.SUITE, ())
-                body["script"] = worker_command(body["script"], schemas)
+                body["script"] = worker_command(body["script"], schemas, name)
             old_identity = launch.normalize(body["job_desc"])
             key = hashlib.sha256(str(directory.output.resolve()).encode()).hexdigest()
             body["job_desc"] = (

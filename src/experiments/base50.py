@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 from .types import ARExperiment
 
 
@@ -43,3 +43,4 @@ def learning_rate(step):
 
 
 experiment_configs = [ARExperiment("qwen3_base_staged_sps_ce_50k", "staged_sps")]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

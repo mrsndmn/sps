@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -171,3 +171,4 @@ experiment_configs = [
         "qwen3_instruct_continued_ar_kd", "continued_ar", distillation_weight=0.5
     ),
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

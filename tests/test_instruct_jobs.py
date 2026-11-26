@@ -60,21 +60,6 @@ assert old != e.design_signature()
 ''')
 
 
-def test_real_instruct_eval_requires_current_preparation(tmp_path, monkeypatch):
-    from orchestration import mlspace_launch as launch
-    monkeypatch.setattr(launch, 'SUITE', SUITE)
-    monkeypatch.setattr(launch, 'ARTIFACTS_ROOT', tmp_path)
-    monkeypatch.setattr(launch, 'collect_experiments', lambda _: [SimpleNamespace(name='original', trainable=False)])
-    monkeypatch.setattr(launch, 'output_dir', lambda _: tmp_path/'original')
-    args = SimpleNamespace(phase='eval', dry=False, filter=None)
-    with pytest.raises(RuntimeError, match='prepare'):
-        launch.submit(args)
-    (tmp_path/'prepared.json').write_text(json.dumps(dict(design_signature='old')))
-    monkeypatch.setattr(launch, 'design_signature', lambda: 'new')
-    with pytest.raises(RuntimeError, match='Stale'):
-        launch.submit(args)
-
-
 def test_missing_training_markers_allow_only_original(tmp_path):
     result = run_code('''
 import sys

@@ -13,16 +13,9 @@ def prepare():
     dest = RUN_ROOT / 'data' / 'fineweb-edu'
     if (dest / 'manifest.json').is_file():
         return _prepare(dest)
-    dest.mkdir(parents=True, exist_ok=True)
-    lock = dest / '.preparing'
-    try:
-        lock.mkdir()
-    except FileExistsError:
-        raise RuntimeError(f'Pilot memmaps are being prepared; inspect {lock} before retrying')
-    try:
+    from orchestration.run_directory import preparation_lock
+    with preparation_lock(dest):
         return _prepare(dest)
-    finally:
-        lock.rmdir()
 
 
 def _prepare(dest):

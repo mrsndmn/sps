@@ -4,7 +4,11 @@ from orchestration.named.standalone import job, load
 
 
 def dflash(kd):
-    module = load("workloads.distillation.dflash_kd" if kd else "workloads.distillation.dflash_repro")
+    module = load(
+        "workloads.distillation.dflash_kd"
+        if kd
+        else "workloads.distillation.dflash_repro"
+    )
     hard = load("workloads.distillation.dflash_repro_train")
     training = (hard.reference, hard.prepared, hard, module.training)
     eval_settings = (*training, module.evaluation)
@@ -72,7 +76,9 @@ def qwen4b():
                         module.training,
                         module.evaluation if phase == "eval" else module.training,
                     ),
-                    output_dir=module.phase_output(phase, module.names(phase, dataset)[0], dataset),
+                    output_dir=module.phase_output(
+                        phase, module.names(phase, dataset)[0], dataset
+                    ),
                     parameters={
                         "conditions": [
                             vars(run) for run in module.training.experiment_configs
@@ -102,7 +108,7 @@ def preview_drafter(plan, module, staged, launch):
     else:
         hard = load("workloads.distillation.dflash_repro_train")
         required = hard.previous.selection_path()
-        if required.is_file():
+        if required.is_file() or plan.phase != "eval" or "--step" in plan.args:
             step = None
             if plan.phase == "eval":
                 step = (
@@ -110,7 +116,10 @@ def preview_drafter(plan, module, staged, launch):
                     if "--step" in plan.args
                     else hard.total_steps(len(hard.previous.selection()["train"]))
                 )
-            return {"payload": module.payload(plan.phase, step, staged)}
+            return {
+                "payload": module.payload(plan.phase, step, staged),
+                "output_dir": module.training.EXPERIMENT.output(plan.phase, step),
+            }
         distributed = (
             [
                 "-m",

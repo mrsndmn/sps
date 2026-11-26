@@ -1,6 +1,6 @@
 """Configured publication paths for shared adaptation and speculative runs."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -10,8 +10,11 @@ class PhaseOutputs:
     train: str = "runs/out/{name}"
     eval: str = "runs/out/{name}/eval"
 
+    by_run: dict[str, dict[str, Path]] = field(default_factory=dict)
+
     def path(self, root: Path, phase, name=None):
-        return root / getattr(self, phase).format(name=name)
+        selected = self.by_run.get(name, {}).get(phase)
+        return root / (selected or getattr(self, phase).format(name=name))
 
 
 adaptation = PhaseOutputs()

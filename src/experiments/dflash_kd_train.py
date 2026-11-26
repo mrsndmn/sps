@@ -5,7 +5,7 @@ from pathlib import Path
 
 from . import dflash_repro_train as hard
 from .environment import COMMON_ROOT
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -26,5 +26,6 @@ experiment_configs = [
         eval_dir_pattern="gsm8k-step-{step:05d}-5938c51ca9ec",
     ),
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)
 
 (EXPERIMENT,) = experiment_configs

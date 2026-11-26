@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import instruct_config as source
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -90,6 +90,7 @@ experiment_configs = [Experiment("qwen3_sps_mtp", "train", num_gpus=4)] + [
     for mode in family_config.GENERATION
     for arm in ("ar", "eagle3", "sps", "sps_mtp")
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)
 
 
 def collect_experiments(phase, pattern=None):

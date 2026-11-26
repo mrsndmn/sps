@@ -69,6 +69,9 @@ def submit(args):
     extra = {}
     client = None
     if not args.dry:
+        experiments = [exp for exp in experiments if launch.pending(c.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name, args.profile)]
+        if not experiments:
+            return
         from mls.manager.job.utils import (
             get_in_progress_jobs,
             training_job_api_from_profile,
@@ -103,7 +106,7 @@ def submit(args):
             print("Skip completed:", exp.name)
             continue
         body = payload(args.phase, exp, staged, args.author_name, args.telegram_nick)
-        identity = launch.normalize(body["job_desc"])
+        identity = launch.output_identity(body["job_desc"], root, active)
         if identity in active:
             jobs.append(
                 {"name": exp.name, "job_name": active[identity], "reused": True}
@@ -120,9 +123,10 @@ def submit(args):
             "prepare" if args.phase == "probe" else args.phase,
             exp.name,
             commit,
-        )
+        output_dir=root)
         jobs.append(job)
-        active[identity] = job["job_name"]
+        if job.get("job_name"):
+            active[identity] = job["job_name"]
         print(json.dumps(job), flush=True)
     print("__MLS_JOBS_JSON__")
     print(json.dumps({"phase": args.phase, "jobs": jobs}), flush=True)

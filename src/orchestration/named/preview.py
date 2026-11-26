@@ -9,11 +9,26 @@ import sys
 from orchestration import mlspace_launch as launch
 
 
+def prepared_payload(body, plan, staged, output=None):
+    from orchestration.named.publication import published_command
+
+    output = output or plan.output_dir
+    if output is None:
+        return body
+    launch.scope_payload(body, output)
+    body["script"] = published_command(
+        body["script"],
+        output,
+        staged,
+        plan.schemas,
+        selected=plan.selected_run or plan.name,
+    )
+    return body
+
+
 def preview(plan):
     module = import_module(plan.module)
     short = module.__name__.rsplit(".", 1)[-1]
-    if plan.output_dir is not None:
-        print(f"Output directory: {plan.output_dir}", file=sys.stderr)
     args = plan.args
     staged = launch.STAGING_ROOT / launch.git("rev-parse", "HEAD")
     author = ("d.tarasov", "mrsndmn")
@@ -21,6 +36,9 @@ def preview(plan):
         from orchestration.named.distillation import preview_drafter
 
         filled = preview_drafter(plan, module, staged, launch)
+        if "payload" in filled:
+            output = filled.get("output_dir", plan.output_dir)
+            prepared_payload(filled["payload"], plan, staged, output)
         print(json.dumps({"settings": plan.settings, **filled}, default=str, indent=2))
         return 0
     if short == "base50_run":
@@ -38,7 +56,7 @@ def preview(plan):
         body = module.payload(plan.phase, run, staged, *author)
     elif short == "qwen_adapter_run" and plan.phase == "eval":
         try:
-            arms = [module.winner(launch.git("rev-parse", "HEAD"))]
+            arms = [module.winner()]
             selection = "validated winner"
         except (FileNotFoundError, ValueError) as error:
             arms = module.experiment_configs
@@ -49,7 +67,10 @@ def preview(plan):
                     settings=plan.settings,
                     selection=selection,
                     candidate_payloads=[
-                        module.payload("eval", arm, staged) for arm in arms
+                        prepared_payload(
+                            module.payload("eval", arm, staged), plan, staged
+                        )
+                        for arm in arms
                     ],
                 ),
                 default=str,
@@ -60,11 +81,37 @@ def preview(plan):
     elif short.startswith("real_readout_"):
         body = readout_payload(module, plan, staged, author)
     else:
-        print(
-            json.dumps({"settings": plan.settings}, default=str, indent=2), flush=True
+        text = subprocess.check_output(
+            [sys.executable, plan.script, *args, "--dry"], text=True
         )
-        return subprocess.call([sys.executable, plan.script, *args, "--dry"])
-    print(json.dumps(dict(settings=plan.settings, payload=body), default=str, indent=2))
+        decoder = json.JSONDecoder()
+        body = None
+        while text.strip():
+            text = text.lstrip()
+            try:
+                candidate, end = decoder.raw_decode(text)
+            except ValueError:
+                text = text.partition("\n")[2]
+                continue
+            if isinstance(candidate, dict) and "script" in candidate:
+                body = candidate
+                break
+            text = text[end:]
+        if body is None:
+            raise RuntimeError(
+                f"Native dry run did not return a payload for {plan.name}"
+            )
+    print(
+        json.dumps(
+            dict(
+                settings=plan.settings,
+                output_dir=plan.output_dir,
+                payload=prepared_payload(body, plan, staged),
+            ),
+            default=str,
+            indent=2,
+        )
+    )
     return 0
 
 

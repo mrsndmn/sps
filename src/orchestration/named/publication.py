@@ -14,7 +14,9 @@ from orchestration.run_directory import RunDirectory
 
 def work_path(path):
     """Redirect only this worker's output tree. Other experiments stay readable."""
-    final = os.environ.get("SPS_JOB_OUTPUT")
+    final = os.environ.get("SPS_JOB_ORIGINAL_OUTPUT") or os.environ.get(
+        "SPS_JOB_OUTPUT"
+    )
     work = os.environ.get("SPS_JOB_WORK")
     path = Path(path)
     if final and work and path.is_relative_to(final):
@@ -52,7 +54,7 @@ def submitting(output):
             yield True
 
 
-def retryable(directory):
+def retryable(directory, profile="default"):
     from orchestration.pilot_launch import TERMINAL_FAILURES
 
     name = directory.job_name()
@@ -65,7 +67,7 @@ def retryable(directory):
             record = json.loads(intent.read_text())
             active = {
                 normalize(j["job_desc"]): j["job_name"]
-                for j in get_in_progress_jobs(client_profile="default")
+                for j in get_in_progress_jobs(client_profile=profile)
             }
             name = active.get(record["identity"])
             if not name:
@@ -84,7 +86,7 @@ def retryable(directory):
         return False
     from mls.manager.job.utils import training_job_api_from_profile
 
-    client, _ = training_job_api_from_profile("default")
+    client, _ = training_job_api_from_profile(profile)
     status = str(client.get_job_status(name).get("status", "")).lower()
     if status in TERMINAL_FAILURES:
         directory.retire()
@@ -95,16 +97,66 @@ def retryable(directory):
     return False
 
 
-def reserve_payload(body, output, staged):
+def pending_output(output, profile="default"):
+    if output.is_dir():
+        print(f"Skip existing output: {output}", flush=True)
+        return False
     directory = RunDirectory(COMMON_ROOT, output)
-    from orchestration import mlspace_launch as launch
+    if not directory.reservation.exists():
+        return True
+    with directory.submitting() as ready:
+        return ready and retryable(directory, profile)
 
+
+def published_command(command, output, staged, schemas, original=None, selected=None):
     from experiments.family_cli import worker_command
 
-    schemas = os.environ.get("SPS_FAMILY_SCHEMAS", "").split(",")
-    command = worker_command(body["script"], tuple(filter(None, schemas)))
-    body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(
-        [str(PYTHON), "-m", "orchestration.named.publication", str(output), command]
+    command = worker_command(command, schemas, selected)
+    return f"cd {shlex.quote(str(staged))} && " + shlex.join(
+        [
+            str(PYTHON),
+            "-m",
+            "orchestration.named.publication",
+            str(output),
+            str(original or output),
+            command,
+        ]
+    )
+
+
+def reserve_payload(body, output, staged, original=None, selected=None):
+    from orchestration import mlspace_launch as launch
+
+    directory = RunDirectory(COMMON_ROOT, output)
+    configured = os.environ.get("SPS_FAMILY_SCHEMAS")
+    if configured is None:
+        from orchestration.named.standalone import family_schemas, load
+
+        # Native and catalog submissions execute the same family arguments.
+        script = Path(sys.argv[0])
+        schemas = ()
+        if script.parent.parent.name == "scripts":
+            module = (
+                "orchestration.named.cap_jobs"
+                if script.stem == "cap_jobs"
+                else f"workloads.{script.parent.name}.{script.stem}"
+            )
+            native = load(module)
+            dependencies = [
+                getattr(native, key)
+                for key in ("training", "evaluation", "prepared")
+                if hasattr(native, key)
+            ]
+            schemas = family_schemas([native, *dependencies])
+    else:
+        schemas = tuple(filter(None, configured.split(",")))
+    body["script"] = published_command(
+        body["script"],
+        output,
+        staged,
+        schemas,
+        original,
+        os.environ.get("SPS_SELECTED_RUN") or selected,
     )
     if not directory.reserve():
         return None
@@ -119,11 +171,18 @@ def reserve_payload(body, output, staged):
 
 
 def main():
-    output, command = sys.argv[1:]
+    output, original, command = sys.argv[1:]
     directory = RunDirectory(COMMON_ROOT, Path(output))
     with directory.writing(reserved=True) as work:
-        env = dict(os.environ, SPS_JOB_OUTPUT=output, SPS_JOB_WORK=str(work))
+        env = dict(
+            os.environ,
+            SPS_JOB_OUTPUT=output,
+            SPS_JOB_ORIGINAL_OUTPUT=original,
+            SPS_JOB_WORK=str(work),
+        )
         subprocess.run(["/bin/bash", "-c", command], env=env, check=True)
+        if not any(work.iterdir()):
+            raise RuntimeError(f"Worker produced no result for {output}")
 
 
 if __name__ == "__main__":

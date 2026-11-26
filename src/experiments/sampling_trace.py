@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -28,3 +28,4 @@ class Experiment:
 
 
 experiment_configs = [Experiment()]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

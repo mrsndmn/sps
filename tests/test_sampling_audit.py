@@ -32,9 +32,8 @@ def test_payload_is_single_gpu_staged_and_separate():
     assert a.ROOT != a.source.ROOT and a.ROOT != a.graphs.ROOT
 
 
-def test_completed_audit_checks_identity_before_skipping(tmp_path,monkeypatch):
+def test_completed_audit_skips_after_code_changes(tmp_path,monkeypatch):
     monkeypatch.setattr(a,'ROOT',tmp_path)
-    monkeypatch.setattr(a,'input_identity',lambda: {'design_signature':'new'})
+    monkeypatch.setattr(a,'input_identity',lambda: pytest.fail('existing output should skip before preflight'))
     a.launch.store_json(a.output_dir()/'evaluated.json',dict(identity={'design_signature':'old'},passed=True))
-    with pytest.raises(RuntimeError,match='Stale'):
-        a.submit()
+    a.submit()

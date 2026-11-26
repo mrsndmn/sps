@@ -77,6 +77,8 @@ def main():
         if marker is not None and marker.is_file():
             print(f"Completed {name}: {marker}")
             return
+        if not launch.pending(marker.parent):
+            return
         if args.arm:
             compare.prepare()
             marker = report_path()
@@ -98,7 +100,7 @@ def main():
             launch.normalize(j["job_desc"]): j["job_name"]
             for j in get_in_progress_jobs(client_profile="default")
         }
-        identity = launch.normalize(body["job_desc"])
+        identity = launch.output_identity(body["job_desc"], marker.parent, active)
         published_receipt = None
         if (
             args.arm
@@ -133,4 +135,4 @@ def main():
             return
         launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
         body["region"] = options["region"]
-        print(json.dumps(launch.submit_payload(client, body, "eval", name, commit)))
+        print(json.dumps(launch.submit_payload(client, body, "eval", name, commit, output_dir=marker.parent)))

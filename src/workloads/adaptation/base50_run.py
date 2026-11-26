@@ -40,6 +40,8 @@ def submit(dry):
     staged = e.STAGING_ROOT/commit
     exp = c.experiment_configs[0]
     marker = e.RUN_ROOT/'out'/exp.name/'trained.json'
+    if not dry and not launch.pending(marker.parent):
+        return
     if marker.exists():
         if json.loads(marker.read_text())['design_signature'] != e.design_signature():
             raise RuntimeError('Stale terminal marker')
@@ -51,14 +53,14 @@ def submit(dry):
     launch.disable_submission_retries(client)
     active = {launch.normalize(j['job_desc']):j['job_name'] for j in get_in_progress_jobs(client_profile='default')}
     launch.reconcile_receipts(client, active); launch.reconcile_intents(active)
-    identity = launch.normalize(payload(exp, staged)['job_desc'])
+    identity = launch.output_identity(payload(exp, staged)['job_desc'], marker.parent, active)
     if identity in active:
         print(json.dumps(dict(job_name=active[identity], reused=True))); return
     staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
     body = payload(exp, staged); body['region'] = extra['region']
     launch.store_json(e.ARTIFACTS_ROOT/'followup.json', dict(reminder=config.REMINDER,
                      checkpoint=str(e.RUN_ROOT/'out'/exp.name/'final.pt')))
-    result = launch.submit_payload(client, body, 'train', exp.name, commit)
+    result = launch.submit_payload(client, body, 'train', exp.name, commit, output_dir=marker.parent)
     print(json.dumps(result), flush=True)
 
 

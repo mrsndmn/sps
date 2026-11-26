@@ -1,7 +1,9 @@
 """Executable definitions for provenance train."""
 
 from dataclasses import dataclass
+
 from . import instruct_config as c
+from .family_arguments import configure_runs
 
 
 @dataclass(frozen=True)
@@ -20,3 +22,4 @@ experiment_configs = [
     for recipe in ("continued_ar", "staged_sps")
     for condition in ("corpus", "teacher")
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

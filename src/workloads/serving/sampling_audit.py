@@ -270,6 +270,8 @@ def submit(dry=False):
     exp = experiment_configs[0]
     if dry:
         print(json.dumps(payload(exp,staged),indent=2)); return
+    if not launch.pending(output_dir()):
+        return
     identity = input_identity()
     marker = output_dir()/'evaluated.json'
     if marker.exists():
@@ -288,7 +290,7 @@ def submit(dry=False):
         active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
     launch.reconcile_receipts(client,active); launch.reconcile_intents(active)
     body = payload(exp,staged)
-    name = launch.normalize(body['job_desc'])
+    name = launch.output_identity(body['job_desc'], output_dir(), active)
     if name in active:
         job = dict(name=exp.name, job_name=active[name],reused=True)
     else:
@@ -300,7 +302,7 @@ def submit(dry=False):
             raise RuntimeError('Audit reservation cap exceeded')
         ledger['attempts'].append(dict(gpu_hours=exp.hours,time=time.time()))
         launch.store_json(ledger_path,ledger)
-        job=launch.submit_payload(client,body,'eval',exp.name,commit)
+        job=launch.submit_payload(client,body,'eval',exp.name,commit, output_dir=output_dir())
     print('__MLS_JOBS_JSON__'); print(json.dumps({'jobs':[job]}),flush=True)
 
 

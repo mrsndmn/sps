@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .environment import COMMON_ROOT
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 from .vllm_sps_config import SOURCE_ROOT
 
 
@@ -51,3 +51,4 @@ experiment_configs = [
     for mask in ("bidirectional", "causal")
     for embeddings in ("shared", "per-position")
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

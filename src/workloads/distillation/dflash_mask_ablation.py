@@ -331,6 +331,8 @@ def submit(dry):
         print(json.dumps(body, indent=2))
         return
 
+    if not launch.pending(result_path().parent):
+        return
     from mls.manager.job.utils import training_job_api_from_profile
 
     with (
@@ -357,7 +359,7 @@ def submit(dry):
                 )
             launch.reconcile_receipts(client, active)
             launch.reconcile_intents(active)
-            identity = launch.normalize(body["job_desc"])
+            identity = launch.output_identity(body["job_desc"], result_path().parent, active)
             if identity in active:
                 print(
                     json.dumps(
@@ -366,7 +368,7 @@ def submit(dry):
                 )
                 return
             launch.stage_repo(repo, commit)
-            print(json.dumps(launch.submit_payload(client, body, "eval", name, commit)))
+            print(json.dumps(launch.submit_payload(client, body, "eval", name, commit, output_dir=result_path().parent)))
 
 
 def main():

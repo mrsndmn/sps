@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .environment import COMMON_ROOT
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 from .qwen4b_drafter_train import SEED as SEED
 
 
@@ -56,5 +56,6 @@ experiment_configs = [
         eval_dir_pattern="gsm8k-step-{step:05d}-780d2d2a6375",
     )
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)
 
 (EXPERIMENT,) = experiment_configs

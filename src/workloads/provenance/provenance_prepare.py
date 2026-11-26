@@ -242,6 +242,8 @@ def submit(dry=False):
     exp=experiment_configs[0]
     if dry:
         print(json.dumps(payload(exp,staged),indent=2));return
+    if not launch.pending(prepared_dir()):
+        return
     if completed():print('Already completed');return
     source_rows()
     from mls.manager.job.utils import training_job_api_from_profile
@@ -252,7 +254,7 @@ def submit(dry=False):
         if 'jobs' not in response:raise RuntimeError('Cannot establish active jobs')
         active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
     launch.reconcile_receipts(client,active);launch.reconcile_intents(active)
-    key=launch.normalize(payload(exp,staged)['job_desc'])
+    key=launch.output_identity(payload(exp,staged)['job_desc'], prepared_dir(), active)
     if key in active:
         job=dict(name=exp.name,job_name=active[key],reused=True)
     else:
@@ -263,7 +265,7 @@ def submit(dry=False):
         if sum(x['gpu_hours'] for x in ledger['attempts'])+cost > 2*cost:
             raise RuntimeError('Preparation reservation cap exceeded')
         ledger['attempts'].append(dict(gpu_hours=cost,time=time.time()));launch.store_json(path,ledger)
-        job=launch.submit_payload(client,body,'prepare',exp.name,commit)
+        job=launch.submit_payload(client,body,'prepare',exp.name,commit, output_dir=prepared_dir())
     print('__MLS_JOBS_JSON__');print(json.dumps({'jobs':[job]}),flush=True)
 
 

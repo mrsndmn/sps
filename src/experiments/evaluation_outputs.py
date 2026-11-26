@@ -1,6 +1,6 @@
 """Publication directories for phases with standalone evaluation results."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -8,8 +8,12 @@ from pathlib import Path
 class EvaluationOutputs:
     output_dir: Path
 
+    by_run: dict[str, Path] = field(default_factory=dict)
+
     def for_run(self, root, run):
-        return root / Path(str(self.output_dir).format(name=run.name))
+        return root / self.by_run.get(
+            run.name, Path(str(self.output_dir).format(name=run.name))
+        )
 
 
 families = {

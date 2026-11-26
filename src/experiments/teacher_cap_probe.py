@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True)
@@ -13,11 +13,14 @@ class Probe:
 
 
 experiment_configs = [Probe()]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)
 
 
 @dataclass(frozen=True, kw_only=True)
 class FamilyConfig:
-    OUTPUT_NAME: str = "5bb50eb67bff7ec297e740ea8bffdce6d220f9bf5051cc47d67a5755634f82c5"
+    OUTPUT_NAME: str = (
+        "5bb50eb67bff7ec297e740ea8bffdce6d220f9bf5051cc47d67a5755634f82c5"
+    )
     SHARDS: int = 8
     EVAL_HOURS: int = 20
 

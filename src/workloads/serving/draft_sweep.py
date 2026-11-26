@@ -398,6 +398,12 @@ def submit(args, choices):
         for exp in choices:
             print(json.dumps(payload(phase, exp, staged), indent=2))
         return
+    def output(exp):
+        return ROOT / ("sanity" if phase == "probe" else "runs") / "out" / exp.name
+
+    choices = [exp for exp in choices if launch.pending(output(exp))]
+    if not choices:
+        return
     manifest = None
     if phase == "train":
         if not complete("probe", TRAINER):
@@ -439,9 +445,9 @@ def submit(args, choices):
     deferred = []
     for exp in pending:
         body = payload(phase, exp, staged)
-        identity = launch.normalize(body["job_desc"])
+        identity = launch.output_identity(body["job_desc"], output(exp), active)
         arm_prefix = identity.rsplit(" ", 1)[0] + " "
-        if any(key.startswith(arm_prefix) and key != identity for key in active):
+        if any(key.startswith(arm_prefix) and key != identity and " output=" not in key for key in active):
             raise RuntimeError(f"An older design is already running for {exp.name}")
         if identity in active:
             jobs.append(
@@ -458,7 +464,7 @@ def submit(args, choices):
         receipt_phase = (
             "prepare" if phase == "probe" else "eval" if phase == "audit" else phase
         )
-        result = launch.submit_payload(client, body, receipt_phase, exp.name, commit)
+        result = launch.submit_payload(client, body, receipt_phase, exp.name, commit, output_dir=output(exp))
         occupied += 1
         jobs.append(result)
         print(json.dumps(result), flush=True)

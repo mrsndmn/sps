@@ -105,7 +105,7 @@ def submit_job(phase, name, root, result_path, body, commit):
                            for job in response["jobs"]})
         launch.reconcile_receipts(client, active)
         launch.reconcile_intents(active)
-        identity = launch.normalize(body["job_desc"])
+        identity = launch.output_identity(body["job_desc"], result_path.parent, active)
         if identity in active:
             result = {"name": name, "job_name": active[identity], "reused": True}
         else:

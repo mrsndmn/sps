@@ -184,6 +184,9 @@ def submit(selected, dry=False):
         for exp in selected:
             print(json.dumps(payload(exp, staged), indent=2))
         return
+    selected = [exp for exp in selected if launch.pending(output_dir(exp))]
+    if not selected:
+        return
     values, report = paired_data()
     plan = make_plan(values)
     launch.store_json(ROOT / 'plan.json', dict(plan=plan, preparation_sha256=prep.common.file_hash(prep.results() / 'prepared.json')))
@@ -208,7 +211,7 @@ def submit(selected, dry=False):
                 raise RuntimeError('Stale completed control')
             continue
         body = payload(exp, staged)
-        key = launch.normalize(body['job_desc'])
+        key = launch.output_identity(body['job_desc'], output_dir(exp), active)
         if key in active:
             verify_active_identity(exp, active[key], ident)
             job = dict(name=exp.name, job_name=active[key], reused=True)
@@ -226,8 +229,9 @@ def submit(selected, dry=False):
             # Persist before API send so lost-response intent reconciliation can
             # recover both the UUID receipt and its exact input identity.
             launch.store_json(submission_input_path(commit, exp), ident)
-            job = launch.submit_payload(client, body, 'train', exp.name, commit)
-            active[key] = job['job_name']
+            job = launch.submit_payload(client, body, 'train', exp.name, commit, output_dir=output_dir(exp))
+            if job.get("job_name"):
+                active[key] = job['job_name']
         jobs.append(job)
         # Emit each receipt immediately so partial submission is observable.
         print('__MLS_JOBS_JSON__'); print(json.dumps(dict(jobs=[job])), flush=True)

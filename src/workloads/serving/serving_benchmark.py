@@ -318,6 +318,9 @@ def submit(args):
         for exp in choices:
             print(json.dumps(payload(exp, staged, args.phase), indent=2))
         return
+    choices = [exp for exp in choices if launch.pending(root_for(exp))]
+    if not choices:
+        return
     manifest = verify_runtime()
     trained()
     if args.phase == "eval":
@@ -345,7 +348,7 @@ def submit(args):
             print("Already completed:", exp.name)
             continue
         body = payload(exp, staged, args.phase)
-        identity = launch.normalize(body["job_desc"])
+        identity = launch.output_identity(body["job_desc"], root_for(exp), active)
         if identity in active:
             jobs.append(
                 {"name": exp.name, "job_name": active[identity], "reused": True}
@@ -356,8 +359,9 @@ def submit(args):
             continue
         body["region"] = options["region"]
         reserve("eval", exp)
-        job = launch.submit_payload(client, body, "eval", exp.name, commit)
-        active[identity] = job["job_name"]
+        job = launch.submit_payload(client, body, "eval", exp.name, commit, output_dir=root_for(exp))
+        if job.get("job_name"):
+            active[identity] = job["job_name"]
         occupied += 1
         jobs.append(job)
         print(json.dumps(job), flush=True)

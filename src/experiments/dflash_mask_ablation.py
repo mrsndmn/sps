@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .environment import COMMON_ROOT
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -37,3 +37,4 @@ class Experiment:
 experiment_configs = [
     Experiment(mask, width) for width in (4, 8) for mask in ("bidirectional", "causal")
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

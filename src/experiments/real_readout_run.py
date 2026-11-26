@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import vllm_sps_config as c
-from .family_arguments import configure, export_fields
+from .family_arguments import configure, configure_runs, export_fields
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -27,5 +27,6 @@ experiment_configs = [
         "qwen3_real_readout_mtp", "train", num_gpus=c.experiment_configs[0].num_gpus
     )
 ]
+experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)
 
 ARM = experiment_configs[0]

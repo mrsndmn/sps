@@ -152,6 +152,9 @@ def artifact_hashes(root, exp):
 
 
 def submit(experiments):
+    experiments = [exp for exp in experiments if launch.pending(ROOT / "runs/out" / exp.name)]
+    if not experiments:
+        return
     from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
 
     client, options = training_job_api_from_profile("default")
@@ -176,11 +179,11 @@ def submit(experiments):
                     script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
                         "timeout", f"{ic.EVAL_HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_eval.py", "--worker", "--filter", exp.name]))
         body["env_variables"]["SPS_EXPERIMENT_SUITE"] = ic.SOURCE_SUITE
-        key = launch.normalize(body["job_desc"])
+        key = launch.output_identity(body["job_desc"], marker.parent, active)
         if key in active:
             print(exp.name, active[key], flush=True)
         else:
-            print(json.dumps(launch.submit_payload(client, body, "eval", exp.name, commit)), flush=True)
+            print(json.dumps(launch.submit_payload(client, body, "eval", exp.name, commit, output_dir=marker.parent)), flush=True)
 
 
 def main():

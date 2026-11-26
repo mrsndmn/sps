@@ -114,10 +114,10 @@ def evaluate(arm, commit):
     from lm_eval import evaluator
     from lm_eval.models.huggingface import HFLM
     from transformers import AutoTokenizer
-    if torch.cuda.device_count() != 1 or cfg.winner(commit) != arm:
+    if torch.cuda.device_count() != 1 or cfg.winner() != arm:
         raise RuntimeError('Evaluate only the selected winner on one GPU')
     root = cfg.directory(arm)
-    marker = cfg.validated_final(arm, commit)
+    marker = cfg.validated_final(arm)
     adapter_bytes = (root/'final.pt').read_bytes()
     if hashlib.sha256(adapter_bytes).hexdigest() != marker['sha256']:
         raise RuntimeError('Adapter checkpoint changed')

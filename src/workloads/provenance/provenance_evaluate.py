@@ -158,6 +158,9 @@ def submit(selected, dry=False):
         for exp in selected:
             print(json.dumps(payload(exp, staged), indent=2))
         return
+    selected = [exp for exp in selected if launch.pending(output_dir(exp))]
+    if not selected:
+        return
     identities = {exp.name: identity(exp) for exp in selected}
     from mls.manager.job.utils import training_job_api_from_profile
     client, options = training_job_api_from_profile('default')
@@ -179,7 +182,7 @@ def submit(selected, dry=False):
                 raise RuntimeError('Stale evaluation completion')
             continue
         body = payload(exp, staged)
-        key = launch.normalize(body['job_desc'])
+        key = launch.output_identity(body['job_desc'], output_dir(exp), active)
         if key in active:
             job_name = active[key]
             path = ROOT / 'submissions' / f'{job_name}.json'
@@ -200,8 +203,9 @@ def submit(selected, dry=False):
             launch.store_json(path, ledger)
             launch.store_json(input_path(commit, exp), ident)
             body = payload(exp, staged); body['region'] = options['region']
-            job = launch.submit_payload(client, body, 'eval', exp.name, commit)
-            active[key] = job['job_name']
+            job = launch.submit_payload(client, body, 'eval', exp.name, commit, output_dir=output_dir(exp))
+            if job.get("job_name"):
+                active[key] = job['job_name']
         print('__MLS_JOBS_JSON__'); print(json.dumps(dict(jobs=[job])), flush=True)
 
 

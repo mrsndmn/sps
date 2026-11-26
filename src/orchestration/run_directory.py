@@ -115,13 +115,7 @@ class RunDirectory:
 @contextmanager
 def preparation_lock(root):
     """Serialize data creation and probes that share a family's working files."""
-    lock = root / ".preparing"
     root.mkdir(parents=True, exist_ok=True)
-    try:
-        lock.mkdir()
-    except FileExistsError:
-        raise RuntimeError(f"Preparation already holds {lock}") from None
-    try:
+    with (root / ".preparation.lock").open("a") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
         yield
-    finally:
-        lock.rmdir()

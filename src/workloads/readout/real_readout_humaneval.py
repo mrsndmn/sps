@@ -146,6 +146,9 @@ def main():
     if args.worker:
         exp, = selected
         return evaluate(exp)
+    selected = [exp for exp in selected if launch.pending(ROOT / "runs/out" / exp.name)]
+    if not selected:
+        return
     from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
     launch.ARTIFACTS_ROOT, launch.RUN_ROOT = ROOT, ROOT/"runs"
     with launch.submission_lock():
@@ -175,8 +178,8 @@ def main():
                         script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
                             "timeout", f"{HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_humaneval.py", "--worker", "--filter", exp.name]))
             body["env_variables"]["SPS_EXPERIMENT_SUITE"] = "ar-sps-qwen3-1.7b-instruct"
-            key = launch.normalize(body["job_desc"])
+            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name, active)
             if key in active:
                 print(exp.name, active[key], flush=True)
             else:
-                print(json.dumps(launch.submit_payload(client, body, "eval", exp.name, commit)), flush=True)
+                print(json.dumps(launch.submit_payload(client, body, "eval", exp.name, commit, output_dir=ROOT / "runs/out" / exp.name)), flush=True)

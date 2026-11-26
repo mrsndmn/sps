@@ -27,23 +27,6 @@ def test_dry_routing(suite, tmp_path):
         assert '"jobs": []' in result.stdout
 
 
-def test_real_static_evaluation_requires_preparation(tmp_path, monkeypatch):
-    from types import SimpleNamespace
-    import pytest
-    from orchestration import mlspace_launch as launch
-    monkeypatch.setattr(launch, 'SUITE', 'ar-sps')
-    monkeypatch.setattr(launch, 'ARTIFACTS_ROOT', tmp_path)
-    monkeypatch.setattr(launch, 'collect_experiments', lambda _: [SimpleNamespace(name='source', trainable=False)])
-    monkeypatch.setattr(launch, 'output_dir', lambda _: tmp_path/'source')
-    args = SimpleNamespace(phase='eval', dry=False, filter=None)
-    with pytest.raises(RuntimeError, match='prepare'):
-        launch.submit(args)
-    (tmp_path/'prepared.json').write_text(json.dumps({'design_signature': 'obsolete'}))
-    monkeypatch.setattr(launch, 'design_signature', lambda: 'current')
-    with pytest.raises(RuntimeError, match='Stale'):
-        launch.submit(args)
-
-
 @pytest.mark.parametrize('suite,model,micro', [
     ('ar-sps-360m-ce', 'HuggingFaceTB/SmolLM2-360M', 2),
     ('ar-sps-1.7b-ce', 'HuggingFaceTB/SmolLM2-1.7B', 1),

@@ -42,6 +42,9 @@ def check_probe():
 def submit(phase, dry):
     commit = launch.git("rev-parse", "HEAD")
     staged = launch.STAGING_ROOT / commit
+    output = ROOT / "probe" if phase == "probe" else OUT
+    if not dry and not launch.pending(output):
+        return
     marker = probe_report() if phase == "probe" else OUT / "trained.json"
     if marker.exists():
         if phase == "probe":
@@ -72,14 +75,14 @@ def submit(phase, dry):
               for j in get_in_progress_jobs(client_profile="default")}
     launch.reconcile_receipts(client, active)
     launch.reconcile_intents(active)
-    identity = launch.normalize(body["job_desc"])
+    identity = launch.output_identity(body["job_desc"], output, active)
     if identity in active:
         print(active[identity])
         return
     launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
     body["region"] = extra["region"]
     print(json.dumps(launch.submit_payload(client, body, "prepare" if phase == "probe" else phase,
-                                          ARM.name, commit)), flush=True)
+                                          ARM.name, commit, output_dir=output)), flush=True)
 
 
 def main():

@@ -61,7 +61,11 @@ def main(default_phase="train"):
         cmd = [sys.executable, plan.script, *plan.args]
         if plan.submit_flag:
             cmd.append(plan.submit_flag)
-        env = dict(os.environ, SPS_FAMILY_SCHEMAS=",".join(plan.schemas))
+        env = dict(
+            os.environ,
+            SPS_FAMILY_SCHEMAS=",".join(plan.schemas),
+            SPS_SELECTED_RUN=plan.selected_run or plan.name,
+        )
         if plan.output_dir is None:
             return subprocess.call(cmd, env=env)
         from orchestration.named.publication import submitting

@@ -73,6 +73,9 @@ def submit(phase, selected, dry, dataset):
         for name in selected:
             print(json.dumps(payload(phase, name, staged, dataset), indent=2))
         return
+    selected = [name for name in selected if launch.pending(phase_output(phase, name, dataset))]
+    if not selected:
+        return
     if phase == "train" and not marker("probe", "probe", dataset).is_file():
         raise RuntimeError("Finish the GPU probe before submitting training")
     if phase == "eval":
@@ -108,12 +111,12 @@ def submit_pending(phase, selected, commit, staged, dataset):
             continue
         body = payload(phase, name, staged, dataset)
         body["region"] = options["region"]
-        identity = launch.normalize(body["job_desc"])
+        identity = launch.output_identity(body["job_desc"], phase_output(phase, name, dataset), active)
         if identity in active:
             result = {"name": name, "job_name": active[identity], "reused": True}
         else:
             receipt_phase = "prepare" if phase == "probe" else phase
-            result = launch.submit_payload(client, body, receipt_phase, name, commit)
+            result = launch.submit_payload(client, body, receipt_phase, name, commit, output_dir=phase_output(phase, name, dataset))
         print(json.dumps(result), flush=True)
 
 
