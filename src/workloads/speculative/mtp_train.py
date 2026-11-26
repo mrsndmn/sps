@@ -47,11 +47,11 @@ def optimizer_groups(model):
             for (lr,decay),params in groups.items()]
 
 
-def save_checkpoint(path, model, optimizer, step, signature):
+def save_checkpoint(path, model, optimizer, step, signature, *, training_inputs=None):
     temporary=path.with_suffix('.tmp')
     state=dict(new_embeddings=model.new_embeddings.detach().cpu(), optimizer=optimizer.state_dict(),
         step=step, tokens=step*mtp.family_config.MTP_STEP_TOKENS,horizons=model.horizons,
-        source=str(mtp.family_config.MTP_SOURCE),design_signature=signature,train_backbone=mtp.family_config.MTP_UNFREEZE)
+        source=str(mtp.family_config.MTP_SOURCE),design_signature=signature,training_inputs=training_inputs,train_backbone=mtp.family_config.MTP_UNFREEZE)
     if mtp.family_config.MTP_UNFREEZE:state['backbone']=model.reference.state_dict()
     torch.save(state,temporary)
     temporary.replace(path)
@@ -86,10 +86,18 @@ def main():
     dest=(e.SANITY_ROOT/'out'/exp.name if args.probe else e.output_dir(exp))
     dest.mkdir(parents=True,exist_ok=True)
     signature=e.SUITE
+    inputs = None
+    if not args.probe:
+        from workloads.speculative.mtp_run import training_inputs, check_resume_inputs
+        prepared = json.loads(e.prepared_path().read_text())
+        parent = warmstart_metadata(exp.horizons, world_size=world) if mtp.family_config.MTP_UNFREEZE else None
+        inputs = training_inputs(exp, prepared, parent)
+        check_resume_inputs(json.loads((dest / "run-config.json").read_text())["training_inputs"], inputs)
     start_step=0
     checkpoint=dest/'latest.pt'
     if checkpoint.exists() and not args.probe:
         state=torch.load(checkpoint,map_location=device,weights_only=False)
+        check_resume_inputs(state.get("training_inputs"), inputs)
         from workloads.speculative.mtp_common import restore_draft
         restore_draft(model,state)
         optimizer.load_state_dict(state['optimizer']); start_step=state['step']
@@ -146,9 +154,9 @@ def main():
                 from workloads.speculative.mtp_evaluate import horizon_metrics
                 with torch.no_grad(): metrics=horizon_metrics(model,device)
                 record(dict(event='validation',step=step+1,tokens=(step+1)*mtp.family_config.MTP_STEP_TOKENS,metrics=metrics))
-                save_checkpoint(checkpoint,model,optimizer,step+1,signature)
+                save_checkpoint(checkpoint,model,optimizer,step+1,signature,training_inputs=inputs)
                 if step+1==steps:
-                    save_checkpoint(dest/'adaptation_final.pt',model,optimizer,step+1,signature)
+                    save_checkpoint(dest/'adaptation_final.pt',model,optimizer,step+1,signature,training_inputs=inputs)
                     write_json(dest/'quality-after.json',metrics)
             dist.barrier(); model.train()
         if time.monotonic()-initial>e.MAX_HOURS*3600:

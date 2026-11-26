@@ -28,7 +28,6 @@ def configure():
     if getattr(e, '_base50_configured', False):
         return e, c
     c.family_config.MAX_STEPS = STEPS
-    c.family_config.MAX_DATA_ROWS = STEPS*c.family_config.GLOBAL_BATCH
     c.family_config.FULL_LR = FULL_LR
     e.experiment_configs = experiment_configs
     e.ARTIFACTS_ROOT = e.COMMON_ROOT/ROOT_NAME

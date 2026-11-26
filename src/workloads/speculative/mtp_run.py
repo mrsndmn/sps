@@ -104,6 +104,24 @@ def prepare():
     write_json(e.prepared_path(),result)
 
 
+def training_inputs(exp, prepared, parent):
+    config = mtp.family_config
+    return dict(
+        experiment=exp.name, horizons=exp.horizons, num_gpus=exp.num_gpus,
+        source_sha256=prepared["source_sha256"], data_sha256=prepared["data"]["manifest_sha256"],
+        warmstart=parent, context=config.MTP_CONTEXT, global_batch=config.MTP_GLOBAL_BATCH,
+        micro_batch=config.MTP_MICRO_BATCH, steps=config.MTP_TRAIN_STEPS, seed=config.MTP_SEED,
+        train_backbone=config.MTP_UNFREEZE, backend=config.MTP_BACKEND, lr=config.MTP_LR,
+        embed_lr=config.MTP_EMBED_LR, warmup=config.MTP_WARMUP_STEPS,
+        weight_decay=config.MTP_WEIGHT_DECAY, betas=list(config.MTP_BETAS), grad_clip=config.MTP_GRAD_CLIP,
+    )
+
+
+def check_resume_inputs(previous, current):
+    if previous != current:
+        raise ValueError("MTP checkpoint training inputs changed")
+
+
 def train(exp):
     prepared=json.loads((e.prepared_path()).read_text())
     signature=e.SUITE
@@ -121,11 +139,12 @@ def train(exp):
         raise RuntimeError('Unapproved runtime/budget')
     dest=e.output_dir(exp)
     identity=dest/'run-config.json'
+    inputs = training_inputs(exp, prepared, parent)
     if identity.exists():
-        pass
-    elif list(dest.glob('*.pt')):raise RuntimeError('Missing partial-run identity')
-    write_json(identity,dict(design_signature=signature,source_sha256=prepared['source_sha256'],
-        command=e.train_command(exp),estimate=forecast,warmstart=parent))
+        check_resume_inputs(json.loads(identity.read_text()).get("training_inputs"), inputs)
+    elif any(dest.glob("*.pt")):
+        raise RuntimeError("Missing partial-run identity")
+    write_json(identity, dict(training_inputs=inputs, command=e.train_command(exp), estimate=forecast))
     start=time.monotonic()
     run_logged(e.train_command(exp),dest/'train.log',timeout=e.MAX_HOURS*3600)
     final=dest/'adaptation_final.pt'

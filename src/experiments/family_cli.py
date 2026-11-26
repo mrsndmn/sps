@@ -48,9 +48,14 @@ def worker_command(command, families, selected=None):
             options.extend(flags(family, module.family_config))
         for table in ("experiment_configs", "job_configs"):
             rows = list(_rows(module, table))
-            for name, row in rows:
-                if name == selected or len(rows) == 1:
-                    options.extend(flags(f"{family}.{table}.{name}", row))
+            selected_rows = [
+                (name, row)
+                for name, row in rows
+                if name == selected or getattr(row, "arm", None) == selected
+            ]
+            # A worker without a matching selector consumes the whole table (e.g. a paired evaluation).
+            for name, row in selected_rows or rows:
+                options.extend(flags(f"{family}.{table}.{name}", row))
     return command + (" " + shlex.join(options) if options else "")
 
 

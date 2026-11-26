@@ -76,7 +76,7 @@ def main():
             samples = []
         else:
             manifest = json.loads(meta.read_text())
-            if (manifest['limit'] is not None or manifest['experiment'] != exp.__dict__):
+            if (manifest['limit'] is not None or any(manifest['experiment'].get(k) != v for k, v in vars(exp).items())):
                 raise ValueError(f'Unexpected source evaluation: {exp.name}')
             samples = read_samples(folder / 'samples.jsonl')
         results[exp.name] = summarize(samples, dataset)

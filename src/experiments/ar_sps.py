@@ -113,16 +113,18 @@ class ARSettings:
             ),
         }
     )
-    MAX_DATA_ROWS: int = field(init=False)
-    DISTILLATION: bool = field(init=False)
-    LARGE_CE: bool = field(init=False)
-    QWEN: bool = field(init=False)
-    experiment_configs: list[ARExperiment] = field(init=False)
+    DISTILLATION: bool = False
+    LARGE_CE: bool = False
+    QWEN: bool = False
+    experiment_configs: list[ARExperiment] = field(default_factory=list)
+
+    @property
+    def MAX_DATA_ROWS(self):
+        return self.MAX_STEPS * self.GLOBAL_BATCH
 
 
 def configuration(suite: str) -> ARSettings:
     c = ARSettings()
-    c.MAX_DATA_ROWS = c.MAX_STEPS * c.GLOBAL_BATCH
 
     c.experiment_configs = [
         ARExperiment("smollm2_original_ar", "original_ar", trainable=False),

@@ -282,3 +282,60 @@ def test_family_capacity_counts_pending_siblings_when_list_lags(tmp_path, monkey
     assert mlspace_launch.occupied_slots(client, active, prefix) == 1
     active[prefix + "c"] = "lm-mpi-job-33333333-3333-4333-8333-333333333333"
     assert mlspace_launch.occupied_slots(client, active, prefix) == 2
+
+def test_ar_worker_retains_suite_and_derives_training_rows():
+    from experiments.ar_sps import configuration
+    from experiments.family_cli import parse_record
+
+    original = configuration("ar-sps-360m-kd")
+    parsed = parse_record(original, [("max_steps", "21"), ("global_batch", "4")])
+    assert parsed.MAX_DATA_ROWS == 84
+    assert parsed.DISTILLATION and not parsed.QWEN
+    assert parsed.experiment_configs == original.experiment_configs
+
+
+def test_logged_child_receives_parsed_training_arguments(tmp_path, monkeypatch):
+    from workloads.pilot.pilot_run import run_logged
+
+    script = tmp_path / "scripts" / "worker.py"
+    script.parent.mkdir()
+    script.write_text(
+        "import sys\nfrom experiments.family_cli import read_worker_arguments\n"
+        "read_worker_arguments(sys.argv)\nfrom experiments.mtp import family_config\n"
+        "print(family_config.MTP_LR)\n"
+    )
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+    monkeypatch.setattr(sys, "orig_argv", [sys.executable, "--cfg.mtp.mtp_lr=0.023"])
+    monkeypatch.chdir(tmp_path)
+    run_logged([sys.executable, "scripts/worker.py"], tmp_path / "worker.log", timeout=30)
+    assert (tmp_path / "worker.log").read_text().strip() == "0.023"
+
+
+def test_worker_arguments_include_paired_conditions_and_selected_arm():
+    import shlex
+    from experiments.family_cli import worker_command
+    from experiments.dflash_mask_ablation import experiment_configs
+
+    mask = shlex.split(worker_command("mask", ["dflash_mask_ablation"]))
+    for row in experiment_configs:
+        assert any(f".{row.name}." in flag for flag in mask)
+    serving = worker_command("serving", ["real_readout_serving"], "A")
+    assert ".serving-A.arm=A" in serving
+    assert ".serving-B." not in serving
+
+
+def test_mtp_resume_validates_training_batch_and_data(monkeypatch):
+    from workloads.speculative import mtp_run
+
+    exp = SimpleNamespace(name="mtp", horizons=3, num_gpus=4)
+    prepared = {"source_sha256": "source", "data": {"manifest_sha256": "corpus"}}
+    def inputs():
+        return mtp_run.training_inputs(exp, prepared, None)
+    initial = inputs()
+    monkeypatch.setattr(mtp_run.mtp.family_config, "MTP_GLOBAL_BATCH", initial["global_batch"] * 2)
+    with pytest.raises(ValueError, match="training inputs"):
+        mtp_run.check_resume_inputs(initial, inputs())
+    monkeypatch.setattr(mtp_run.mtp.family_config, "MTP_GLOBAL_BATCH", initial["global_batch"])
+    prepared["data"]["manifest_sha256"] = "changed"
+    with pytest.raises(ValueError, match="training inputs"):
+        mtp_run.check_resume_inputs(initial, inputs())

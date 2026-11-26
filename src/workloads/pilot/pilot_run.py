@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import statistics
+from experiments.family_cli import worker_child
 from orchestration.pilot_launch import destination, prepare_report, validate_forecast
 import math
 import subprocess
@@ -18,7 +19,7 @@ def run_logged(command, log, *, timeout):
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open('a') as handle:
         # A separate process group lets timeout terminate torchrun's workers too.
-        process = subprocess.Popen(command, stdout=handle, stderr=subprocess.STDOUT,
+        process = subprocess.Popen(worker_child(command), stdout=handle, stderr=subprocess.STDOUT,
                                    start_new_session=True)
         try:
             code = process.wait(timeout=timeout)

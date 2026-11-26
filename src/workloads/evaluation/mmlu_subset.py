@@ -16,7 +16,7 @@ def reuse_samples(folder, exp, rows, indices):
     if not meta.exists():
         return []
     manifest = json.loads(meta.read_text())
-    if (manifest.get('limit') is not None or manifest.get('experiment') != exp.__dict__):
+    if (manifest.get('limit') is not None or any(manifest['experiment'].get(k) != v for k, v in vars(exp).items())):
         raise ValueError('Unexpected full-MMLU source manifest')
     from experiments.mmlu import family_config as c
     if (c.MAX_NEW_TOKENS != 512 or c.SEED != 1337 or c.DATASET != 'cais/mmlu' or
