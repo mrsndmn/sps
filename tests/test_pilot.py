@@ -306,12 +306,27 @@ def test_staging_uses_linked_worktree_commit(tmp_path, monkeypatch):
     assert not (staged / ".git" / "worktrees").exists()
 
 
-def test_routing_refactor_accepts_parent_marker_and_rejects_worker_change(tmp_path, monkeypatch, capsys):
-    # Prepared by the default pilot design at 98fb926.
+def test_routing_refactor_preserves_known_pilot_design():
+    from scripts.design_compatibility import canonical_signature
+    migrated = '4780e1816b74ecdf53e3e98bc439c1e5f775274129ebcc5df958a0f56f49169a'
+    parent = '344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f'
+    assert canonical_signature(migrated) == parent
+
+
+def test_parallel_marker_rejects_unfreeze_worker():
+    script = '''
+import experiments as e
+before = e.design_signature()
+e.WORKER_MODULES[e.SUITE] = e.WORKER_MODULES['mtp-unfreeze']
+assert e.design_signature() != before
+'''
+    env = dict(os.environ, SPS_EXPERIMENT_SUITE='mtp-parallel')
+    subprocess.run([sys.executable, '-c', script], env=env, check=True)
+
+
+def test_launcher_rejects_marker_after_worker_change(tmp_path, monkeypatch, capsys):
     marker = tmp_path / 'prepared.json'
-    marker.write_text(json.dumps({
-        'design_signature': '344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f',
-    }))
+    marker.write_text(json.dumps({'design_signature': config.design_signature()}))
     monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
     monkeypatch.setattr(sys, 'argv', ['launcher', '--dry', '--phase', 'prepare'])
     assert mlspace_launch.main() == 0

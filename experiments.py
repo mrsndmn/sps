@@ -209,7 +209,7 @@ def design_signature():
                    repo / 'requirements-instruct.txt']
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
-    design = dict(worker=WORKER_MODULES[SUITE], repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
+    design = dict(suite=SUITE, worker=WORKER_MODULES[SUITE], repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
                   val_fraction=VAL_FRACTION, val_seed=VAL_SEED,
                   commands=[train_command(e) for e in experiment_configs if e.trainable],
                   probes=[train_command(e, probe=True) for e in experiment_configs if e.trainable],
