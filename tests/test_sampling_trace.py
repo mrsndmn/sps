@@ -35,13 +35,21 @@ def test_four_slot_intervention_preserves_eager_no_speculation_contract():
 
 
 def test_submission_adapter_does_not_recurse_identity_or_touch_parent(tmp_path,monkeypatch):
-    base={'checkpoint':'same'}
-    monkeypatch.setattr(t,'BASE_IDENTITY',lambda:base)
+    base={'checkpoint':'same','design_signature':'archived'}
+    live=dict(base, design_signature='current')
+    monkeypatch.setattr(t.audit,'live_input_identity',lambda:live)
     monkeypatch.setattr(t,'SOURCE',tmp_path)
-    for name in t.FILES:(tmp_path/name).write_text(json.dumps(base) if name=='identity.json' else '{}')
+    for name in t.FILES:
+        (tmp_path/name).write_text('{}')
+    (tmp_path/'identity.json').write_text(json.dumps(base))
+    (tmp_path/'report.json').write_text(json.dumps({'identity':base}))
     expected=t.identity()
+    assert expected['audit'] == base
     with t.patch.object(t.audit,'input_identity',t.identity):
         assert t.audit.input_identity()==expected
+    live['checkpoint']='changed'
+    with pytest.raises(RuntimeError,match='different runtime or checkpoint'):
+        t.identity()
     body=t.payload(t.experiment_configs[0],Path('/staged'))
     assert body['instance_type']==t.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
     assert 'scripts.sampling_trace --worker' in body['script']

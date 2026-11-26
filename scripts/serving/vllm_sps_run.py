@@ -14,6 +14,7 @@ from pathlib import Path
 from scripts import mlspace_launch as launch
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
+from scripts.serving import vllm_sps_evaluate as evaluator
 
 
 def payload(phase, exp, staged, author, nick):
@@ -95,6 +96,18 @@ def reserve(phase, exp):
     launch.store_json(path, ledger)
 
 
+def check_evaluation(exp, *, dry):
+    _, manifest = common.evaluation_record(exp, common.trained()["checkpoint_sha256"])
+    recorded = manifest.get("evaluation_protocol")
+    if recorded is None and dry:
+        print("Archived evaluation:", exp.name)
+        return
+    if recorded != evaluator.protocol_signature() or manifest["vllm_source"] != str(
+        c.ROOT / "vllm-code" / c.VLLM_COMMIT
+    ):
+        raise RuntimeError(f"Evaluation uses another protocol or vLLM source: {exp.name}")
+
+
 def submit(args):
     experiments = c.collect_experiments(args.phase, args.filter)
     if not experiments:
@@ -156,7 +169,7 @@ def submit(args):
             elif args.phase == "train":
                 common.trained()
             else:
-                common.evaluation_record(exp, common.trained()["checkpoint_sha256"])
+                check_evaluation(exp, dry=args.dry)
             print("Skip completed:", exp.name)
             continue
         body = payload(args.phase, exp, staged, args.author_name, args.telegram_nick)

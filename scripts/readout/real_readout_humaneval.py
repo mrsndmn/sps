@@ -62,6 +62,7 @@ def solution(final_text):
 
 def identity(exp, marker):
     return dict(arm=exp.arm, mode=exp.mode, checkpoint=marker["checkpoint_sha256"],
+                model_sources=quality.model_sources(exp),
                 prompts=PROMPT_SHA, release=RELEASE,
                 settings=SETTINGS[exp.mode], seed=c.SEED, request=REQUEST,
                 code={s: common.file_hash(Path(__file__).with_name(s+".py")) for s in

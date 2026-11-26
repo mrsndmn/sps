@@ -20,7 +20,6 @@ from scripts import mlspace_launch as launch
 
 ROOT = audit.ROOT.parent/'sps-sampling-trace'
 SOURCE = audit.output_dir()
-BASE_IDENTITY = audit.input_identity
 FILES = ('identity.json','prefixes.json','kernel.json','report.json',
          'sps-eager.json','sps_mtp-eager.json','sps-graphs.json','sps_mtp-graphs.json')
 ARMS = ('sps','sps_four_slots','sps_mtp')
@@ -40,11 +39,8 @@ def output_dir():
 
 
 def identity():
-    current = BASE_IDENTITY()
-    saved = json.loads((SOURCE/'identity.json').read_text())
-    if current != saved:
-        raise RuntimeError('Failed audit inputs differ from current runtime/checkpoint')
-    return dict(audit=current, code_sha256=audit.common.file_hash(Path(__file__)),
+    return dict(audit=audit.recorded_input_identity(SOURCE),
+                code_sha256=audit.common.file_hash(Path(__file__)),
                 evidence={name:audit.common.file_hash(SOURCE/name) for name in FILES})
 
 

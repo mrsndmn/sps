@@ -19,7 +19,6 @@ from scripts import mlspace_launch as launch
 ROOT=audit.ROOT.parent/'sps-sampling-precision'
 AUDIT_SOURCE=audit.output_dir()
 TRACE_SOURCE=trace.output_dir()
-BASE_IDENTITY=audit.input_identity
 
 @dataclass(frozen=True)
 class Experiment:
@@ -45,9 +44,7 @@ def root():return ROOT/'runs/out'/job_configs[0].name
 
 
 def identity():
-    current=BASE_IDENTITY()
-    if json.loads((AUDIT_SOURCE/'identity.json').read_text())!=current:
-        raise RuntimeError('Original audit inputs changed')
+    current=audit.recorded_input_identity(AUDIT_SOURCE)
     prior=json.loads((TRACE_SOURCE/'identity.json').read_text())
     if prior['audit']!=current:raise RuntimeError('Trace used another model/runtime')
     for name,expected in prior['evidence'].items():
@@ -57,6 +54,16 @@ def identity():
     files += [AUDIT_SOURCE/'prefixes.json',AUDIT_SOURCE/'sps-eager.json',AUDIT_SOURCE/'sps_mtp-eager.json']
     return dict(audit=current,code={p.name:audit.common.file_hash(p) for p in (Path(__file__),Path(trace.__file__))},
                 evidence={str(p):audit.common.file_hash(p) for p in files})
+
+
+def recorded_identity():
+    recorded = json.loads((root()/'identity.json').read_text())
+    report = json.loads((root()/'report.json').read_text())
+    current = identity()
+    # Revalidate the evidence without requiring the historical producer code.
+    if report['identity'] != recorded or current != dict(recorded, code=current['code']):
+        raise RuntimeError('Recorded precision inputs changed')
+    return recorded
 
 
 class PrecisionWorkerExtension(trace.TraceWorkerExtension):

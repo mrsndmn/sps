@@ -16,7 +16,7 @@ from scripts import vllm_sps_config as c
 from scripts.instruct_common import load_model
 from scripts.mlspace_launch import store_json
 from scripts.real_readout_model import RealReadoutMTP
-from scripts.vllm_sps_train import labels_for, optimizer_for, validation
+from scripts.vllm_sps_train import labels_for, matches_schedule, optimizer_for, restore_optimizer, validation
 
 
 def parent():
@@ -100,7 +100,7 @@ def main():
     latest = root / "latest.pt"
     if not probe and latest.exists():
         state = torch.load(latest, map_location="cpu", mmap=True, weights_only=False)
-        if state["parent"] != str(run.PARENT) or not 0 <= state["step"] <= steps:
+        if state["parent"] != str(run.PARENT) or not matches_schedule(state, steps, split):
             raise ValueError("Resume checkpoint does not match the configured run")
         model.load_state_dict(state["model"])
         start = state["step"]
@@ -114,7 +114,7 @@ def main():
         model.train()
         optimizer = optimizer_for(model, frozen)
         if state is not None and state["frozen"] == frozen:
-            optimizer.load_state_dict(state["optimizer"])
+            restore_optimizer(optimizer, state["optimizer"])
         state = None
         ddp = DDP(model, device_ids=[device.index], broadcast_buffers=False)
         times = []
@@ -151,7 +151,8 @@ def main():
                 if rank == 0:
                     score = validation(model, heldout, device)
                     record = dict(model=model.state_dict(), optimizer=optimizer.state_dict(),
-                                  step=step+1, frozen=frozen,
+                                  step=step+1, frozen=frozen, stage_steps=split,
+                                  global_batch=c.GLOBAL_BATCH,
                                   parent=str(run.PARENT), readout_audit=dict(audit), val_horizon_ce=score)
                     if step+1 == end:
                         atomic_save(root / ("stage_endpoint.pt" if frozen else "final.pt"), record)

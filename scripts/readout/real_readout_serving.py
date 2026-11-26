@@ -27,6 +27,7 @@ AUDIT_PREFIXES = 8
 
 def signature(exp, marker):
     return dict(arm=exp.arm, checkpoint=marker["checkpoint_sha256"],
+                model_sources=quality.model_sources(exp),
                 graphs=graphs.protocol_signature(),
                 evaluator=common.file_hash(Path(__file__)), patch=common.file_hash(PATCH),
                 loader=common.file_hash(Path(quality.__file__)),

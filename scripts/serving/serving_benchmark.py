@@ -29,17 +29,12 @@ experiment_configs = [c.Experiment(AUDIT_NAME, "audit")] + c.collect_experiments
 
 
 def protocol_signature():
-    return hashlib.sha256(
-        json.dumps(
-            [
-                common.file_hash(Path(__file__)),
-                common.file_hash(Path(runtime.__file__)),
-                common.file_hash(Path(c.__file__)),
-                common.file_hash(Path(evaluator.__file__)),
-                common.file_hash(Path(native_audit.__file__)),
-            ]
-        ).encode()
-    ).hexdigest()
+    inputs = (
+        evaluator.protocol_signature(),
+        common.file_hash(Path(__file__)),
+        common.file_hash(Path(runtime.__file__)),
+    )
+    return hashlib.sha256(json.dumps(inputs).encode()).hexdigest()
 
 
 def root_for(exp):

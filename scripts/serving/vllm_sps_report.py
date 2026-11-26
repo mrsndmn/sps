@@ -17,6 +17,8 @@ def report():
         results[exp.name], manifests[exp.name] = common.evaluation_record(exp, checkpoint)
     first = next(iter(manifests.values()))
     for manifest in manifests.values():
+        if manifest.get("evaluation_protocol") != first.get("evaluation_protocol"):
+            raise RuntimeError("Unmatched evaluation protocol")
         for key in (
             "indices",
             "dataset_revision",

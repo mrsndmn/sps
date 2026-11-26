@@ -176,3 +176,18 @@ def test_completed_results_cannot_be_reused_after_protocol_changes(
     })
     with pytest.raises(RuntimeError, match="another checkpoint"):
         bench.completed(exp, manifest)
+
+
+def test_serving_protocol_tracks_generation_configuration(monkeypatch):
+    from scripts.serving import draft_sweep, serving_graphs
+
+    protocols = (bench.protocol_signature, serving_graphs.protocol_signature,
+                 draft_sweep.protocol_signature)
+    before = [protocol() for protocol in protocols]
+    original = bench.common.file_hash
+    monkeypatch.setattr(
+        bench.common,
+        "file_hash",
+        lambda path: "changed" if Path(path).name == "instruct_config.py" else original(path),
+    )
+    assert all(protocol() != old for protocol, old in zip(protocols, before, strict=True))

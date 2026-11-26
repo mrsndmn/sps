@@ -52,20 +52,11 @@ AUDIT_ARMS = {"sps": 0, **{f"sps_mtp-{n}": n for n in DRAFT_LENGTHS}}
 
 
 def protocol_signature():
-    scripts = Path(__file__).resolve().parents[1]
-    sources = (
-        Path(__file__),
-        Path(bench.__file__),
-        Path(graph.__file__),
-        Path(c.__file__),
-        Path(bench.evaluator.__file__),
-        Path(native_audit.__file__),
-        scripts / "instruct_generation.py",
-        scripts / "report_mmlu_stem.py",
-    )
     parts = (
         HORIZONS,
-        {path.name: common.file_hash(path) for path in sources},
+        graph.BASE_PROTOCOL(),
+        common.file_hash(Path(__file__)),
+        common.file_hash(Path(graph.__file__)),
         runtime.signature(),
         graph.IMPLEMENTATION,
     )
@@ -554,7 +545,7 @@ def report():
             "num_speculative_tokens", 0
         ) != exp.draft_tokens:
             raise ValueError(f"Wrong draft length for {exp.name}")
-        trial_identity = tuple(
+        trial_identity = (measured.get("evaluation_protocol"),) + tuple(
             measured[key]
             for key in (
                 "indices",

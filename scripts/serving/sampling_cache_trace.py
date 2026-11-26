@@ -21,7 +21,7 @@ from scripts import mlspace_launch as launch
 
 ROOT = precision.ROOT.parent / 'sps-sampling-cache-trace'
 SOURCE = precision.root()
-BASE_IDENTITY = precision.identity
+BASE_IDENTITY = precision.recorded_identity
 
 @dataclass(frozen=True)
 class Experiment:

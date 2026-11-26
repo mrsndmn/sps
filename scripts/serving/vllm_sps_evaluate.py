@@ -14,6 +14,24 @@ from scripts import vllm_sps_config as c
 from scripts.mlspace_launch import store_json
 
 
+def protocol_signature():
+    repo = Path(__file__).resolve().parents[2]
+    files = (
+        Path(__file__),
+        Path(c.__file__),
+        Path(common.__file__),
+        Path(__file__).with_name("vllm_sps_audit.py"),
+        Path(__file__).with_name("vllm_sps_model.py"),
+        repo / "scripts/instruct_config.py",
+        repo / "scripts/instruct_common.py",
+        repo / "scripts/instruct_generation.py",
+        repo / "scripts/report_mmlu_stem.py",
+        repo / "src/modeling/models/sps/pretrained.py",
+    )
+    hashes = [common.file_hash(path) for path in files]
+    return hashlib.sha256(json.dumps(hashes).encode()).hexdigest()
+
+
 def select_examples(rows):
     from scripts.report_mmlu_stem import STEM_SUBJECTS
 
@@ -135,6 +153,7 @@ def evaluate(exp):
                 "Native/vLLM SPS greedy parity failed; inspect greedy_audit.json before benchmarking"
             )
     manifest = {
+        "evaluation_protocol": protocol_signature(),
         "experiment": exp.__dict__,
         "indices": selected,
         "arguments": arguments,
@@ -243,6 +262,7 @@ def evaluate(exp):
         root / "evaluated.json",
         {
             "checkpoint_sha256": trained["checkpoint_sha256"],
+            "evaluation_protocol": manifest["evaluation_protocol"],
             "experiment": exp.__dict__,
             "trials": result,
             "acceptance_counters_including_warmup": counters,

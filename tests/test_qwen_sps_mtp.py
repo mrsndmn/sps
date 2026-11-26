@@ -5,10 +5,23 @@ from pathlib import Path
 
 import pytest
 import torch
+from scripts.vllm_sps_model import QwenSPSMTP, horizon_targets
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
 from modeling.models.sps.pretrained import PretrainedSPS
-from scripts.vllm_sps_model import QwenSPSMTP, horizon_targets
+
+
+def test_legacy_optimizer_resume_checks_configured_learning_rate():
+    from scripts.vllm_sps_train import restore_optimizer
+
+    parameter = torch.nn.Parameter(torch.ones(1))
+    recorded = torch.optim.AdamW([parameter], lr=1e-3).state_dict()
+    optimizer = torch.optim.AdamW([parameter], lr=2e-3)
+    with pytest.raises(RuntimeError, match="optimizer settings"):
+        restore_optimizer(optimizer, recorded)
+    assert optimizer.param_groups[0]["lr"] == 2e-3
+    optimizer.param_groups[0]["lr"] = 1e-3
+    restore_optimizer(optimizer, recorded)
 
 
 def tiny(head_dim=8):

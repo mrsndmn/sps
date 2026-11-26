@@ -68,6 +68,8 @@ def evaluation_record(exp, checkpoint_sha256):
         or record.get("checkpoint_sha256", recorded_checksum) != checkpoint_sha256
     ):
         raise RuntimeError(f"Evaluation used another checkpoint: {root}")
+    if record.get("evaluation_protocol") != manifest.get("evaluation_protocol"):
+        raise RuntimeError(f"Evaluation results and manifest use different protocols: {root}")
     return record, manifest
 
 

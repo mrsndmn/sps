@@ -56,6 +56,25 @@ def optimizer_for(model, frozen):
     )
 
 
+def matches_schedule(state, steps, transition):
+    step = state["step"]
+    return (
+        0 < step <= steps
+        and state["frozen"] == (step <= transition)
+        and state.get("stage_steps", transition) == transition
+        and state.get("global_batch", c.GLOBAL_BATCH) == c.GLOBAL_BATCH
+    )
+
+
+def restore_optimizer(optimizer, state):
+    keys = ("lr", "betas", "weight_decay", "eps")
+    expected = [tuple(group[key] for key in keys) for group in optimizer.param_groups]
+    recorded = [tuple(group[key] for key in keys) for group in state["param_groups"]]
+    if recorded != expected:
+        raise RuntimeError("Resume optimizer settings differ from the configured run")
+    optimizer.load_state_dict(state)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", action="store_true")
@@ -87,14 +106,14 @@ def main():
         state = torch.load(
             root / "latest.pt", map_location="cpu", mmap=True, weights_only=False
         )
-        if not common.matches_training_input(state) or not 0 <= state["step"] <= steps:
+        if not common.matches_training_input(state) or not matches_schedule(state, steps, transition):
             raise RuntimeError("Resume provenance mismatch")
         model.load_state_dict(state["model"])
         start, best = state["step"], state["best"]
     frozen = start < transition
     optimizer = optimizer_for(model, frozen)
     if state is not None and state["frozen"] == frozen:
-        optimizer.load_state_dict(state["optimizer"])
+        restore_optimizer(optimizer, state["optimizer"])
     state = None
     ddp = DDP(model, device_ids=[local], broadcast_buffers=False)
     accumulation = c.GLOBAL_BATCH // world
@@ -107,6 +126,8 @@ def main():
                 "model": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "step": step,
+                "stage_steps": transition,
+                "global_batch": c.GLOBAL_BATCH,
                 "best": best,
                 "frozen": frozen,
                 "parent": str(c.PARENT),

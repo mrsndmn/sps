@@ -50,7 +50,7 @@ def signature():
         graph_protocol=graphs.protocol_signature()), sort_keys=True).encode()).hexdigest()
 
 
-def input_identity():
+def live_input_identity():
     manifest = graphs.verify_runtime()
     checkpoint = bench.trained()
     if common.file_hash(checkpoint['checkpoint']) != checkpoint['checkpoint_sha256']:
@@ -64,8 +64,21 @@ def input_identity():
                 rejection_sampler_sha256=common.file_hash(graphs.SITE/'vllm/v1/sample/rejection_sampler.py'))
 
 
+input_identity = live_input_identity
+
+
 def output_dir():
     return ROOT/'runs/out'/experiment_configs[0].name
+
+
+def recorded_input_identity(root):
+    recorded = json.loads((root/'identity.json').read_text())
+    report = json.loads((root/'report.json').read_text())
+    current = live_input_identity()
+    # Downstream diagnostics consume the recorded audit protocol and verify its inputs.
+    if report['identity'] != recorded or current != dict(recorded, design_signature=current['design_signature']):
+        raise RuntimeError('Recorded audit used different runtime or checkpoint inputs')
+    return recorded
 
 
 def frequency_check(values, probabilities, trials):

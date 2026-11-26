@@ -51,6 +51,7 @@ def dataset():
 def identity(exp, marker, data):
     files = ("real_readout_gsm8k", "real_readout_eval", "instruct_generation", "mmlu_generation")
     return dict(arm=exp.arm, mode=exp.mode, checkpoint=marker["checkpoint_sha256"],
+                model_sources=quality.model_sources(exp),
                 model=c.MODEL, revision=c.REVISION, generation=source.GENERATION[exp.mode],
                 seed=c.SEED, data=data, prompt=INSTRUCTION, code={
                     name: common.file_hash(Path(__file__).with_name(name + ".py")) for name in files})

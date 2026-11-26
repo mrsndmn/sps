@@ -4,11 +4,12 @@ import json
 from pathlib import Path
 
 import pytest
+from scripts.vllm_sps_evaluate import engine_arguments, select_examples
+from scripts.vllm_sps_run import payload
 
 from scripts import vllm_sps_config as c
 from scripts.serving import vllm_sps_common as common
-from scripts.vllm_sps_evaluate import engine_arguments, select_examples
-from scripts.vllm_sps_run import payload
+from scripts.serving import vllm_sps_run as launcher
 
 
 def test_eval_jobs_are_single_gpu_and_ordinary_sps_shares_speculative_checkpoint():
@@ -68,3 +69,23 @@ def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, lega
     checkpoint.write_bytes(b"other model")
     with pytest.raises(RuntimeError, match="checkpoint changed"):
         common.checked_checkpoint(common.trained())
+
+
+def test_direct_evaluation_reuses_only_its_live_protocol(tmp_path, monkeypatch):
+    monkeypatch.setattr(c, "ROOT", tmp_path)
+    monkeypatch.setattr(common, "trained", lambda: {"checkpoint_sha256": "checkpoint"})
+    exp = c.collect_experiments("eval")[0]
+    root = tmp_path / "runs/out" / exp.name
+    root.mkdir(parents=True)
+    record = {"experiment": vars(exp), "checkpoint_sha256": "checkpoint"}
+    manifest = dict(record, vllm_source=str(tmp_path / "vllm-code" / c.VLLM_COMMIT))
+    for protocol in (None, launcher.evaluator.protocol_signature(), "stale"):
+        (root / "evaluated.json").write_text(json.dumps(dict(record, evaluation_protocol=protocol)))
+        (root / "manifest.json").write_text(json.dumps(dict(manifest, evaluation_protocol=protocol)))
+        if protocol is None:
+            launcher.check_evaluation(exp, dry=True)
+        if protocol == launcher.evaluator.protocol_signature():
+            launcher.check_evaluation(exp, dry=False)
+        else:
+            with pytest.raises(RuntimeError, match="another protocol"):
+                launcher.check_evaluation(exp, dry=False)
