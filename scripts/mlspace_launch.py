@@ -18,6 +18,7 @@ from experiments import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
                         collect_experiments, output_dir, design_signature, SUITE, training_marker, EVAL_NUM_GPUS)
 from scripts.pilot_headers import HEADER_ROOT
+from scripts.suite_registry import AR_SPS_SUITES, EVAL_ONLY_SUITES, INSTRUCT_SUITE, WORKER_MODULES
 
 
 def git(*args):
@@ -154,26 +155,14 @@ def submit_payload(client, body, phase, name, commit):
 
 
 def payload(phase, name, staged, author, nick):
-    command = [str(PYTHON), '-m', 'scripts.mtp_run' if SUITE in {'mtp', 'mtp-unfreeze'} else 'scripts.pilot_run', phase]
-    if SUITE == 'spec-baselines':
-        command = [str(PYTHON), '-m', 'scripts.spec_baseline_run', phase]
-    if SUITE == 'mtp-unified':
-        command = [str(PYTHON), '-m', 'scripts.mtp_unified_evaluate', phase]
-    if SUITE == 'mtp-parallel':
-        command = [str(PYTHON), '-m', 'scripts.mtp_parallel_evaluate', phase]
-    if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
-        command = [str(PYTHON), '-m', 'scripts.ar_sps_run', phase]
-    if SUITE in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'}:
-        command = [str(PYTHON), '-m', 'scripts.mmlu_run', phase]
-    if SUITE == 'ar-sps-qwen3-1.7b-instruct':
-        command = [str(PYTHON), '-m', 'scripts.instruct_run', phase]
+    command = [str(PYTHON), '-m', WORKER_MODULES[SUITE], phase]
     if phase != 'prepare':
         command += ['--filter', name]
     return dict(
         # MLSpace validates script as a single shell line (newlines rejected).
         script=f'cd {shlex.quote(str(staged))} && ' + shlex.join(command),
         job_desc=f'sps-{"pilot" if SUITE == "1b" else SUITE} {phase} {name} #{author} @{nick}',
-        env_variables={**({'HF_HUB_DISABLE_XET': '1'} if SUITE == 'ar-sps-qwen3-1.7b-instruct' else {}),
+        env_variables={**({'HF_HUB_DISABLE_XET': '1'} if SUITE == INSTRUCT_SUITE else {}),
                        'PYTHONPATH': f'{staged}:{staged}/src',
                        'SPS_EXPERIMENT_SUITE': SUITE,
                        'HF_HOME': str(HF_HOME), 'PYTHONUNBUFFERED': '1',
@@ -203,8 +192,8 @@ def main(default_phase='train'):
 
 
 def submit(args):
-    if SUITE in {'mtp-parallel','mtp-unified','mmlu-generation','mmlu-stem-generation','mmlu-full-resume'} and args.phase != 'eval':
-        raise ValueError('mtp-parallel is evaluation-only')
+    if SUITE in EVAL_ONLY_SUITES and args.phase != 'eval':
+        raise ValueError(f'{SUITE} is evaluation-only')
     repo = Path(git('rev-parse', '--show-toplevel'))
     commit = git('rev-parse', 'HEAD')
     candidates = [('data-and-probes', ARTIFACTS_ROOT / 'prepared.json')] if args.phase == 'prepare' else [
@@ -213,9 +202,10 @@ def submit(args):
     if not candidates:
         raise ValueError('No matching experiments')
     if not args.dry:
-        if (args.phase == 'train' or (SUITE in {'ar-sps-qwen3-1.7b-instruct', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'} and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
+        needs_ar_preparation = SUITE in AR_SPS_SUITES or SUITE == INSTRUCT_SUITE
+        if (args.phase == 'train' or (needs_ar_preparation and args.phase == 'eval')) and not (ARTIFACTS_ROOT / 'prepared.json').exists():
             raise RuntimeError('Complete --phase prepare and inspect measured estimates first')
-        if SUITE in {'ar-sps-qwen3-1.7b-instruct', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'} and args.phase in {'train', 'eval'}:
+        if needs_ar_preparation and args.phase in {'train', 'eval'}:
             prepared = json.loads((ARTIFACTS_ROOT / 'prepared.json').read_text())
             if prepared.get('design_signature') != design_signature():
                 raise RuntimeError('Stale AR-SPS preparation marker')
@@ -255,10 +245,10 @@ def submit(args):
             continue
         # Single submission attempt: never hold an ephemeral shell retrying a
         # quota failure. The caller may retry after the allocation changes.
-        if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
+        if SUITE in AR_SPS_SUITES:
             from scripts.ar_sps_run import reserve
             reserve(args.phase, name)
-        if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+        if SUITE == INSTRUCT_SUITE:
             from scripts.instruct_run import reserve
             reserve(args.phase, name)
         jobs.append(submit_payload(client, body, args.phase, name, commit))

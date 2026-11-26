@@ -5,8 +5,11 @@ import hashlib
 import json
 import os
 
+from scripts.suite_registry import (AR_SPS_SUITES, INSTRUCT_SUITE, LARGE_AR_SPS_SUITES,
+                                    MMLU_SUITES, WORKER_MODULES)
+
 SUITE = os.environ.get('SPS_EXPERIMENT_SUITE', '1b')
-if SUITE not in {'ar-sps-qwen3-1.7b-instruct', 'mmlu-full-resume', 'mmlu-stem-generation', 'mmlu-generation', '1b', '10b', 'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified', 'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
+if SUITE not in WORKER_MODULES:
     raise ValueError(f'Unknown SPS_EXPERIMENT_SUITE={SUITE!r}')
 COMMON_ROOT = Path('/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts')
 ARTIFACTS_ROOT = COMMON_ROOT if SUITE == '1b' else COMMON_ROOT / SUITE
@@ -155,13 +158,13 @@ def overrides(exp, *, probe=False):
 
 
 def train_command(exp, *, probe=False):
-    if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+    if SUITE == INSTRUCT_SUITE:
         if not exp.trainable:
             raise ValueError('The original instruct model does not require training')
         return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
                 f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.instruct_train',
                 '--filter', exp.name, *(['--probe'] if probe else [])]
-    if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
+    if SUITE in AR_SPS_SUITES:
         return [str(PYTHON), '-m', 'torch.distributed.run', '--standalone',
                 f'--nproc_per_node={exp.num_gpus}', '-m', 'scripts.ar_sps_train',
                 '--filter', exp.name, *(['--probe'] if probe else [])]
@@ -194,11 +197,11 @@ def design_signature():
                      repo / 'scripts/train.py', repo / 'scripts/evaluate.py'])
     if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel', 'spec-baselines', 'mtp-unified'}:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/mtp*.py'), *repo.glob('scripts/spec_baseline*.py')]
-    if SUITE in {'ar-sps', 'ar-sps-kd', 'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
+    if SUITE in AR_SPS_SUITES:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/ar_sps*.py')]
-    if SUITE in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'}:
+    if SUITE in MMLU_SUITES:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/mmlu*.py'), repo / 'scripts/report_mmlu_stem.py']
-    if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+    if SUITE == INSTRUCT_SUITE:
         inputs += [repo / 'experiments.py', *repo.glob('scripts/instruct*.py'),
                    *repo.glob('scripts/mmlu*.py'), repo / 'scripts/report_mmlu_stem.py',
                    repo / 'scripts/mlspace_launch.py', repo / 'pyproject.toml', repo / 'uv.lock',
@@ -210,11 +213,11 @@ def design_signature():
                   commands=[train_command(e) for e in experiment_configs if e.trainable],
                   probes=[train_command(e, probe=True) for e in experiment_configs if e.trainable],
                   tasks=TASKS, sources=sources)
-    if SUITE in {'ar-sps-360m-ce', 'ar-sps-1.7b-ce', 'ar-sps-360m-kd', 'ar-sps-1.7b-kd', 'ar-sps-qwen3-0.6b', 'ar-sps-qwen3-1.7b'}:
+    if SUITE in LARGE_AR_SPS_SUITES:
         from scripts import ar_sps_config as c
         design['large_ce'] = dict(suite=SUITE, model=c.MODEL, revision=c.REVISION,
                                   micro_batch=c.MICRO_BATCH, eval_batch=c.EVAL_BATCH)
-    if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+    if SUITE == INSTRUCT_SUITE:
         from scripts import instruct_config as c
         design['instruct'] = dict(suite=SUITE, model=c.MODEL, revision=c.REVISION)
     return hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
@@ -224,7 +227,7 @@ def training_marker(exp):
     """Evaluation-only suites consume immutable completed runs."""
     if SUITE in {'mtp-parallel','mtp-unified'} or (SUITE == 'spec-baselines' and exp.recipe == 'existing_mtp'):
         return COMMON_ROOT / 'mtp-unfreeze/runs/out' / (exp.reference_name or exp.name) / 'trained.json'
-    if SUITE in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'} and exp.variant != 'base':
+    if SUITE in MMLU_SUITES and exp.variant != 'base':
         return COMMON_ROOT / exp.suite / 'runs/out' / exp.arm / 'trained.json'
     if not exp.trainable:
         return None
@@ -285,12 +288,12 @@ if SUITE == 'mtp-unified':
         reference_name=f's_sps_mtp_n{n}_unfreeze_ce_50m',trainable=False) for n in (2,3,4)]
 
 
-if SUITE in {"ar-sps", "ar-sps-kd", "ar-sps-360m-ce", "ar-sps-1.7b-ce", "ar-sps-360m-kd", "ar-sps-1.7b-kd", "ar-sps-qwen3-0.6b", "ar-sps-qwen3-1.7b"}:
+if SUITE in AR_SPS_SUITES:
     from scripts.ar_sps_config import experiment_configs
 
-if SUITE in {'mmlu-generation', 'mmlu-stem-generation', 'mmlu-full-resume'}:
+if SUITE in MMLU_SUITES:
     from scripts.mmlu_config import experiment_configs
     TASKS = (SUITE.replace('-', '_'),)
 
-if SUITE == 'ar-sps-qwen3-1.7b-instruct':
+if SUITE == INSTRUCT_SUITE:
     from scripts.instruct_config import experiment_configs

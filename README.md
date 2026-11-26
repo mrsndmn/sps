@@ -143,14 +143,38 @@ binary falls back to a serif approximation instead of failing.
 
 ## Repository layout
 
-```text
-src/modeling/        model implementations (standard, sps, reverse_sps, delayed_state),
-                     Triton attention kernels, evaluation adapter, and tests
-scripts/             train.py, evaluate.py, and figures/ tables/ analysis/ benchmark/ utilities
-conf/                Hydra configs (model/ data/ experiment/ optimizer/ scheduler/ ...)
-src/data/            dataset tokenization (FineWeb-Edu)
-lm_eval_tasks/       custom lm-eval corpus-NLL task definitions
-```
+Start with the research question in `experiments/`. Each note names the training
+function and records results and conclusions. The implementation defines the runs.
+
+| Where to look | What lives there |
+| --- | --- |
+| `conf/`, `scripts/train.py`, `scripts/evaluate.py` | Hydra recipes and entry points for direct training and evaluation. |
+| `src/`, `lm_eval_tasks/` | Model implementations, data preparation, training utilities, and evaluation tasks. |
+| `run_train_jobs.py`, `run_eval.py` | Shared MLSpace launchers. Look up the suite's worker in `scripts/suite_registry.py` and its experiment definitions in `experiments.py` or the configuration module it imports. |
+| `scripts/` | Also contains independently launched experiment families. For example, `scripts/real_readout_run.py` defines training and `scripts/real_readout_mmlu.py` evaluates its checkpoints. |
+| `tests/` | Experiment, worker and orchestration tests. Model tests also live under `src/modeling/tests/`. |
+| `docs/paper/`, `figures/` | Manuscript sources and supporting material in the former, figures for the original SPS paper in the latter. |
+
+### Following an experiment into storage
+
+`experiments.COMMON_ROOT` points to the shared `sps-artifacts/` directory beside
+this checkout. Most experiment families have their own directory there. The
+original `1b` pilot uses the root itself. Shared infrastructure includes `code/`
+for staged worker snapshots and `hf/` for the Hugging Face cache.
+
+For example, follow the real-readout experiment from
+`experiments/qwen3-instruct-real-readout-mtp.md` to `scripts/real_readout_run.py`.
+Its artifact directory is `qwen3-instruct-real-readout-mtp/` under the shared root:
+
+- `runs/out/qwen3_real_readout_mtp/` holds training outputs.
+- `full-mmlu-generation/runs/out/A-nonthinking/` holds one evaluation.
+  Read `manifest.json` for its inputs, `answers.jsonl` for per-question outputs,
+  and `evaluated.json` for the aggregate result.
+- `submissions/` under a launcher’s artifact directory holds its job receipts.
+
+Inside the checkout, `outputs/` holds local analysis products and exports.
+`run/` also contains local orchestration state, including job observations.
+The worker's output paths identify the shared results used downstream.
 
 ## Tests
 
@@ -170,9 +194,7 @@ missing pilot shards, tokenizes them, and measures both methods with four-GPU DD
 Inspect `prepared.json`, then `python run_train_jobs.py` submits training.
 `python run_eval.py` submits the downstream tasks after training succeeds.
 
-Artifacts live outside the checkout at `/home/jovyan/sps-artifacts`, a local link
-to the shared NFS target specified in `experiments.py`. Workers use that NFS target
-directly: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
+Pilot workers write directly to the shared NFS target in `experiments.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
 checkpoints and evaluation outputs, `sanity` holds throughput probes, `code` holds
 immutable committed snapshots, `hf` holds downloaded HF shards, and `submissions`
 holds full job-ID receipts. The existing project venv is reused; do not mutate its
