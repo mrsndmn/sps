@@ -152,15 +152,16 @@ def prepare_short_export(export, *, create=True):
             staged.rename(target)
 
 
-def audit_evidence(checkpoint):
-    references = BASE_REFERENCE_TOKENS(checkpoint)
+def audit_evidence(checkpoint, *, protocol=None):
+    expected = protocol or protocol_signature()
+    references = BASE_REFERENCE_TOKENS(checkpoint, protocol=expected)
     root = bench.root_for(AUDIT)
     summary = {}
     baseline = None
     for arm in AUDIT_ARMS:
-        graph.validate_evidence(root / f"graphs-{arm}.json")
+        graph.validate_evidence(root / f"graphs-{arm}.json", protocol=expected)
         data = json.loads((root / f"{arm}.json").read_text())
-        if data["protocol_signature"] != protocol_signature():
+        if data["protocol_signature"] != expected:
             raise RuntimeError(f"Greedy comparison uses another protocol: {arm}")
         actuals = []
         for ref, sample in zip(references, data["samples"], strict=True):
@@ -185,11 +186,11 @@ def audit_evidence(checkpoint):
     return summary
 
 
-def check_gate(manifest):
-    BASE_GATE(manifest)
+def check_gate(manifest, *, protocol=None):
+    BASE_GATE(manifest, protocol=protocol)
     checkpoint = bench.trained()
     prepare_short_export(checkpoint["export"], create=False)
-    audit_evidence(checkpoint)
+    audit_evidence(checkpoint, protocol=protocol)
 
 
 def audit_arm(arm):
@@ -340,7 +341,7 @@ def worker(phase, exp):
     )
 
 
-def complete(phase, exp, manifest=None):
+def complete(phase, exp, manifest=None, *, protocol=None):
     if phase in {"probe", "train"}:
         marker = (
             ROOT / "prepared.json"
@@ -354,12 +355,12 @@ def complete(phase, exp, manifest=None):
         else:
             bench.trained()
         return True
-    if not bench.completed(exp, manifest):
+    if not bench.completed(exp, manifest, protocol=protocol):
         return False
     if phase == "eval":
-        graph.validate_evidence(bench.root_for(exp) / "cudagraph.json")
+        graph.validate_evidence(bench.root_for(exp) / "cudagraph.json", protocol=protocol)
         if exp.draft_tokens:
-            untimed_counters(exp)
+            untimed_counters(exp, protocol=protocol)
     return True
 
 
@@ -471,10 +472,10 @@ def submit(args, choices):
     print(json.dumps({"phase": phase, "jobs": jobs, "deferred": deferred}), flush=True)
 
 
-def untimed_counters(exp):
+def untimed_counters(exp, *, protocol=None):
     path = bench.root_for(exp) / "untimed-counters.json"
     data = json.loads(path.read_text())
-    if data["protocol_signature"] != protocol_signature():
+    if data["protocol_signature"] != (protocol or protocol_signature()):
         raise RuntimeError(
             f"Untimed counter snapshot uses another protocol: {exp.name}"
         )
@@ -524,12 +525,13 @@ def counter_metrics(result, draft, untimed=()):
 
 def report():
     manifest = graph.verify_runtime()
+    protocol = bench.audit_protocol()
     results = {}
     checkpoint = bench.trained()
     export = checkpoint["export"]
     identity = None
     for exp in experiment_configs:
-        if not complete("eval", exp, manifest):
+        if not complete("eval", exp, manifest, protocol=protocol):
             raise RuntimeError(f"Incomplete arm: {exp.name}")
         root = bench.root_for(exp)
         measured = json.loads((root / "manifest.json").read_text())
@@ -545,7 +547,7 @@ def report():
             "num_speculative_tokens", 0
         ) != exp.draft_tokens:
             raise ValueError(f"Wrong draft length for {exp.name}")
-        trial_identity = (measured.get("evaluation_protocol"),) + tuple(
+        trial_identity = (common.recorded_evaluation_protocol(measured),) + tuple(
             measured[key]
             for key in (
                 "indices",
@@ -589,7 +591,7 @@ def report():
                 **counter_metrics(
                     result,
                     exp.draft_tokens,
-                    untimed_counters(exp) if exp.draft_tokens else (),
+                    untimed_counters(exp, protocol=protocol) if exp.draft_tokens else (),
                 ),
             )
         )
@@ -598,10 +600,10 @@ def report():
         target / "results.json",
         {
             "checkpoint_sha256": checkpoint["checkpoint_sha256"],
-            "protocol_signature": protocol_signature(),
+            "protocol_signature": protocol,
             "rows": rows,
             "acceptance_scope": "Timed requests only. Per-position denominator is all timed drafts.",
-            "greedy_diagnostics": audit_evidence(checkpoint),
+            "greedy_diagnostics": audit_evidence(checkpoint, protocol=protocol),
         },
     )
     with (target / "summary.csv").open("w", newline="") as stream:
@@ -624,12 +626,7 @@ def main():
     args = parser.parse_args()
     configure()
     if args.report:
-        with (
-            patch.dict(globals(), protocol_signature=bench.audit_protocol),
-            patch.object(bench, "protocol_signature", bench.audit_protocol),
-            patch.object(graph, "protocol_signature", bench.audit_protocol),
-        ):
-            return report()
+        return report()
     if args.reference_worker:
         prepare_short_export(bench.trained()["export"])
         return bench.make_reference()

@@ -195,9 +195,9 @@ class GraphReplayWorkerExtension:
         return stop_tracking(self)
 
 
-def validate_evidence(path):
+def validate_evidence(path, *, protocol=None):
     data = json.loads(path.read_text())
-    if data.get("protocol_signature") != protocol_signature():
+    if data.get("protocol_signature") != (protocol or protocol_signature()):
         raise RuntimeError("Graph replay evidence uses another protocol")
     workers = data.get("workers", [])
     if (
@@ -259,16 +259,16 @@ def evaluate(exp):
     with_graph_engine(BASE_EVALUATE, exp, bench.root_for(exp) / "cudagraph.json")
 
 
-def check_gate(manifest):
-    BASE_GATE(manifest)
+def check_gate(manifest, *, protocol=None):
+    BASE_GATE(manifest, protocol=protocol)
     for arm in ("sps", "sps_mtp"):
-        validate_evidence(ROOT / "runs/out" / bench.AUDIT_NAME / f"graphs-{arm}.json")
+        validate_evidence(ROOT / "runs/out" / bench.AUDIT_NAME / f"graphs-{arm}.json", protocol=protocol)
 
 
-def completed(exp, manifest):
-    result = BASE_COMPLETED(exp, manifest)
+def completed(exp, manifest, *, protocol=None):
+    result = BASE_COMPLETED(exp, manifest, protocol=protocol)
     if result and exp.arm != "audit":
-        validate_evidence(bench.root_for(exp) / "cudagraph.json")
+        validate_evidence(bench.root_for(exp) / "cudagraph.json", protocol=protocol)
     return result
 
 
@@ -326,15 +326,11 @@ def main():
         from scripts import vllm_sps_report
 
         manifest = verify_runtime()
-        # Reporting verifies agreement with the recorded audit and its runtime.
-        # Launching and running jobs still validate against the live protocol.
-        with patch.dict(globals(), protocol_signature=bench.audit_protocol), patch.object(
-            bench, "protocol_signature", bench.audit_protocol
-        ):
-            for exp in bench.selected("eval"):
-                if not completed(exp, manifest):
-                    raise RuntimeError(f"Incomplete graph arm: {exp.name}")
-            return vllm_sps_report.report()
+        protocol = bench.audit_protocol()
+        for exp in bench.selected("eval"):
+            if not completed(exp, manifest, protocol=protocol):
+                raise RuntimeError(f"Incomplete graph arm: {exp.name}")
+        return vllm_sps_report.report()
     bench.main()
 
 

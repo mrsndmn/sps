@@ -90,11 +90,11 @@ def audit_protocol():
     return json.loads((root / "serving-protocol.json").read_text())["protocol_signature"]
 
 
-def reference_tokens(checkpoint):
+def reference_tokens(checkpoint, *, protocol=None):
     data = json.loads(reference_path().read_text())
     if (
         data["checkpoint_sha256"] != checkpoint["checkpoint_sha256"]
-        or data["protocol_signature"] != protocol_signature()
+        or data["protocol_signature"] != (protocol or protocol_signature())
     ):
         raise RuntimeError("Greedy oracle provenance mismatch")
     samples = data["samples"]
@@ -274,7 +274,7 @@ def payload(exp, staged, phase):
     return body
 
 
-def check_gate(manifest):
+def check_gate(manifest, *, protocol=None):
     data = json.loads((c.ROOT / "runs/out" / AUDIT_NAME / "evaluated.json").read_text())
     if (
         data["runtime_signature"] != runtime.signature()
@@ -286,22 +286,24 @@ def check_gate(manifest):
     )
     if recorded != manifest:
         raise RuntimeError("Greedy audit runtime manifest changed")
-    if audit_protocol() != protocol_signature():
+    if audit_protocol() != (protocol or protocol_signature()):
         raise RuntimeError("Greedy audit serving protocol changed")
 
 
-def completed(exp, manifest):
+def completed(exp, manifest, *, protocol=None):
     marker = root_for(exp) / "evaluated.json"
     if not marker.exists():
         return False
     if json.loads((root_for(exp) / "serving-runtime.json").read_text()) != manifest:
         raise RuntimeError("Completed evaluation used another runtime")
     context = json.loads((root_for(exp) / "serving-protocol.json").read_text())
-    if context["protocol_signature"] != protocol_signature():
+    if context["protocol_signature"] != (protocol or protocol_signature()):
         raise RuntimeError("Completed evaluation used another serving protocol")
     if exp.arm != "audit":
-        common.evaluation_record(exp, trained()["checkpoint_sha256"])
-    check_gate(manifest)
+        _, measured = common.evaluation_record(exp, trained()["checkpoint_sha256"])
+        if protocol is None and measured.get("evaluation_protocol") != evaluator.protocol_signature():
+            raise RuntimeError("Completed evaluation used another evaluator")
+    check_gate(manifest, protocol=protocol)
     return True
 
 

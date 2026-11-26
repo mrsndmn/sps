@@ -56,20 +56,28 @@ def probe_seconds(path):
     return embedding * c.STAGE_STEPS + full * (c.TRAIN_STEPS - c.STAGE_STEPS)
 
 
+def recorded_evaluation_protocol(record):
+    field = "evaluation_protocol" if "evaluation_protocol" in record else "design_signature"
+    digest = record.get(field)
+    if not isinstance(digest, str) or not digest:
+        raise RuntimeError(f"Evaluation is missing {field}")
+    return field, digest
+
+
 def evaluation_record(exp, checkpoint_sha256):
     root = c.ROOT / "runs/out" / exp.name
     record = json.loads((root / "evaluated.json").read_text())
     manifest = json.loads((root / "manifest.json").read_text())
     if record["experiment"] != vars(exp) or manifest["experiment"] != vars(exp):
         raise RuntimeError(f"Evaluation used another experiment: {root}")
-    recorded_checksum = manifest["checkpoint_sha256"]
-    if (
-        recorded_checksum != checkpoint_sha256
-        or record.get("checkpoint_sha256", recorded_checksum) != checkpoint_sha256
-    ):
-        raise RuntimeError(f"Evaluation used another checkpoint: {root}")
-    if record.get("evaluation_protocol") != manifest.get("evaluation_protocol"):
+    protocol = recorded_evaluation_protocol(manifest)
+    if recorded_evaluation_protocol(record) != protocol:
         raise RuntimeError(f"Evaluation results and manifest use different protocols: {root}")
+    recorded_checksum = manifest["checkpoint_sha256"]
+    legacy_checksum = recorded_checksum if protocol[0] == "design_signature" else None
+    result_checksum = record.get("checkpoint_sha256", legacy_checksum)
+    if recorded_checksum != checkpoint_sha256 or result_checksum != checkpoint_sha256:
+        raise RuntimeError(f"Evaluation used another checkpoint: {root}")
     return record, manifest
 
 

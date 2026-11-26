@@ -79,13 +79,19 @@ def test_direct_evaluation_reuses_only_its_live_protocol(tmp_path, monkeypatch):
     root.mkdir(parents=True)
     record = {"experiment": vars(exp), "checkpoint_sha256": "checkpoint"}
     manifest = dict(record, vllm_source=str(tmp_path / "vllm-code" / c.VLLM_COMMIT))
-    for protocol in (None, launcher.evaluator.protocol_signature(), "stale"):
-        (root / "evaluated.json").write_text(json.dumps(dict(record, evaluation_protocol=protocol)))
-        (root / "manifest.json").write_text(json.dumps(dict(manifest, evaluation_protocol=protocol)))
-        if protocol is None:
-            launcher.check_evaluation(exp, dry=True)
-        if protocol == launcher.evaluator.protocol_signature():
-            launcher.check_evaluation(exp, dry=False)
+    live = launcher.evaluator.protocol_signature()
+    for protocol in ({"design_signature": "archived"},
+                     {"evaluation_protocol": live}, {"evaluation_protocol": "stale"}):
+        (root / "evaluated.json").write_text(json.dumps(dict(record, **protocol)))
+        (root / "manifest.json").write_text(json.dumps(dict(manifest, **protocol)))
+        if "design_signature" in protocol:
+            assert not launcher.check_evaluation(exp, dry=True)
+        if protocol.get("evaluation_protocol") == live:
+            assert launcher.check_evaluation(exp, dry=False)
         else:
             with pytest.raises(RuntimeError, match="another protocol"):
                 launcher.check_evaluation(exp, dry=False)
+    (root / "evaluated.json").write_text(json.dumps(dict(record, design_signature="different")))
+    (root / "manifest.json").write_text(json.dumps(dict(manifest, design_signature="archived")))
+    with pytest.raises(RuntimeError, match="different protocols"):
+        launcher.check_evaluation(exp, dry=True)

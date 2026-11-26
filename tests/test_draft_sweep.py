@@ -160,7 +160,7 @@ def test_greedy_mismatch_is_reported_but_missing_graph_evidence_blocks(
     tmp_path, monkeypatch
 ):
     ref = {"prompt_token_ids": [1], "expected_token_ids": [2]}
-    monkeypatch.setattr(sweep, "BASE_REFERENCE_TOKENS", lambda _: [ref])
+    monkeypatch.setattr(sweep, "BASE_REFERENCE_TOKENS", lambda _, **kwargs: [ref])
     monkeypatch.setattr(sweep.bench, "root_for", lambda _: tmp_path)
     monkeypatch.setattr(sweep.graph, "protocol_signature", sweep.protocol_signature)
     signature = sweep.protocol_signature()
