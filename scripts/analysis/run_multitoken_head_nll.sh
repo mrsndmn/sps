@@ -97,7 +97,7 @@ variant_label() { case "$1" in full-attention) echo "Standard";; sps-w64) echo "
 variant_dir()   { case "$1" in full-attention) echo "full_attention";; sps-w64) echo "sps_w64";; sps-w4096) echo "sps_w4096";; delayed-state-w64) echo "delayed_state_w64";; *) echo "$1";; esac; }
 
 # Where the training runs wrote their checkpoints, mirroring run_persistent_window_nll.sh.
-OUT_ROOT="${OUT_ROOT:-$SHARED_OUTPUTS}"
+OUT_ROOT="${OUT_ROOT:-${DATA_ROOT}/out}"
 CKPT_FILE="${CKPT_FILE:-ckpt_tokens_20000145408_final.pt}"
 BUDGET="${BUDGET:-20b}"
 
