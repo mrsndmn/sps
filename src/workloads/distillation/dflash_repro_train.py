@@ -23,14 +23,17 @@ from data import instruct_data
 from orchestration import mlspace_launch as launch
 from orchestration.named.publication import work_path
 from workloads.distillation import qwen4b_drafter_data as prepared, qwen4b_drafter_train as previous
-from experiments.dflash_repro_train import TrainArguments, experiment_configs
+from experiments.dflash_repro import TrainArguments
+from experiments.dflash_repro_train import HardDFlash as Config
 
 
 
 def training_settings(experiment):
     settings = asdict(experiment)
-    for key in ("output_root", "eval_dir_pattern", "eval_protocol", "selection_file"):
-        settings.pop(key, None)
+    for key in ("result_dir", "selection_file"):
+        del settings[key]
+    # Published checkpoints record the training allocation under this key.
+    settings["num_gpus"] = settings.pop("train_gpus")
     return settings
 
 
@@ -47,7 +50,7 @@ def input_provenance(experiment):
 
 
 def total_steps(row_count, exp):
-    if row_count % exp.global_batch or exp.global_batch % exp.num_gpus:
+    if row_count % exp.global_batch or exp.global_batch % exp.train_gpus:
         raise ValueError("DFlash training requires complete global batches")
     return row_count // exp.global_batch * exp.epochs
 
@@ -192,8 +195,8 @@ def load_checkpoint(folder, model, optimizer, schedule, design):
     return state["step"]
 
 
-def checkpoint_path(step, experiment):
-    return work_path(experiment.output("train")) / f"step-{step:05d}"
+def checkpoint_path(step, train_dir):
+    return work_path(train_dir) / f"step-{step:05d}"
 
 
 def train(probe, experiment):
@@ -204,8 +207,8 @@ def train(probe, experiment):
     torch.cuda.set_device(local)
     dist.init_process_group("nccl")
     rank, world = dist.get_rank(), dist.get_world_size()
-    if world != experiment.num_gpus:
-        raise RuntimeError(f"Expected {experiment.num_gpus} DDP ranks, got {world}")
+    if world != experiment.train_gpus:
+        raise RuntimeError(f"Expected {experiment.train_gpus} DDP ranks, got {world}")
     device = torch.device("cuda", local)
     design = training_inputs(experiment)
     corpus = prepared.open_dataset(experiment.corpus_repo, experiment.corpus_revision, experiment.corpus_rows)
@@ -223,7 +226,7 @@ def train(probe, experiment):
     milestone_steps = (*experiment.milestones, steps)
     if not probe:
         for at in reversed(milestone_steps):
-            folder = checkpoint_path(at, experiment=experiment)
+            folder = checkpoint_path(at, experiment.result_dir)
             if folder.is_dir():
                 start = load_checkpoint(folder, model, optimizer, schedule, design)
                 if start != at:
@@ -272,13 +275,13 @@ def train(probe, experiment):
             durations.append(seconds)
         if not probe and step + 1 in milestone_steps:
             if rank == 0:
-                save_checkpoint(checkpoint_path(step + 1, experiment=experiment), model, optimizer, schedule, step + 1, design)
+                save_checkpoint(checkpoint_path(step + 1, experiment.result_dir), model, optimizer, schedule, step + 1, design)
             dist.barrier()
     peak = torch.tensor(torch.cuda.max_memory_allocated(device), device=device, dtype=torch.int64)
     dist.all_reduce(peak, op=dist.ReduceOp.MAX)
     if rank == 0:
         if probe:
-            launch.store_json(work_path(experiment.output("probe")) / "prepared.json", dict(
+            launch.store_json(work_path(experiment.result_dir) / "prepared.json", dict(
                 design=design, gpu=torch.cuda.get_device_name(device), world=world,
                 full_steps=steps, measured_steps=len(durations), wall_seconds=time.monotonic()-startup,
                 mean_step_seconds=mean(durations), median_step_seconds=median(durations),
@@ -286,7 +289,7 @@ def train(probe, experiment):
                 estimated_full_hours=mean(durations)*steps/3600,
             ))
         else:
-            launch.store_json(checkpoint_path(steps, experiment=experiment).parent / "trained.json", dict(
+            launch.store_json(work_path(experiment.result_dir) / "trained.json", dict(
                 design=design, steps=steps, rows=len(train_indices), checkpoints=milestone_steps,
             ))
     dist.barrier()

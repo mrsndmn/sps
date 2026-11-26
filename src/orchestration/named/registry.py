@@ -21,21 +21,23 @@ FAMILIES = {
     "vllm-sps-draft-sweep": "draft_sweep",
     "qwen4b-drafter": "qwen4b_drafter",
     "dflash-mask-ablation": "dflash_mask_ablation",
-    "dflash-reproduction": "dflash_repro_train",
-    "dflash-soft-kd": "dflash_kd_train",
+    "dflash-reproduction": "dflash_repro_train:HardDFlash",
+    "dflash-soft-kd": "dflash_kd_train:SoftKD",
     "qwen3-teacher-cap-probe": "teacher_cap_probe",
     "qwen35-unloop-cap-compare": "qwen35_cap_compare",
 }
 
 
-def family_module(family):
-    return import_module("experiments." + FAMILIES[family])
+def family_definition(family):
+    module_name, _, class_name = FAMILIES[family].partition(":")
+    module = import_module("experiments." + module_name)
+    return getattr(module, class_name) if class_name else module
 
 
 def family_runs(family):
-    module = family_module(family)
+    definition = family_definition(family)
     runs = {}
-    for run in module.launches(family):
+    for run in definition.launches(family):
         key = (run.name, run.phase)
         if key in runs:
             raise ValueError(f"Duplicate {run.phase} run {family}/{run.name}")

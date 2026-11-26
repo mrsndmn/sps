@@ -7,7 +7,7 @@ import tempfile
 
 from workloads.distillation import dflash_kd_train as training, dflash_repro as runner
 from workloads.distillation import dflash_repro_eval as evaluation
-from experiments.dflash_repro_train import BASELINE
+from experiments.dflash_repro_train import HARD_BASELINE_NAME
 from orchestration import mlspace_launch as launch
 
 
@@ -22,11 +22,11 @@ def evaluate(args):
         report.update(
             design=args.name,
             evaluation=evaluation.signature(),
-            hard_design=BASELINE.name,
+            hard_design=HARD_BASELINE_NAME,
             objective="soft-kl",
         )
         launch.store_json(result, report)
 
 
 def main():
-    runner.run(training, "scripts/distillation/dflash_kd.py", evaluate)
+    runner.run(training, evaluate)

@@ -253,12 +253,12 @@ def test_second_dflash_config_reaches_worker_and_owns_its_output(tmp_path):
         shutil.copy(repo / script, tmp_path / script)
     artifacts = tmp_path / "artifacts"
     config = tmp_path / "src/experiments/dflash_repro_train.py"
-    with config.open("a") as stream:
-        stream.write(
-            '\nexperiment_configs.append(Experiment(name="second", '
-            f"output_root=Path({str(artifacts / 'custom')!r}), "
-            'eval_dir_pattern="eval-{step}", eval_protocol=GSM8KProtocol(limit=17), lr=0.0123, num_gpus=1, milestones=[]))\n'
-        )
+    source = "from experiments.dflash_repro import GSM8KProtocol\n" + config.read_text()
+    config.write_text(source.replace(
+        "        return [\n",
+        '        return [\n            cls(name="second", output_dir=COMMON_ROOT / "custom", '
+        'eval_protocol=GSM8KProtocol(limit=17), lr=0.0123, train_gpus=1),\n',
+    ))
     # Isolate NFS state while keeping both entry points and their real parsers.
     (tmp_path / "sitecustomize.py").write_text(
         f"from experiments import environment\n"
@@ -297,7 +297,7 @@ def test_second_dflash_config_reaches_worker_and_owns_its_output(tmp_path):
     assert plan == json.loads(
         call(native, "--phase", "train", "--filter", "second", "--dry")
     )
-    output = artifacts / "custom/runs/out/second"
+    output = artifacts / "custom/train"
     assert "--cfg." not in plan["payload"]["script"]
     assert plan["settings"]["lr"] == 0.0123
     assert plan["output_dir"] == str(output)
@@ -307,7 +307,7 @@ def test_second_dflash_config_reaches_worker_and_owns_its_output(tmp_path):
     worker = """
 import json, sys
 from workloads.distillation import dflash_repro as jobs
-jobs.training.train = lambda experiment, probe: print(json.dumps([experiment.name, experiment.lr, experiment.milestones, str(experiment.output("train")), probe]))
+jobs.training.train = lambda experiment, probe: print(json.dumps([experiment.name, experiment.lr, experiment.milestones, str(experiment.result_dir), probe]))
 jobs.main()
 """
     assert json.loads(call("-c", worker, *argv)) == [
@@ -327,7 +327,7 @@ jobs.main()
     output.mkdir(parents=True)
     (output / "trained.json").write_text('{"steps": 42}')
     eval_plan = json.loads(call(*evaluate))
-    eval_output = output.parent / "eval-42"
+    eval_output = output.parent / "eval/step-00042"
     assert eval_plan["output_dir"] == str(eval_output)
     assert "lr" not in eval_plan["settings"]
     assert eval_plan["settings"]["limit"] == 17

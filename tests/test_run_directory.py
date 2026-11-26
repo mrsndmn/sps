@@ -173,7 +173,7 @@ def test_dflash_worker_uses_explicit_run_fields(monkeypatch):
 
     received = []
     monkeypatch.setattr(trainer, "train", lambda experiment, probe: received.append(experiment))
-    jobs.worker(trainer, None, "probe", ["--name", "test", "--output_root", "/tmp/test",
+    jobs.worker(trainer, None, "probe", ["--name", "test", "--result_dir", "/tmp/test",
                                          "--epochs", "7", "--temperature", "2.5"])
     assert received[0].epochs == 7 and received[0].temperature == 2.5
     assert received[0].name == "test"

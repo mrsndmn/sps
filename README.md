@@ -241,6 +241,11 @@ requires a published training result. A winner evaluation can report a pending
 training input during preview.
 
 Add related runs to the family's `experiment_configs` in `src/experiments/`.
+For DFlash, add an instance to the list returned by
+`HardDFlash.experiment_configs()` or `SoftKD.experiment_configs()`. Set the
+run's name and output directory, then override the settings that vary.
+Preview the soft-KD temperature comparison with
+`python scripts/run_train_jobs.py --experiment dflash-soft-kd/higher-temperature --dry`.
 The registry in `src/orchestration/named/registry.py` holds one entry per family.
 
 ## MLSpace pilot artifacts

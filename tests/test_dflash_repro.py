@@ -4,8 +4,11 @@ import pytest
 import torch
 from torch import nn
 
-from experiments.dflash_repro_train import BASELINE
+from experiments.dflash_repro_train import HardDFlash
+
 from workloads.distillation import dflash_repro as jobs, dflash_repro_train as training
+
+(BASELINE,) = HardDFlash.experiment_configs()
 
 
 def test_epoch_shuffling_and_anchor_sampling():
@@ -96,9 +99,9 @@ def test_milestone_evaluation_waits_for_published_training(tmp_path, monkeypatch
 
     selection = tmp_path / "selection.json"
     selection.write_text("{}")
-    exp = replace(BASELINE, output_root=tmp_path / "experiment", selection_file=selection)
+    exp = replace(BASELINE, output_dir=tmp_path / "experiment", selection_file=selection)
     monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
-    weights = training.checkpoint_path(5000, exp) / "weights.safetensors"
+    weights = training.checkpoint_path(5000, exp.output("train")) / "weights.safetensors"
     weights.parent.mkdir(parents=True)
     weights.touch()
     calls = []
@@ -109,17 +112,17 @@ def test_milestone_evaluation_waits_for_published_training(tmp_path, monkeypatch
     monkeypatch.setitem(jobs.evaluation.ARCHIVED_INPUTS, "archive", jobs.evaluation.settings_digest(
         {"settings_sha256": arguments.training_settings_sha256, **training.input_provenance(arguments)}))
     with pytest.raises(RuntimeError, match="Complete DFlash training"):
-        jobs.submit_phase(exp, training, "eval", 5000, {}, "test", arguments)
+        jobs.submit_phase(exp, "eval", 5000, {}, "test", arguments)
     jobs.marker(exp, "train").write_text('{"design":"archive","checkpoints":[5000]}')
     torch.save(dict(step=5000, design="other"), weights.parent / "resume.pt")
     with pytest.raises(ValueError, match="published training run"):
-        jobs.submit_phase(exp, training, "eval", 5000, {}, "test", arguments)
+        jobs.submit_phase(exp, "eval", 5000, {}, "test", arguments)
     assert not calls
     torch.save(dict(step=5000, design="archive"), weights.parent / "resume.pt")
-    jobs.submit_phase(exp, training, "eval", 5000, {}, "test", arguments)
+    jobs.submit_phase(exp, "eval", 5000, {}, "test", arguments)
     assert len(calls) == 1
     exp.output("eval", 5000).mkdir()
-    jobs.submit_phase(exp, training, "eval", 5000, {}, "test", arguments)
+    jobs.submit_phase(exp, "eval", 5000, {}, "test", arguments)
     assert len(calls) == 1
 
 
@@ -129,7 +132,7 @@ def test_checkpoint_inputs_detect_reordered_selection(tmp_path, monkeypatch):
     selection = tmp_path / "selection.json"
     exp = replace(BASELINE, selection_file=selection)
     selection.write_text('{"train":[1,2],"val":[3]}')
-    inputs = training.training_inputs(exp)
+    inputs = training.training_inputs(jobs.worker_arguments(training, exp, "train", None))
     training.launch.store_json(tmp_path / "inputs.json", inputs)
     selection.write_text('{"train":[2,1],"val":[3]}')
     with pytest.raises(ValueError, match="checkpoint training inputs"):
@@ -168,9 +171,9 @@ def test_archived_checkpoint_must_match_published_run_and_step(tmp_path, monkeyp
 def test_archived_probe_is_reported_and_skipped_before_submission(tmp_path):
 
     design = "a" * 64
-    exp = replace(BASELINE, output_root=tmp_path / design[:16])
-    archive = exp.output_root / "prepared.json"
+    exp = replace(BASELINE, output_dir=tmp_path / design[:16])
+    archive = exp.output_dir / "prepared.json"
     training.launch.store_json(archive, {"design": design})
     assert jobs.marker(exp, "probe") == archive
-    jobs.submit_phase(exp, training, "probe", None, {}, "unused", None)
+    jobs.submit_phase(exp, "probe", None, {}, "unused", None)
     assert not exp.output("probe").exists()

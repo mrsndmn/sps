@@ -76,7 +76,7 @@ External artifacts root:
   contain hard and soft results for the three checkpoints, per-position
   acceptance, matched-output comparisons and raw timings. Use
   `python scripts/distillation/dflash_repro.py --phase eval --step <step> --report`
-  and `python scripts/distillation/dflash_kd.py --phase eval --step <step> --report`.
+  and `python scripts/distillation/dflash_kd.py --filter qwen3-4b-dflash-b16-soft-kd --phase eval --step <step> --report`.
   Training cost and job provenance are recorded in
   `experiments/dflash-reproduction.md` and `experiments/dflash-soft-kd.md`.
 - SPS-MTP training/export: `vllm-sps-qwen3/runs/out/qwen3_sps_mtp/` contains

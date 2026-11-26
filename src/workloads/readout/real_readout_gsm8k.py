@@ -41,7 +41,7 @@ def dataset():
     from huggingface_hub import hf_hub_download
     from pyarrow.parquet import read_table
     from experiments.environment import HF_HOME
-    from experiments.dflash_repro_eval import GSM8KProtocol
+    from experiments.dflash_repro import GSM8KProtocol
     protocol = GSM8KProtocol()
     path = hf_hub_download(protocol.gsm8k, protocol.gsm8k_file, repo_type="dataset", revision=protocol.gsm8k_revision,
                            cache_dir=HF_HOME / "hub", local_files_only=True)

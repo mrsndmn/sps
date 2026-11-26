@@ -17,8 +17,9 @@ from workloads.distillation.dflash_repro_train import checkpoint_path
 from workloads.distillation import dflash_repro_train as hard
 from orchestration import mlspace_launch as launch
 from orchestration.named.publication import work_path
-from experiments.dflash_kd_train import TrainArguments, experiment_configs
-from experiments.dflash_repro_train import BASELINE
+from experiments.dflash_repro import SoftTrainArguments as TrainArguments
+from experiments.dflash_kd_train import SoftKD as Config
+from experiments.dflash_repro_train import HARD_BASELINE_NAME
 
 
 
@@ -94,8 +95,8 @@ def train(probe, experiment):
     torch.cuda.set_device(local)
     dist.init_process_group("nccl")
     rank, world = dist.get_rank(), dist.get_world_size()
-    if world != experiment.num_gpus:
-        raise RuntimeError(f"Expected {experiment.num_gpus} ranks, got {world}")
+    if world != experiment.train_gpus:
+        raise RuntimeError(f"Expected {experiment.train_gpus} ranks, got {world}")
     device = torch.device("cuda", local)
     design = hard.training_inputs(experiment)
     corpus = hard.prepared.open_dataset(experiment.corpus_repo, experiment.corpus_revision, experiment.corpus_rows)
@@ -114,7 +115,7 @@ def train(probe, experiment):
     milestone_steps = (*experiment.milestones, steps)
     if not probe:
         for at in reversed(milestone_steps):
-            folder = checkpoint_path(at, experiment=experiment)
+            folder = checkpoint_path(at, experiment.result_dir)
             if folder.is_dir():
                 start = hard.load_checkpoint(folder, model, optimizer, schedule, design)
                 if start != at:
@@ -161,14 +162,14 @@ def train(probe, experiment):
             durations.append(seconds)
         if not probe and step + 1 in milestone_steps:
             if rank == 0:
-                hard.save_checkpoint(checkpoint_path(step + 1, experiment=experiment), model, optimizer, schedule, step + 1, design)
+                hard.save_checkpoint(checkpoint_path(step + 1, experiment.result_dir), model, optimizer, schedule, step + 1, design)
             dist.barrier()
     peak = torch.tensor(torch.cuda.max_memory_allocated(device), device=device, dtype=torch.int64)
     dist.all_reduce(peak, op=dist.ReduceOp.MAX)
     if rank == 0:
         if probe:
-            launch.store_json(work_path(experiment.output("probe")) / "prepared.json", dict(
-                design=design, hard_design=BASELINE.name, initial_sha256=initial,
+            launch.store_json(work_path(experiment.result_dir) / "prepared.json", dict(
+                design=design, hard_design=HARD_BASELINE_NAME, initial_sha256=initial,
                 gpu=torch.cuda.get_device_name(device), world=world, full_steps=steps,
                 measured_steps=len(durations), wall_seconds=time.monotonic()-startup,
                 mean_step_seconds=mean(durations), median_step_seconds=median(durations),
@@ -176,8 +177,8 @@ def train(probe, experiment):
                 estimated_full_hours=mean(durations)*steps/3600,
             ))
         else:
-            launch.store_json(checkpoint_path(steps, experiment=experiment).parent / "trained.json", dict(
-                design=design, hard_design=BASELINE.name, initial_sha256=initial,
+            launch.store_json(work_path(experiment.result_dir) / "trained.json", dict(
+                design=design, hard_design=HARD_BASELINE_NAME, initial_sha256=initial,
                 steps=steps, rows=len(train_indices), checkpoints=milestone_steps,
             ))
     dist.barrier()

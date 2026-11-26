@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 
-from orchestration.named.registry import FAMILIES, family_module, family_runs
+from orchestration.named.registry import FAMILIES, family_definition, family_runs
 from orchestration.suite_registry import INSTRUCT_SUITE
 
 
@@ -55,7 +55,7 @@ def main(default_phase="train"):
     if opts.dry:
         cmd.append("--dry")
     env = dict(os.environ, SPS_EXPERIMENT_SUITE=INSTRUCT_SUITE)
-    configure = getattr(family_module(family), "launch_environment", None)
+    configure = getattr(family_definition(family), "launch_environment", None)
     if configure:
         env.update(configure(family))
     return subprocess.call(cmd, env=env)

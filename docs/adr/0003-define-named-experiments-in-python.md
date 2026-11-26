@@ -14,6 +14,11 @@ only the fields that vary. Use dataclass inheritance to share defaults. Changes
 to one instance must leave the others independent. Keep numeric settings in
 code.
 
+DFlash groups implement `experiment_configs()` as a class method that returns
+fresh instances. The catalog stores the group class and calls the method during
+selection. `DFlashConfig` defines the shared fields and phase routing. Group
+files contain their defaults and named runs.
+
 ## Selection by name
 
 Use the exact key `FAMILY/NAME` and a phase. The family registry maps each
@@ -77,6 +82,10 @@ parents have independent reservations. For each submission:
    Use the recorded job name or the scaffold's active-job lookup by normalized
    description to identify the job. An unresolved reservation continues to
    block submission.
+
+For new DFlash runs, `output_dir` is the per-run root. Each phase publishes its
+own directory under it: `probe/`, `train/` or `eval/step-<step>/`. The two
+published baseline configs explicitly retain their archive layouts.
 
 DFlash publishes its checkpoint directory upon training completion. Both final and
 milestone evaluations require the published training result and the requested weights.

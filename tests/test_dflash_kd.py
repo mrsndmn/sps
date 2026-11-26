@@ -2,15 +2,17 @@ from dataclasses import replace
 import torch
 from torch import nn
 
-from experiments.dflash_repro_train import BASELINE
-from experiments.dflash_kd_train import experiment_configs
+from experiments.dflash_repro_train import HardDFlash
+from experiments.dflash_kd_train import SoftKD
 
-(KD,) = experiment_configs
 from workloads.distillation import (
     dflash_kd as jobs,
     dflash_kd_train as training,
     dflash_repro_train as hard,
 )
+
+(BASELINE,) = HardDFlash.experiment_configs()
+KD = next(x for x in SoftKD.experiment_configs() if x.name == "qwen3-4b-dflash-b16-soft-kd")
 
 
 def test_teacher_indices_use_previous_token_and_reuse_overlapping_positions():
@@ -85,3 +87,11 @@ def test_payload_keeps_global_batch_and_eval_gpu_count(tmp_path, monkeypatch):
         )["instance_type"]
         == "a100.1gpu"
     )
+
+
+def test_group_factory_returns_independent_configs():
+    first = SoftKD.experiment_configs()
+    second = SoftKD.experiment_configs()
+    first[0].milestones.clear()
+    assert second[0].milestones == [5000, 10000]
+    assert first is not second
