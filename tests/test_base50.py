@@ -34,8 +34,8 @@ from workloads.adaptation.base50_run import plan, payload
 from pathlib import Path
 assert str(e.ARTIFACTS_ROOT)!=old_root
 assert c.configure()[0] is e
-assert source.MAX_DATA_ROWS==1600000
-assert source.MODEL=="Qwen/Qwen3-1.7B-Base"
+assert source.family_config.MAX_DATA_ROWS==1600000
+assert source.family_config.MODEL=="Qwen/Qwen3-1.7B-Base"
 assert plan()["steps"]==50000 and plan()["stage_steps"]==819
 exps=e.collect_experiments()
 assert len(exps)==1 and exps[0].distillation_weight==0

@@ -10,24 +10,24 @@ from experiments import ar_sps_config as c
 
 
 def split_for(text):
-    digest = hashlib.sha256((c.DATA_SPLIT_SALT + text).encode()).hexdigest()
+    digest = hashlib.sha256((c.family_config.DATA_SPLIT_SALT + text).encode()).hexdigest()
     value = int(digest[:16], 16) / 2**64
-    return ('train' if value < c.TRAIN_FRACTION else 'val' if value < c.VAL_BOUNDARY else 'test'), digest
+    return ('train' if value < c.family_config.TRAIN_FRACTION else 'val' if value < c.family_config.VAL_BOUNDARY else 'test'), digest
 
 
 def reference_root():
-    return e.COMMON_ROOT / c.REFERENCE_SUITE / 'runs/data'
+    return e.COMMON_ROOT / c.family_config.REFERENCE_SUITE / 'runs/data'
 
 
 def prepare_reference():
     """Read completed CE data without changing its artifacts or ordering."""
     root = reference_root()
     manifest = json.loads((root/'manifest.json').read_text())
-    if (manifest.get('model') != c.MODEL or manifest.get('revision') != c.REVISION or manifest.get('dataset') != e.DATASET_REPO or manifest.get('dataset_revision') != e.DATASET_REVISION or manifest.get('row_length') != c.CONTEXT + 1 or manifest.get('dtype') != 'uint32'):
+    if (manifest.get('model') != c.family_config.MODEL or manifest.get('revision') != c.family_config.REVISION or manifest.get('dataset') != e.DATASET_REPO or manifest.get('dataset_revision') != e.DATASET_REVISION or manifest.get('row_length') != c.family_config.CONTEXT + 1 or manifest.get('dtype') != 'uint32'):
         raise RuntimeError('Reference data provenance mismatch')
-    for split, expected in c.REFERENCE_DATA_SHA256.items():
+    for split, expected in c.family_config.REFERENCE_DATA_SHA256.items():
         path = root/f'{split}.bin'
-        if path.stat().st_size != manifest['rows'][split]*(c.CONTEXT+1)*4:
+        if path.stat().st_size != manifest['rows'][split]*(c.family_config.CONTEXT+1)*4:
             raise RuntimeError('Reference data size mismatch')
         digest = hashlib.sha256()
         with path.open('rb') as handle:
@@ -36,15 +36,15 @@ def prepare_reference():
         if digest.hexdigest() != expected:
             raise RuntimeError(f'Reference data checksum mismatch: {split}')
     result = dict(manifest, design_signature=e.SUITE,
-                  reference_signature=c.REFERENCE_SIGNATURE, reference_root=str(root),
-                  sha256=c.REFERENCE_DATA_SHA256)
+                  reference_root=str(root),
+                  sha256=c.family_config.REFERENCE_DATA_SHA256)
     from orchestration.mlspace_launch import store_json
     store_json(e.RUN_ROOT/'data/manifest.json', result)
     return result
 
 
 def prepare():
-    if c.DISTILLATION:
+    if c.family_config.DISTILLATION:
         return prepare_reference()
     from huggingface_hub import hf_hub_download, try_to_load_from_cache
     from transformers import AutoTokenizer
@@ -56,11 +56,11 @@ def prepare():
     if marker.exists():
         result = json.loads(marker.read_text())
         for split, rows in result['rows'].items():
-            if (root / f'{split}.bin').stat().st_size != rows*(c.CONTEXT+1)*4:
+            if (root / f'{split}.bin').stat().st_size != rows*(c.family_config.CONTEXT+1)*4:
                 raise RuntimeError('Incomplete data')
         return result
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
-    limits = dict(train=c.MAX_DATA_ROWS, val=c.VAL_ROWS, test=c.TEST_ROWS)
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
+    limits = dict(train=c.family_config.MAX_DATA_ROWS, val=c.family_config.VAL_ROWS, test=c.family_config.TEST_ROWS)
     counts = dict.fromkeys(limits, 0)
     handles = {s: (root/f'{s}.tmp').open('wb') for s in limits}
     seen = set()
@@ -87,10 +87,10 @@ def prepare():
                     seen.add(digest)
                     ids = tokenizer.encode(text, add_special_tokens=False) + [tokenizer.eos_token_id]
                     # No packed-document attention or EOS->next-document targets.
-                    for start in range(0, len(ids)-c.CONTEXT, c.CONTEXT):
+                    for start in range(0, len(ids)-c.family_config.CONTEXT, c.family_config.CONTEXT):
                         if counts[split] >= limits[split]:
                             break
-                        row = np.asarray(ids[start:start+c.CONTEXT+1], dtype=np.uint32)
+                        row = np.asarray(ids[start:start+c.family_config.CONTEXT+1], dtype=np.uint32)
                         handles[split].write(row.tobytes())
                         counts[split] += 1
                 if all(counts[s] >= limits[s] for s in limits):
@@ -104,9 +104,9 @@ def prepare():
         raise RuntimeError(f'Insufficient document-contained rows: {counts}')
     for split in limits:
         (root/f'{split}.tmp').replace(root/f'{split}.bin')
-    result = dict(design_signature=signature, model=c.MODEL, revision=c.REVISION,
+    result = dict(design_signature=signature, model=c.family_config.MODEL, revision=c.family_config.REVISION,
                   dataset=e.DATASET_REPO, dataset_revision=e.DATASET_REVISION, files=sources,
-                  rows=counts, row_length=c.CONTEXT+1, dtype='uint32',
+                  rows=counts, row_length=c.family_config.CONTEXT+1, dtype='uint32',
                   sampling='full document-contained chunks; short documents and tails discarded',
                   contamination='No claim about source pretraining overlap; evaluation never used for selection')
     from orchestration.mlspace_launch import store_json
@@ -117,13 +117,12 @@ def prepare():
 def rows(split):
     root = e.RUN_ROOT/'data'
     manifest = json.loads((root/'manifest.json').read_text())
-    if c.DISTILLATION:
-        if (manifest.get('reference_signature') != c.REFERENCE_SIGNATURE
-                or manifest.get('reference_root') != str(reference_root())
-                or manifest.get('sha256') != c.REFERENCE_DATA_SHA256):
+    if c.family_config.DISTILLATION:
+        if (manifest.get('reference_root') != str(reference_root())
+                or manifest.get('sha256') != c.family_config.REFERENCE_DATA_SHA256):
             raise RuntimeError('Invalid reference data link')
         root = reference_root()
     path = root/f'{split}.bin'
-    if path.stat().st_size != manifest['rows'][split]*(c.CONTEXT+1)*4:
+    if path.stat().st_size != manifest['rows'][split]*(c.family_config.CONTEXT+1)*4:
         raise RuntimeError('Incomplete data')
-    return np.memmap(path, mode='r', dtype=np.uint32).reshape(-1, c.CONTEXT+1)
+    return np.memmap(path, mode='r', dtype=np.uint32).reshape(-1, c.family_config.CONTEXT+1)

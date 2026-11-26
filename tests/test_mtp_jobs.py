@@ -62,7 +62,7 @@ def test_mtp_forecast_excludes_compilation_and_enforces_full_budget(tmp_path,mon
     from orchestration import experiment_suite as e
     from workloads.speculative import mtp_run
     monkeypatch.setattr(e,'SANITY_ROOT',tmp_path)
-    monkeypatch.setattr(e.mtp,'MTP_TRAIN_STEPS',100)
+    monkeypatch.setattr(e.mtp.family_config,'MTP_TRAIN_STEPS',100)
     exp=e.ExperimentConfig('mtp','sps',horizons=4)
     p=tmp_path/'out/mtp/metrics.jsonl';p.parent.mkdir(parents=True)
     p.write_text('\n'.join(json.dumps(dict(event='train',step_seconds=x)) for x in [10000,10000]+[2]*8))

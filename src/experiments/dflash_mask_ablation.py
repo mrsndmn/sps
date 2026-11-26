@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .environment import COMMON_ROOT
-from .family_arguments import configure, configure_runs, export_fields
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     OUTPUT_NAME: str = "277ae900c11f7e9a"
     TARGET: str = "Qwen/Qwen3-4B"
@@ -20,8 +19,7 @@ class FamilyConfig:
     REPEATS: int = 2
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)
@@ -37,4 +35,3 @@ class Experiment:
 experiment_configs = [
     Experiment(mask, width) for width in (4, 8) for mask in ("bidirectional", "causal")
 ]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

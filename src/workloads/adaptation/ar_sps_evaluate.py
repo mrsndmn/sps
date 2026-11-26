@@ -26,7 +26,7 @@ def audit_model(model, batch, prefix_length):
     model.sps = False
     expected = model.backbone(batch, use_cache=False).logits
     actual = model(batch).logits
-    torch.testing.assert_close(actual, expected, atol=c.PARITY_ATOL, rtol=c.PARITY_RTOL)
+    torch.testing.assert_close(actual, expected, atol=c.family_config.PARITY_ATOL, rtol=c.family_config.PARITY_RTOL)
     metrics = {'native_max_abs': (actual-expected).abs().max().item()}
     model.sps = True
     changed = batch.clone()
@@ -38,7 +38,7 @@ def audit_model(model, batch, prefix_length):
             short = model(batch[:, :prefix_length]).logits
         before = full[:, :prefix_length]
         after = perturbed[:, :prefix_length]
-        torch.testing.assert_close(after, before, atol=c.PARITY_ATOL, rtol=c.PARITY_RTOL)
+        torch.testing.assert_close(after, before, atol=c.family_config.PARITY_ATOL, rtol=c.family_config.PARITY_RTOL)
         if not torch.isfinite(short).all():
             raise AssertionError('Nonfinite prefix logits')
         metrics[name] = dict(causal_max_abs=(after-before).abs().max().item(),
@@ -55,8 +55,8 @@ def audit_model(model, batch, prefix_length):
         short = model(batch[:, :prefix_length]).logits
     finally:
         hook.remove()
-    torch.testing.assert_close(captured[1][:, ::2], captured[0], atol=c.PARITY_ATOL, rtol=c.PARITY_RTOL)
-    torch.testing.assert_close(short, full[:, :prefix_length], atol=c.PARITY_ATOL, rtol=c.PARITY_RTOL)
+    torch.testing.assert_close(captured[1][:, ::2], captured[0], atol=c.family_config.PARITY_ATOL, rtol=c.family_config.PARITY_RTOL)
+    torch.testing.assert_close(short, full[:, :prefix_length], atol=c.family_config.PARITY_ATOL, rtol=c.family_config.PARITY_RTOL)
     metrics['float64_reference'] = dict(
         real_state_max_abs=(captured[1][:, ::2]-captured[0]).abs().max().item(),
         cross_length_max_abs=(short-full[:, :prefix_length]).abs().max().item())
@@ -66,8 +66,8 @@ def audit_model(model, batch, prefix_length):
 def audit():
     device = torch.device('cuda')
     model = load_model('original_ar', device).eval()
-    batch = torch.tensor(rows('val')[:1].astype('int64'), device=device)[:, :c.AUDIT_LENGTH]
-    metrics = audit_model(model, batch, c.AUDIT_PREFIX)
+    batch = torch.tensor(rows('val')[:1].astype('int64'), device=device)[:, :c.family_config.AUDIT_LENGTH]
+    metrics = audit_model(model, batch, c.family_config.AUDIT_PREFIX)
     store_json(e.SANITY_ROOT/'native-parity.json', dict(metrics=metrics,
                                                       design_signature=e.SUITE))
 
@@ -79,7 +79,7 @@ def evaluate(exp, checkpoint=None, label='source'):
     device = torch.device('cuda')
     model = load_model(exp.recipe, device).eval()
     metadata = restore(checkpoint, model, device) if checkpoint else None
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
 
     class Adapter(HFLM):
         def _model_call(self, inps, attn_mask=None, labels=None):
@@ -89,7 +89,7 @@ def evaluate(exp, checkpoint=None, label='source'):
                 return model(inps).logits
 
     adapter = Adapter(pretrained=model.backbone, tokenizer=tokenizer, backend='causal',
-                      batch_size=c.EVAL_BATCH, max_length=c.CONTEXT, device='cuda',
+                      batch_size=c.family_config.EVAL_BATCH, max_length=c.family_config.CONTEXT, device='cuda',
                       logits_cache=False)
     destination = e.phase_work('eval', e.output_dir(exp)/'eval')/label
     destination.mkdir(parents=True, exist_ok=True)
@@ -99,9 +99,9 @@ def evaluate(exp, checkpoint=None, label='source'):
     # Task-scoped outputs survive a later timeout and retain per-example pairing.
     for task in e.TASKS:
         result = evaluator.simple_evaluate(model=adapter, tasks=[task], num_fewshot=0,
-                                          batch_size=c.EVAL_BATCH, log_samples=True,
-                                          random_seed=c.SEED, numpy_random_seed=c.SEED,
-                                          torch_random_seed=c.SEED, fewshot_random_seed=c.SEED)
+                                          batch_size=c.family_config.EVAL_BATCH, log_samples=True,
+                                          random_seed=c.family_config.SEED, numpy_random_seed=c.family_config.SEED,
+                                          torch_random_seed=c.family_config.SEED, fewshot_random_seed=c.family_config.SEED)
         (destination/f'{task}.json').write_text(json.dumps(result, default=lambda v: v.tolist() if hasattr(v, 'tolist') else str(v)))
     store_json(destination/'complete.json', dict(design_signature=e.SUITE))
 

@@ -6,7 +6,7 @@ from orchestration.named.standalone import job, load
 
 def schedules(extended):
     module = load("workloads.instruction.extend_run" if extended else "workloads.instruction.sched_run")
-    config = module.c
+    config = module.c.family_config
     for variant in config.ROOT_NAMES:
         for run in source.experiment_configs:
             if not run.trainable:
@@ -43,7 +43,7 @@ def schedules(extended):
 def ifeval():
     module = load("workloads.instruction.ifeval_run")
     for run in source.experiment_configs:
-        for mode in module.c.MODES:
+        for mode in module.c.family_config.MODES:
             yield job(
                 module,
                 "eval",

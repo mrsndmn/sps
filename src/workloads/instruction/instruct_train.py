@@ -21,8 +21,8 @@ def optimizer_for(model, embedding_only):
     if not embedding_only:
         model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
     return torch.optim.AdamW([p for p in model.parameters() if p.requires_grad],
-                            lr=c.EMBED_LR if embedding_only else c.FULL_LR,
-                            betas=c.BETAS, weight_decay=0. if embedding_only else c.WEIGHT_DECAY)
+                            lr=c.family_config.EMBED_LR if embedding_only else c.family_config.FULL_LR,
+                            betas=c.family_config.BETAS, weight_decay=0. if embedding_only else c.family_config.WEIGHT_DECAY)
 
 
 def save_progress(root, model, optimizer, step, best, frozen, plan):
@@ -51,16 +51,16 @@ def main():
     torch.cuda.set_device(local)
     device = torch.device('cuda', local)
     dist.init_process_group('nccl')
-    plan = dict(steps=c.PROBE_STEPS, stage_steps=c.PROBE_STEPS//2) if args.probe else read_plan()
+    plan = dict(steps=c.family_config.PROBE_STEPS, stage_steps=c.family_config.PROBE_STEPS//2) if args.probe else read_plan()
     steps = plan['steps']; transition = plan['stage_steps']
-    if not 0 < transition < steps <= c.MAX_STEPS:
+    if not 0 < transition < steps <= c.family_config.MAX_STEPS:
         raise ValueError('Invalid preparation plan')
     root = (e.SANITY_ROOT/'out'/exp.name if args.probe else e.output_dir(exp))
     root.mkdir(parents=True, exist_ok=True)
     model = load_model(exp.recipe, device)
     teacher = load_teacher(device) if exp.distillation_weight else None
     data = rows('train'); validation = rows('val')
-    if len(data) < steps*c.GLOBAL_BATCH:
+    if len(data) < steps*c.family_config.GLOBAL_BATCH:
         raise RuntimeError('Insufficient unique training rows')
     start = 0; best = float('inf'); state = None
     if not args.probe and (root/'latest.pt').exists():
@@ -76,13 +76,13 @@ def main():
     state = None
     model.train()
     ddp = DDP(model, device_ids=[local], broadcast_buffers=False)
-    if c.MICRO_BATCH != 1:
+    if c.family_config.MICRO_BATCH != 1:
         raise ValueError('Variable-length instruct batches require MICRO_BATCH=1')
-    accumulation = c.GLOBAL_BATCH//(world*c.MICRO_BATCH)
-    if accumulation*world*c.MICRO_BATCH != c.GLOBAL_BATCH:
+    accumulation = c.family_config.GLOBAL_BATCH//(world*c.family_config.MICRO_BATCH)
+    if accumulation*world*c.family_config.MICRO_BATCH != c.family_config.GLOBAL_BATCH:
         raise ValueError('Invalid global batch')
     times = {'embedding': [], 'full': []}
-    interval = max(1, steps//c.CHECKPOINT_PARTS)
+    interval = max(1, steps//c.family_config.CHECKPOINT_PARTS)
     for step in range(start, steps):
         if exp.recipe == 'staged_sps' and step == transition:
             del ddp
@@ -94,7 +94,7 @@ def main():
         optimizer.zero_grad(set_to_none=True)
         # DDP averages gradients across ranks: scale local summed token loss
         # by world/global supervised-token count, not by rank or example means.
-        batch_rows = [data[step*c.GLOBAL_BATCH + micro*world+rank]
+        batch_rows = [data[step*c.family_config.GLOBAL_BATCH + micro*world+rank]
                       for micro in range(accumulation)]
         denominator = torch.tensor(sum(sum(row['loss_mask'][1:]) for row in batch_rows),
                                    dtype=torch.float64, device=device)
@@ -107,19 +107,19 @@ def main():
             with sync, torch.autocast('cuda', dtype=torch.bfloat16):
                 value, ce, kd, _ = loss(ddp, row, device, teacher=teacher,
                                         weight=exp.distillation_weight,
-                                        temperature=c.DISTILLATION_TEMPERATURE)
+                                        temperature=c.family_config.DISTILLATION_TEMPERATURE)
                 (value * (world/denominator)).backward()
             totals += torch.stack((value.detach(), ce, kd)).double()
         dist.all_reduce(totals, op=dist.ReduceOp.SUM)
         totals /= denominator
-        norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], c.CLIP)
+        norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], c.family_config.CLIP)
         if not torch.isfinite(norm):
             raise RuntimeError('Nonfinite gradient')
         optimizer.step()
         torch.cuda.synchronize()
         elapsed = time.monotonic()-began
         phase = 'embedding' if frozen else 'full'
-        if step >= c.WARMUP_PROBE and not (exp.recipe == 'staged_sps' and transition <= step < transition+c.WARMUP_PROBE):
+        if step >= c.family_config.WARMUP_PROBE and not (exp.recipe == 'staged_sps' and transition <= step < transition+c.family_config.WARMUP_PROBE):
             times[phase].append(elapsed)
         milestone = step+1 == transition or (step+1) % interval == 0 or step+1 == steps
         if not args.probe and milestone:
@@ -132,7 +132,7 @@ def main():
                     save(root/('embedding_best.pt' if frozen else 'best.pt'), model, optimizer, step+1, best, frozen, plan)
                 save_progress(root, model, optimizer, step+1, best, frozen, plan)
                 with (root/'metrics.jsonl').open('a') as handle:
-                    handle.write(json.dumps(dict(step=step+1, examples=(step+1)*c.GLOBAL_BATCH,
+                    handle.write(json.dumps(dict(step=step+1, examples=(step+1)*c.family_config.GLOBAL_BATCH,
                                                  val_nll=score, val_by_mode=validation_result['by_mode'],
                                                  train_loss=totals[0].item(), ce=totals[1].item(),
                                                  kd=totals[2].item(), supervised_tokens=denominator.item(),

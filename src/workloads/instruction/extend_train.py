@@ -20,15 +20,15 @@ from orchestration.mlspace_launch import store_json
 def save(path, model, optimizer, step, best, stage, plan):
     temporary = path.with_suffix('.tmp')
     torch.save(dict(model=model.state_dict(), optimizer=optimizer.state_dict(), step=step,
-        best=best, stage=stage, plan=plan, design_signature=sc.signature(), source=c.MODEL,
-        revision=c.REVISION, experiment=ACTIVE_EXPERIMENT.__dict__,
-        source_suite=schedule.SOURCE_SUITE), temporary)
+        best=best, stage=stage, plan=plan, design_signature=sc.signature(), source=c.family_config.MODEL,
+        revision=c.family_config.REVISION, experiment=ACTIVE_EXPERIMENT.__dict__,
+        source_suite=schedule.family_config.SOURCE_SUITE), temporary)
     temporary.replace(path)
 
 
 def restore(path, model, device):
     state = torch.load(path, map_location='cpu', weights_only=False)
-    if (state['source'] != c.MODEL or state['revision'] != c.REVISION or state['experiment'] != ACTIVE_EXPERIMENT.__dict__ or state['plan'] != sc.training_plan()):
+    if (state['source'] != c.family_config.MODEL or state['revision'] != c.family_config.REVISION or state['experiment'] != ACTIVE_EXPERIMENT.__dict__ or state['plan'] != sc.training_plan()):
         raise RuntimeError('Scheduled resume provenance mismatch')
     model.load_state_dict(state['model'])
     return state
@@ -39,14 +39,14 @@ def optimizer_for(model, embedding_only):
     if not embedding_only:
         model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={'use_reentrant': False})
     return torch.optim.AdamW([p for p in model.parameters() if p.requires_grad],
-                            lr=c.EMBED_LR if embedding_only else c.FULL_LR,
-                            betas=c.BETAS, weight_decay=0. if embedding_only else c.WEIGHT_DECAY)
+                            lr=c.family_config.EMBED_LR if embedding_only else c.family_config.FULL_LR,
+                            betas=c.family_config.BETAS, weight_decay=0. if embedding_only else c.family_config.WEIGHT_DECAY)
 
 
 def save_progress(root, model, optimizer, step, best, frozen, plan):
     # Publish the resumable progress cursor only after its milestone artifacts.
     # A failed final save must leave latest at the previous completed interval.
-    if step in schedule.EVAL_STEPS:
+    if step in schedule.family_config.EVAL_STEPS:
         save(root/f'step_{step}.pt', model, optimizer, step, best, frozen, plan)
     if step == plan['steps']:
         save(root/'final.pt', model, optimizer, step, best, frozen, plan)
@@ -72,22 +72,22 @@ def main():
     dist.init_process_group('nccl')
     plan = sc.training_plan()
     steps = plan['steps']; transition = plan['stage_steps']
-    if not 0 < transition < steps <= schedule.TRAIN_STEPS:
+    if not 0 < transition < steps <= schedule.family_config.TRAIN_STEPS:
         raise ValueError('Invalid preparation plan')
-    root = sc.output_dir(str(schedule.TRAIN_STEPS),exp)
+    root = sc.output_dir(str(schedule.family_config.TRAIN_STEPS),exp)
     root.mkdir(parents=True, exist_ok=True)
     model = load_model(exp.recipe, device)
     teacher = load_teacher(device) if exp.distillation_weight else None
     data = rows('train'); validation = rows('val')
-    if len(data) != schedule.START_STEP*c.GLOBAL_BATCH:
+    if len(data) != schedule.family_config.START_STEP*c.family_config.GLOBAL_BATCH:
         raise RuntimeError('Expected exactly the original one-epoch corpus')
     if (root/'latest.pt').exists():
         state = restore(root/'latest.pt', model, device)
         sc.validate_state(state, exp)
     else:
-        sc.validate_checkpoint(str(schedule.START_STEP), exp, source=True)
+        sc.validate_checkpoint(str(schedule.family_config.START_STEP), exp, source=True)
         state = torch.load(sc.source_checkpoint(exp), map_location='cpu', weights_only=False)
-        sc.validate_state(state, exp, source=True, step=schedule.START_STEP)
+        sc.validate_state(state, exp, source=True, step=schedule.family_config.START_STEP)
         model.load_state_dict(state['model'])
     start = state['step']; best = state['best']
     frozen = False
@@ -97,20 +97,20 @@ def main():
     state = None
     model.train()
     ddp = DDP(model, device_ids=[local], broadcast_buffers=False)
-    if c.MICRO_BATCH != 1:
+    if c.family_config.MICRO_BATCH != 1:
         raise ValueError('Variable-length instruct batches require MICRO_BATCH=1')
-    accumulation = c.GLOBAL_BATCH//(world*c.MICRO_BATCH)
-    if accumulation*world*c.MICRO_BATCH != c.GLOBAL_BATCH:
+    accumulation = c.family_config.GLOBAL_BATCH//(world*c.family_config.MICRO_BATCH)
+    if accumulation*world*c.family_config.MICRO_BATCH != c.family_config.GLOBAL_BATCH:
         raise ValueError('Invalid global batch')
-    interval = schedule.CHECKPOINT_INTERVAL
+    interval = schedule.family_config.CHECKPOINT_INTERVAL
     for step in range(start, steps):
-        lr = c.FULL_LR
+        lr = c.family_config.FULL_LR
         for group in optimizer.param_groups:
             group['lr'] = lr
         optimizer.zero_grad(set_to_none=True)
         # DDP averages gradients across ranks: scale local summed token loss
         # by world/global supervised-token count, not by rank or example means.
-        indices = sc.global_batch_indices(step,len(data),c.GLOBAL_BATCH,c.SEED)
+        indices = sc.global_batch_indices(step,len(data),c.family_config.GLOBAL_BATCH,c.family_config.SEED)
         batch_rows = [data[indices[micro*world+rank]] for micro in range(accumulation)]
         denominator = torch.tensor(sum(sum(row['loss_mask'][1:]) for row in batch_rows),
                                    dtype=torch.float64, device=device)
@@ -123,12 +123,12 @@ def main():
             with sync, torch.autocast('cuda', dtype=torch.bfloat16):
                 value, ce, kd, _ = loss(ddp, row, device, teacher=teacher,
                                         weight=exp.distillation_weight,
-                                        temperature=c.DISTILLATION_TEMPERATURE)
+                                        temperature=c.family_config.DISTILLATION_TEMPERATURE)
                 (value * (world/denominator)).backward()
             totals += torch.stack((value.detach(), ce, kd)).double()
         dist.all_reduce(totals, op=dist.ReduceOp.SUM)
         totals /= denominator
-        norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], c.CLIP)
+        norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], c.family_config.CLIP)
         if not torch.isfinite(norm):
             raise RuntimeError('Nonfinite gradient')
         optimizer.step()
@@ -143,7 +143,7 @@ def main():
                     save(root/('embedding_best.pt' if frozen else 'best.pt'), model, optimizer, step+1, best, frozen, plan)
                 save_progress(root, model, optimizer, step+1, best, frozen, plan)
                 with (root/'metrics.jsonl').open('a') as handle:
-                    handle.write(json.dumps(dict(step=step+1, examples=(step+1)*c.GLOBAL_BATCH,
+                    handle.write(json.dumps(dict(step=step+1, examples=(step+1)*c.family_config.GLOBAL_BATCH,
                                                  val_nll=score, val_by_mode=validation_result['by_mode'],
                                                  lr=lr, train_loss=totals[0].item(), ce=totals[1].item(),
                                                  kd=totals[2].item(), supervised_tokens=denominator.item(),
@@ -151,6 +151,6 @@ def main():
             dist.barrier()
         model.train()
     if rank == 0:
-        sc.validate_checkpoint(str(schedule.TRAIN_STEPS),exp)
+        sc.validate_checkpoint(str(schedule.family_config.TRAIN_STEPS),exp)
         store_json(root/'trained.json',dict(design_signature=sc.signature(),experiment=exp.__dict__,plan=plan))
     dist.barrier(); dist.destroy_process_group()

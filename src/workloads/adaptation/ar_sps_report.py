@@ -10,9 +10,9 @@ def paired_interval(left, right):
     if len(left) != len(right) or not len(left):
         raise ValueError('Paired measurements must be nonempty and equal length')
     delta = np.asarray(right, dtype=float)-np.asarray(left, dtype=float)
-    rng = np.random.default_rng(c.SEED)
-    means = [rng.choice(delta, len(delta), replace=True).mean() for _ in range(c.BOOTSTRAP_REPS)]
-    alpha = (1-c.CONFIDENCE)/2
+    rng = np.random.default_rng(c.family_config.SEED)
+    means = [rng.choice(delta, len(delta), replace=True).mean() for _ in range(c.family_config.BOOTSTRAP_REPS)]
+    alpha = (1-c.family_config.CONFIDENCE)/2
     return [float(v) for v in np.quantile(means, [alpha, 1-alpha])]
 
 
@@ -28,12 +28,12 @@ def samples(result, task, metric):
     return paired
 
 
-def compare(baseline, candidate, *, matched_exposure=False, baseline_signature=None):
+def compare(baseline, candidate, *, matched_exposure=False):
     if not (baseline/'complete.json').exists() or not (candidate/'complete.json').exists():
         raise RuntimeError('Evaluation incomplete; no retention verdict')
     row = dict(baseline=str(baseline), variant=str(candidate), tasks={})
     passed = True
-    for task, metric in c.PRIMARY_METRICS.items():
+    for task, metric in c.family_config.PRIMARY_METRICS.items():
         left = json.loads((baseline/f'{task}.json').read_text())
         right = json.loads((candidate/f'{task}.json').read_text())
         a, b = samples(left, task, metric), samples(right, task, metric)
@@ -50,11 +50,11 @@ def compare(baseline, candidate, *, matched_exposure=False, baseline_signature=N
     if matched_exposure and a['step'] != b['step']:
         raise RuntimeError('Unequal exposure in endpoint control comparison')
     row.update(baseline_step=a['step'], candidate_step=b['step'],
-               baseline_text_tokens=a['step']*c.GLOBAL_BATCH*c.CONTEXT,
-               candidate_text_tokens=b['step']*c.GLOBAL_BATCH*c.CONTEXT,
+               baseline_text_tokens=a['step']*c.family_config.GLOBAL_BATCH*c.family_config.CONTEXT,
+               candidate_text_tokens=b['step']*c.family_config.GLOBAL_BATCH*c.family_config.CONTEXT,
                matched_exposure=a['step'] == b['step'],
                checkpoint_selection='validation' if candidate.name in {'best', 'embedding_best'} else 'fixed_endpoint')
-    passed &= b['nll'] <= a['nll']+c.NLL_ATOL
+    passed &= b['nll'] <= a['nll']+c.family_config.NLL_ATOL
     row.update(source_nll=a['nll'], nll=b['nll'], nll_ci=paired_interval(a['per_sequence'], b['per_sequence']),
                observed_retention=bool(passed), interpretation='Point-estimate criterion; one seed; CIs are per-task, not simultaneous proof')
     return row
@@ -65,16 +65,16 @@ def evaluation_dir(name):
 
 
 def build_report():
-    if c.DISTILLATION:
+    if c.family_config.DISTILLATION:
         return distillation_report()
-    baseline = evaluation_dir(c.REPORT_BASELINE)/'source'
+    baseline = evaluation_dir(c.family_config.REPORT_BASELINE)/'source'
     reports = []
     for exp in e.collect_experiments():
         for marker in sorted((evaluation_dir(exp.name)).glob('*/complete.json')):
             reports.append(compare(baseline, marker.parent))
     controls = []
     for label in ('stage_endpoint', 'final'):
-        for control_name, candidate_name in c.ENDPOINT_COMPARISONS:
+        for control_name, candidate_name in c.family_config.ENDPOINT_COMPARISONS:
             staged = evaluation_dir(candidate_name)
             control = evaluation_dir(control_name)/label
             if (staged/label/'complete.json').exists() and (control/'complete.json').exists():
@@ -87,19 +87,18 @@ def distillation_report():
     # Only these pinned CE artifacts are allowed as external references.
     from data.ar_sps_data import rows
     rows('test')  # require the verified reference-data manifest
-    root = e.COMMON_ROOT/c.REFERENCE_SUITE/'runs/out'
+    root = e.COMMON_ROOT/c.family_config.REFERENCE_SUITE/'runs/out'
     baseline = root/'smollm2_original_ar/eval/source'
     reports, controls = [], []
     for exp in e.collect_experiments():
         evaluation = evaluation_dir(exp.name)
         for marker in sorted(evaluation.glob('*/complete.json')):
-            reports.append(compare(baseline, marker.parent, baseline_signature=c.REFERENCE_SIGNATURE))
+            reports.append(compare(baseline, marker.parent))
         for label in ('stage_endpoint', 'final'):
-            for arm in c.REFERENCE_CONTROLS:
+            for arm in c.family_config.REFERENCE_CONTROLS:
                 control = root/arm/'eval'/label
                 if (evaluation/label/'complete.json').exists():
-                    controls.append(compare(control, evaluation/label, matched_exposure=True,
-                                            baseline_signature=c.REFERENCE_SIGNATURE))
+                    controls.append(compare(control, evaluation/label, matched_exposure=True))
     return dict(against_original=reports, matched_endpoint_controls=controls,
                 selection_note='KD vs pinned CE controls uses identical text and endpoint exposure; best is validation-selected.')
 

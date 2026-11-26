@@ -95,9 +95,9 @@ def effective_settings(family, run, root, phase):
         }
         if family == "spec-baselines":
             common.update(
-                MAX_HOURS=spec_baselines.BASELINE_MAX_HOURS,
-                TRAIN_TOKENS=spec_baselines.BASELINE_STEPS
-                * spec_baselines.BASELINE_STEP_TOKENS,
+                MAX_HOURS=spec_baselines.family_config.BASELINE_MAX_HOURS,
+                TRAIN_TOKENS=spec_baselines.family_config.BASELINE_STEPS
+                * spec_baselines.family_config.BASELINE_STEP_TOKENS,
             )
     elif family in MMLU_SUITES:
         common = settings(mmlu)

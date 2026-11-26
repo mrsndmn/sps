@@ -4,30 +4,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import instruct_config as source
-from .family_arguments import configure, configure_runs, export_fields
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     ROOT: Path = Path(
         "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/vllm-sps-qwen3"
     )
-    SOURCE_SIGNATURE: str = (
-        "761505551994ceec0a907401b3ee875ffea744b69bc94c7007b23c58181b466b"
-    )
-    PARENT_SIGNATURE: str = (
-        "7408b3ccf0455895e306d0d5272e2fad41d3e70ae8c6fbb5612210d6d18347ae"
-    )
     PARENT_STEP: int = 512
     VLLM_BASE: str = "3fe0d44219471ee5b178036a953b6f0c0c2bf5f6"
     VLLM_COMMIT: str = "65ff372c9f6fbdeebfbde635449160af95ba2de9"
-    MODEL: str = source.MODEL
-    REVISION: str = source.REVISION
+    MODEL: str = source.family_config.MODEL
+    REVISION: str = source.family_config.REVISION
     HORIZONS: int = 4
-    TRAIN_STEPS: int = source.MAX_STEPS
-    GLOBAL_BATCH: int = source.GLOBAL_BATCH
-    PROBE_STEPS: int = source.PROBE_STEPS
-    TRAIN_HOURS: int = source.TRAIN_HOURS
+    TRAIN_STEPS: int = source.family_config.MAX_STEPS
+    GLOBAL_BATCH: int = source.family_config.GLOBAL_BATCH
+    PROBE_STEPS: int = source.family_config.PROBE_STEPS
+    TRAIN_HOURS: int = source.family_config.TRAIN_HOURS
     PROBE_HOURS: int = 1
     EVAL_HOURS: int = 12
     BACKEND: str = "flex_attention"
@@ -42,8 +35,8 @@ class FamilyConfig:
     AUDIT_COUNT: int = 2
     AUDIT_PREFIX_TOKENS: int = 64
     AUDIT_NEW_TOKENS: int = 16
-    GENERATION: dict[str, dict] = field(default_factory=lambda: source.GENERATION)
-    SEED: int = source.SEED
+    GENERATION: dict[str, dict] = field(default_factory=lambda: source.family_config.GENERATION)
+    SEED: int = source.family_config.SEED
 
     @property
     def SOURCE_ROOT(self) -> Path:
@@ -62,19 +55,20 @@ class FamilyConfig:
 
     @property
     def STAGE_STEPS(self) -> int:
-        return int(self.TRAIN_STEPS * source.STAGE_FRACTION)
+        return int(self.TRAIN_STEPS * source.family_config.STAGE_FRACTION)
+
+    EVAL_JOBS: int = 8
 
     @property
     def RESERVATION_CAP_GPU_HOURS(self) -> int:
-        return 2 * (self.PROBE_HOURS * 4 + self.TRAIN_HOURS * 4 + self.EVAL_HOURS * 8)
+        return 2 * (self.PROBE_HOURS * 4 + self.TRAIN_HOURS * 4 + self.EVAL_HOURS * self.EVAL_JOBS)
 
     @property
     def CHECKPOINT_INTERVAL(self) -> int:
-        return self.TRAIN_STEPS // source.CHECKPOINT_PARTS
+        return self.TRAIN_STEPS // source.family_config.CHECKPOINT_PARTS
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)
@@ -90,7 +84,6 @@ experiment_configs = [Experiment("qwen3_sps_mtp", "train", num_gpus=4)] + [
     for mode in family_config.GENERATION
     for arm in ("ar", "eagle3", "sps", "sps_mtp")
 ]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)
 
 
 def collect_experiments(phase, pattern=None):

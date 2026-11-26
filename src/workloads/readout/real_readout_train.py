@@ -22,11 +22,11 @@ from workloads.serving.vllm_sps_train import labels_for, matches_schedule, optim
 
 def parent():
     state = torch.load(run.PARENT, map_location="cpu", mmap=True, weights_only=False)
-    if (state['step'] != c.PARENT_STEP or state['source'] != c.MODEL or state['revision'] != c.REVISION or state['experiment']['name'] != run.PARENT.parent.name or state['experiment']['recipe'] != 'continued_ar' or state['experiment']['distillation_weight']):
+    if (state['step'] != c.family_config.PARENT_STEP or state['source'] != c.family_config.MODEL or state['revision'] != c.family_config.REVISION or state['experiment']['name'] != run.PARENT.parent.name or state['experiment']['recipe'] != 'continued_ar' or state['experiment']['distillation_weight']):
         raise ValueError("Unexpected AR parent")
     wrapper = load_model("continued_ar", "cpu")
     wrapper.load_state_dict(state["model"])
-    return RealReadoutMTP(wrapper.backbone, c.HORIZONS, c.BACKEND)
+    return RealReadoutMTP(wrapper.backbone, c.family_config.HORIZONS, c.family_config.BACKEND)
 
 
 @torch.no_grad()
@@ -42,7 +42,7 @@ def audit_readout(model, example, device):
         fp32_error = float((observed-reference).abs().max())
         with torch.autocast("cuda", dtype=torch.bfloat16):
             native_bf16 = model.backbone(ids, use_cache=False).logits.float()
-            model.backend = c.BACKEND
+            model.backend = c.family_config.BACKEND
             model.backbone.set_attn_implementation("sps_flex_attention")
             packed_bf16 = model(ids).logits[:, :, 0].float()
         tv = 0.5 * (packed_bf16.softmax(-1) - native_bf16.softmax(-1)).abs().sum(-1)
@@ -54,7 +54,7 @@ def audit_readout(model, example, device):
                     bf16_mean_tv=tv.mean().item(),
                     bf16_argmax_differences=int((packed_bf16.argmax(-1) != native_bf16.argmax(-1)).sum()))
     finally:
-        model.backend = c.BACKEND
+        model.backend = c.family_config.BACKEND
         model.backbone.set_attn_implementation("sps_flex_attention")
         model.train()
 
@@ -83,13 +83,13 @@ def main():
     torch.cuda.set_device(device)
     dist.init_process_group("nccl")
     rank, world = dist.get_rank(), dist.get_world_size()
-    if world != run.ARM.num_gpus or c.GLOBAL_BATCH % world:
+    if world != run.ARM.num_gpus or c.family_config.GLOBAL_BATCH % world:
         raise RuntimeError("Unexpected allocation")
-    torch.manual_seed(c.SEED)
+    torch.manual_seed(c.family_config.SEED)
     data = common.data("train")
-    heldout = common.data("val")[:c.VAL_ROWS]
-    steps = c.PROBE_STEPS if probe else c.TRAIN_STEPS
-    split = steps // 2 if probe else c.STAGE_STEPS
+    heldout = common.data("val")[:c.family_config.VAL_ROWS]
+    steps = c.family_config.PROBE_STEPS if probe else c.family_config.TRAIN_STEPS
+    split = steps // 2 if probe else c.family_config.STAGE_STEPS
     model = parent().to(device)
     root = work_path(run.ROOT / "probe") if probe else work_path(run.OUT)
     root.mkdir(parents=True, exist_ok=True)
@@ -99,7 +99,7 @@ def main():
     if not probe and latest.exists():
         state = torch.load(latest, map_location="cpu", mmap=True, weights_only=False)
         if (state["parent"] != str(run.PARENT) or not matches_schedule(state, steps, split)
-                or state.get("horizons", run.LEGACY_HORIZONS) != c.HORIZONS):
+                or state.get("horizons", run.LEGACY_HORIZONS) != c.family_config.HORIZONS):
             raise ValueError("Resume checkpoint does not match the configured run")
         model.load_state_dict(state["model"])
         start = state["step"]
@@ -118,9 +118,9 @@ def main():
         ddp = DDP(model, device_ids=[device.index], broadcast_buffers=False)
         times = []
         for step in range(max(begin, start), end):
-            offset = step * c.GLOBAL_BATCH
+            offset = step * c.family_config.GLOBAL_BATCH
             batch = [labels_for(data[offset+j], device)
-                     for j in range(rank, c.GLOBAL_BATCH, world)]
+                     for j in range(rank, c.family_config.GLOBAL_BATCH, world)]
             count = sum((labels[:, :, int(frozen):] != -100).sum() for _, labels in batch)
             dist.all_reduce(count)
             if count.item() <= 0:
@@ -133,7 +133,7 @@ def main():
                 with sync, torch.autocast("cuda", dtype=torch.bfloat16):
                     loss, _ = ddp(ids, targets=labels)
                     (loss * (world / count.double())).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), source.CLIP, error_if_nonfinite=True)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), source.family_config.CLIP, error_if_nonfinite=True)
             optimizer.step()
             torch.cuda.synchronize()
             elapsed = time.monotonic() - began
@@ -145,14 +145,14 @@ def main():
                 audit["after_frozen"] = audit_readout(model, heldout[0], device)
                 if rank == 0:
                     store_json(root / "readout_audit.json", audit)
-            if not probe and ((step+1) % c.CHECKPOINT_INTERVAL == 0 or step+1 == end):
+            if not probe and ((step+1) % c.family_config.CHECKPOINT_INTERVAL == 0 or step+1 == end):
                 dist.barrier()
                 if rank == 0:
                     score = validation(model, heldout, device)
                     record = dict(model=model.state_dict(), optimizer=optimizer.state_dict(),
                                   step=step+1, frozen=frozen, stage_steps=split,
-                                  global_batch=c.GLOBAL_BATCH, training_steps=steps,
-                                  horizons=c.HORIZONS,
+                                  global_batch=c.family_config.GLOBAL_BATCH, training_steps=steps,
+                                  horizons=c.family_config.HORIZONS,
                                   parent=str(run.PARENT), readout_audit=dict(audit), val_horizon_ce=score)
                     if step+1 == end:
                         atomic_save(root / ("stage_endpoint.pt" if frozen else "final.pt"), record)
@@ -166,12 +166,12 @@ def main():
         measured = torch.tensor([durations[True], durations[False]], device=device)
         dist.all_reduce(measured, op=dist.ReduceOp.MAX)
         if rank == 0:
-            projected = (measured[0]*c.STAGE_STEPS + measured[1]*(c.TRAIN_STEPS-c.STAGE_STEPS))/3600
+            projected = (measured[0]*c.family_config.STAGE_STEPS + measured[1]*(c.family_config.TRAIN_STEPS-c.family_config.STAGE_STEPS))/3600
             store_json(root / "prepared.json", dict(
                        **common.probe_workload(world), seconds=measured.tolist(), projected_hours=projected.item()))
     elif rank == 0:
         store_json(root / "trained.json", dict(parent=str(run.PARENT),
-                   checkpoint=str(public_path(root/"final.pt")), step=steps, horizons=c.HORIZONS,
+                   checkpoint=str(public_path(root/"final.pt")), step=steps, horizons=c.family_config.HORIZONS,
                    **common.training_schedule(),
                    checkpoint_sha256=common.file_hash(root/"final.pt")))
     dist.destroy_process_group()

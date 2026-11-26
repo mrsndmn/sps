@@ -30,7 +30,7 @@ def test_legacy_schedule_cannot_resume_with_a_different_batch_or_boundary(monkey
     state = {"step": 75, "frozen": True}
     assert train.matches_schedule(state, 512, 102)
     assert not train.matches_schedule(state, 512, 101)
-    monkeypatch.setattr(train.c, "GLOBAL_BATCH", 8)
+    monkeypatch.setattr(train.c.family_config, "GLOBAL_BATCH", 8)
     assert not train.matches_schedule(state, 512, 102)
 
 

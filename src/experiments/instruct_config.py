@@ -2,10 +2,8 @@
 
 from dataclasses import dataclass, field
 
-from .family_arguments import configure, configure_runs, export_fields
 
-
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     SUITE: str = "ar-sps-qwen3-1.7b-instruct"
     MODEL: str = "Qwen/Qwen3-1.7B"
@@ -146,8 +144,7 @@ class FamilyConfig:
         )
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 # Queue waiting is not charged; these are bounded worker execution reservations.
 
 
@@ -171,4 +168,3 @@ experiment_configs = [
         "qwen3_instruct_continued_ar_kd", "continued_ar", distillation_weight=0.5
     ),
 ]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

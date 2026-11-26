@@ -56,7 +56,7 @@ def test_runtime_rejects_mutated_python_or_compiled_extensions(tmp_path, monkeyp
         )
     (info / "direct_url.json").write_text(json.dumps({"url": bench.runtime.WHEEL}))
     manifest = {
-        "design_signature": bench.runtime.signature(),
+        **bench.runtime.identity(),
         "site_packages": str(site),
         "overlay_sha256": hashes,
     }
@@ -80,7 +80,7 @@ def test_oracle_rejects_mismatched_checkpoints_and_empty_results(tmp_path, monke
     monkeypatch.setattr(bench, "protocol_signature", lambda: "protocol")
     samples = [
         {"prompt_token_ids": [1], "expected_token_ids": [2]}
-        for _ in range(bench.c.AUDIT_COUNT)
+        for _ in range(bench.c.family_config.AUDIT_COUNT)
     ]
     data = {
         "checkpoint_sha256": "checkpoint",
@@ -146,7 +146,7 @@ def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch)
 def test_completed_results_cannot_be_reused_after_protocol_changes(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(bench.c, "ROOT", tmp_path)
+    monkeypatch.setattr(bench.c.family_config, "ROOT", tmp_path)
     monkeypatch.setattr(bench, "protocol_signature", lambda: "current")
     monkeypatch.setattr(bench.evaluator, "protocol_signature", lambda: "current")
     monkeypatch.setattr(bench, "trained", lambda: {"checkpoint_sha256": "current"})
@@ -192,5 +192,5 @@ def test_serving_protocol_tracks_generation_configuration(monkeypatch):
     protocols = (bench.protocol_signature, serving_graphs.protocol_signature,
                  draft_sweep.protocol_signature)
     before = [protocol() for protocol in protocols]
-    monkeypatch.setitem(bench.evaluator.c.GENERATION, "new-mode", {"temperature": 0.5})
+    monkeypatch.setitem(bench.evaluator.c.family_config.GENERATION, "new-mode", {"temperature": 0.5})
     assert all(protocol() != old for protocol, old in zip(protocols, before, strict=True))

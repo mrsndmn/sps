@@ -1,4 +1,5 @@
 """Isolated, deduplicated MLSpace SPS-MTP training and probe jobs."""
+from experiments.family_cli import worker_child
 
 import argparse
 import json
@@ -38,14 +39,14 @@ def payload(phase, exp, staged, author, nick):
 
 
 def reserve(phase, exp):
-    path = c.ROOT / "budget.json"
+    path = c.family_config.ROOT / "budget.json"
     ledger = json.loads(path.read_text()) if path.exists() else {"attempts": []}
-    hours = {"probe": c.PROBE_HOURS, "train": c.TRAIN_HOURS, "eval": c.EVAL_HOURS}[
+    hours = {"probe": c.family_config.PROBE_HOURS, "train": c.family_config.TRAIN_HOURS, "eval": c.family_config.EVAL_HOURS}[
         phase
     ] * exp.num_gpus
     if (
         sum(x["gpu_hours"] for x in ledger["attempts"]) + hours
-        > c.RESERVATION_CAP_GPU_HOURS
+        > c.family_config.RESERVATION_CAP_GPU_HOURS
     ):
         raise RuntimeError("SPS-vLLM GPU-hour reservation cap exceeded")
     ledger["attempts"].append(
@@ -69,7 +70,7 @@ def submit(args):
     extra = {}
     client = None
     if not args.dry:
-        experiments = [exp for exp in experiments if launch.pending(c.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name, args.profile)]
+        experiments = [exp for exp in experiments if launch.pending(c.family_config.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name, args.profile)]
         if not experiments:
             return
         from mls.manager.job.utils import (
@@ -83,21 +84,21 @@ def submit(args):
             launch.normalize(j["job_desc"]): j["job_name"]
             for j in get_in_progress_jobs(client_profile=args.profile)
         }
-        launch.reconcile_for_outputs(client, active, [c.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name for exp in experiments])
+        launch.reconcile_for_outputs(client, active, [c.family_config.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name for exp in experiments])
         staged = launch.stage_repo(
             Path(launch.git("rev-parse", "--show-toplevel")), commit
         )
         if args.phase == "train":
-            estimate = common.probe_seconds(c.ROOT / "sanity/out/qwen3_sps_mtp/probe.json")
-            if estimate * 2 > c.TRAIN_HOURS * 3600:
+            estimate = common.probe_seconds(c.family_config.ROOT / "sanity/out/qwen3_sps_mtp/probe.json")
+            if estimate * 2 > c.family_config.TRAIN_HOURS * 3600:
                 raise RuntimeError("Training exceeds bounded reservation")
     jobs = []
     for exp in experiments:
         root = (
-            c.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name
+            c.family_config.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name
         )
         marker = root / ("probe.json" if args.phase == "probe" else "trained.json")
-        if marker.exists():
+        if not args.dry and marker.exists():
             if args.phase == "probe":
                 common.probe_seconds(marker)
             else:
@@ -105,14 +106,14 @@ def submit(args):
             print("Skip completed:", exp.name)
             continue
         body = payload(args.phase, exp, staged, args.author_name, args.telegram_nick)
-        identity = launch.output_identity(body["job_desc"], root, active)
+        identity = launch.output_identity(body["job_desc"], root)
         if identity in active:
             jobs.append(
                 {"name": exp.name, "job_name": active[identity], "reused": True}
             )
             continue
         if args.dry:
-            print(json.dumps(body, indent=2))
+            launch.print_preview(body, root, staged, args.phase)
             continue
         body["region"] = extra["region"]
         reserve(args.phase, exp)
@@ -127,6 +128,8 @@ def submit(args):
         if job.get("job_name"):
             active[identity] = job["job_name"]
         print(json.dumps(job), flush=True)
+    if args.dry:
+        return
     print("__MLS_JOBS_JSON__")
     print(json.dumps({"phase": args.phase, "jobs": jobs}), flush=True)
 
@@ -145,9 +148,9 @@ def worker(args):
     ]
     if args.phase == "probe":
         command += ["--probe"]
-    process = subprocess.Popen(command, start_new_session=True)
+    process = subprocess.Popen(worker_child(command), start_new_session=True)
     try:
-        hours = c.PROBE_HOURS if args.phase == "probe" else c.TRAIN_HOURS
+        hours = c.family_config.PROBE_HOURS if args.phase == "probe" else c.family_config.TRAIN_HOURS
         code = process.wait(timeout=hours * 3600)
         if code:
             raise RuntimeError(f"SPS MTP worker exited {code}")
@@ -172,8 +175,8 @@ def main():
     args = parser.parse_args()
     if args.worker:
         return worker(args)
-    launch.ARTIFACTS_ROOT = c.ROOT
-    launch.RUN_ROOT = c.ROOT / "runs"
+    launch.ARTIFACTS_ROOT = c.family_config.ROOT
+    launch.RUN_ROOT = c.family_config.ROOT / "runs"
     if args.dry:
         return submit(args)
     with launch.submission_lock():

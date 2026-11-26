@@ -12,7 +12,7 @@ def reference(trained):
     state = torch.load(
         common.checked_checkpoint(trained), map_location="cpu", mmap=True, weights_only=False
     )
-    if not common.matches_training_input(state) or state["step"] != c.TRAIN_STEPS:
+    if not common.matches_training_input(state) or state["step"] != c.family_config.TRAIN_STEPS:
         raise RuntimeError("Audit checkpoint identity mismatch")
     model = common.load_model("cpu", backend="sdpa")
     model.load_state_dict(state["model"])
@@ -22,11 +22,11 @@ def reference(trained):
     eos = set(eos if isinstance(eos, list) else [eos])
     result = []
     with torch.inference_mode():
-        for row in common.data("val")[: c.AUDIT_COUNT]:
-            prefix = row["input_ids"][: c.AUDIT_PREFIX_TOKENS]
+        for row in common.data("val")[: c.family_config.AUDIT_COUNT]:
+            prefix = row["input_ids"][: c.family_config.AUDIT_PREFIX_TOKENS]
             tokens = torch.tensor([prefix], device="cuda")
             output = []
-            for _ in range(c.AUDIT_NEW_TOKENS):
+            for _ in range(c.family_config.AUDIT_NEW_TOKENS):
                 token = (
                     model(tokens, positions=[tokens.shape[1] - 1])
                     .logits[0, 0, 0]
@@ -51,7 +51,7 @@ def verify(llm, references):
     for row in references:
         output = llm.generate(
             [{"prompt_token_ids": row["prompt_token_ids"]}],
-            SamplingParams(temperature=0, max_tokens=c.AUDIT_NEW_TOKENS),
+            SamplingParams(temperature=0, max_tokens=c.family_config.AUDIT_NEW_TOKENS),
             use_tqdm=False,
         )[0]
         actual = list(output.outputs[0].token_ids)

@@ -22,14 +22,12 @@ from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 from workloads.serving import vllm_sps_run as run
 
-from experiments.draft_sweep import (
-    DRAFT_LENGTHS,
-    EVAL_HOURS,
-    AUDIT_TOKENS,
-    Evaluation,
-    experiment_configs,
-    AUDIT_ARMS,
-)
+from experiments.draft_sweep import family_config as draft_sweep_settings
+from experiments.draft_sweep import Evaluation, experiment_configs
+DRAFT_LENGTHS = draft_sweep_settings.DRAFT_LENGTHS
+EVAL_HOURS = draft_sweep_settings.EVAL_HOURS
+AUDIT_TOKENS = draft_sweep_settings.AUDIT_TOKENS
+AUDIT_ARMS = draft_sweep_settings.AUDIT_ARMS
 
 ROOT = training.ROOT
 LAUNCHER = "scripts/serving/draft_sweep.py"
@@ -43,8 +41,6 @@ def protocol_signature():
     parts = (
         HORIZONS,
         graph.BASE_PROTOCOL(),
-
-
         runtime.signature(),
         graph.IMPLEMENTATION,
     )
@@ -53,13 +49,9 @@ def protocol_signature():
 
 def configure():
     training.configure()
-    c.EVAL_HOURS = EVAL_HOURS
-    c.AUDIT_NEW_TOKENS = AUDIT_TOKENS
-    c.experiment_configs = [TRAINER, *experiment_configs]
-    c.RESERVATION_CAP_GPU_HOURS = 2 * (
-        (c.PROBE_HOURS + c.TRAIN_HOURS) * TRAINER.num_gpus
-        + (len(experiment_configs) + 1) * EVAL_HOURS
-    )
+    c.family_config.EVAL_HOURS = EVAL_HOURS
+    c.family_config.AUDIT_NEW_TOKENS = AUDIT_TOKENS
+    c.family_config.EVAL_JOBS = len(experiment_configs) + 1
     bench.protocol_signature = graph.protocol_signature = protocol_signature
     bench.verify_runtime = graph.verify_runtime
     bench.check_gate = check_gate
@@ -157,7 +149,7 @@ def audit_evidence(checkpoint, *, protocol=None):
             if (
                 sample["prompt_token_ids"] != ref["prompt_token_ids"]
                 or sample["expected_token_ids"] != ref["expected_token_ids"]
-                or not 0 < len(actual) <= c.AUDIT_NEW_TOKENS
+                or not 0 < len(actual) <= c.family_config.AUDIT_NEW_TOKENS
                 or sample["equal"] is not (actual == ref["expected_token_ids"])
             ):
                 raise RuntimeError(f"Inconsistent greedy comparison: {arm}")
@@ -190,7 +182,7 @@ def audit_arm(arm):
     refs = bench.reference_tokens(checkpoint)
     exp = c.Experiment(arm, arm)
     llm = vllm.LLM(
-        **active_engine_arguments(exp, checkpoint["export"], c.EAGLE_REVISION)
+        **active_engine_arguments(exp, checkpoint["export"], c.family_config.EAGLE_REVISION)
     )
     samples = native_audit.verify(llm, refs)
     bench.launch.store_json(
@@ -221,7 +213,7 @@ def evaluate(exp):
         def generate(self, *args, **kwargs):
             result = super().generate(*args, **kwargs)
             self.untimed_requests += 1
-            if exp.draft_tokens and self.untimed_requests == c.WARMUP_REQUESTS:
+            if exp.draft_tokens and self.untimed_requests == c.family_config.WARMUP_REQUESTS:
                 counters = [
                     {
                         "name": metric.name,
@@ -309,7 +301,7 @@ def worker(phase, exp):
         return bench.child(
             command,
             os.environ.copy(),
-            c.PROBE_HOURS if phase == "probe" else c.TRAIN_HOURS,
+            c.family_config.PROBE_HOURS if phase == "probe" else c.family_config.TRAIN_HOURS,
         )
     manifest = graph.verify_runtime()
     if complete(phase, exp, manifest):
@@ -330,7 +322,7 @@ def worker(phase, exp):
 
 def probe_report():
     path = ROOT / "sanity/out" / training.EXPERIMENT.name / "probe.json"
-    return path if path.exists() else ROOT / "prepared.json"
+    return path
 
 
 def complete(phase, exp, manifest=None, *, protocol=None):
@@ -392,12 +384,13 @@ def submit(args, choices):
     phase = args.phase
     commit = launch.git("rev-parse", "HEAD")
     staged = launch.STAGING_ROOT / commit
-    if args.dry:
-        for exp in choices:
-            print(json.dumps(payload(phase, exp, staged), indent=2))
-        return
     def output(exp):
         return ROOT / ("sanity" if phase == "probe" else "runs") / "out" / exp.name
+
+    if args.dry:
+        for exp in choices:
+            launch.print_preview(payload(phase, exp, staged), output(exp), staged, phase)
+        return
 
     choices = [exp for exp in choices if launch.pending(output(exp))]
     if not choices:
@@ -407,7 +400,7 @@ def submit(args, choices):
         if not complete("probe", TRAINER):
             raise RuntimeError("Finish the 9-position probe first")
         estimate = common.probe_seconds(probe_report(), legacy_horizons=training.LEGACY_HORIZONS)
-        if 2 * estimate > c.TRAIN_HOURS * 3600:
+        if 2 * estimate > c.family_config.TRAIN_HOURS * 3600:
             raise RuntimeError("Probe does not fit the reserved training time")
     if phase in {"audit", "eval"}:
         bench.trained()
@@ -442,7 +435,7 @@ def submit(args, choices):
     deferred = []
     for exp in pending:
         body = payload(phase, exp, staged)
-        identity = launch.output_identity(body["job_desc"], output(exp), active)
+        identity = launch.output_identity(body["job_desc"], output(exp))
         arm_prefix = identity.rsplit(" ", 1)[0] + " "
         if any(key.startswith(arm_prefix) and key != identity and " output=" not in key for key in active):
             raise RuntimeError(f"An older design is already running for {exp.name}")
@@ -536,7 +529,7 @@ def report():
         expected_model = (
             str(export_for(exp.arm, exp.draft_tokens, export))
             if exp.arm.startswith("sps")
-            else c.MODEL
+            else c.family_config.MODEL
         )
         if args["model"] != expected_model:
             raise ValueError(f"Wrong verifier/export for {exp.name}")
@@ -567,8 +560,8 @@ def report():
         baseline = results[
             f"{'sps' if exp.arm.startswith('sps') else 'ar'}-{exp.mode}"
         ]["trials"]
-        if len(trials) != c.REPEATS or any(
-            row["repeat"] != i or row["count"] != c.EVAL_COUNT
+        if len(trials) != c.family_config.REPEATS or any(
+            row["repeat"] != i or row["count"] != c.family_config.EVAL_COUNT
             for i, row in enumerate(trials)
         ):
             raise ValueError(f"Incomplete trials for {exp.name}")

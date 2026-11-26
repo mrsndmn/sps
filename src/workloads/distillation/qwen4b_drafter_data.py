@@ -12,8 +12,14 @@ from experiments import instruct_config
 from data import instruct_data
 from workloads.evaluation.report_mmlu_stem import STEM_SUBJECTS
 
-from experiments.qwen4b_drafter_train import PREPARED_DATASET as NAME
-from experiments.qwen4b_drafter_data import REPO, REVISION, SOURCE_ROWS, MMLU_TEST_FILE, MIN_LOSS_TOKENS
+from experiments.qwen4b_drafter_train import family_config as qwen4b_drafter_train_settings
+NAME = qwen4b_drafter_train_settings.PREPARED_DATASET
+from experiments.qwen4b_drafter_data import family_config as qwen4b_drafter_data_settings
+REPO = qwen4b_drafter_data_settings.REPO
+REVISION = qwen4b_drafter_data_settings.REVISION
+SOURCE_ROWS = qwen4b_drafter_data_settings.SOURCE_ROWS
+MMLU_TEST_FILE = qwen4b_drafter_data_settings.MMLU_TEST_FILE
+MIN_LOSS_TOKENS = qwen4b_drafter_data_settings.MIN_LOSS_TOKENS
 
 
 def open_dataset():
@@ -37,15 +43,6 @@ def open_dataset():
     if len(rows) != SOURCE_ROWS or not {"input_ids", "loss_mask", "seq_len"} <= set(rows.column_names):
         raise ValueError("Unexpected prepared DFlash dataset")
     return rows
-
-
-def selection_path(root, context, horizon, validation, accumulation, seed):
-    design = (
-        REVISION, reference.TARGET_REVISION, instruct_config.MMLU_REVISION,
-        sorted(STEM_SUBJECTS), context, horizon, validation, accumulation, seed,
-    )
-    identity = sha256(json.dumps(design).encode()).hexdigest()[:16]
-    return root / "data" / NAME / f"{identity}.json"
 
 
 def select_rows(rows, tokenizer, overlap, *, context, horizon, validation, accumulation, seed):
@@ -101,8 +98,8 @@ def prepare(path, *, context, horizon, validation, accumulation, seed):
         cache_dir=HF_HOME / "hub", local_files_only=True,
     )
     benchmark_path = hf_hub_download(
-        instruct_config.MMLU_DATASET, MMLU_TEST_FILE, repo_type="dataset",
-        revision=instruct_config.MMLU_REVISION, cache_dir=HF_HOME / "hub",
+        instruct_config.family_config.MMLU_DATASET, MMLU_TEST_FILE, repo_type="dataset",
+        revision=instruct_config.family_config.MMLU_REVISION, cache_dir=HF_HOME / "hub",
         local_files_only=True,
     )
     benchmark = read_table(benchmark_path, columns=["question", "subject"]).to_pylist()

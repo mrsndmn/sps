@@ -7,21 +7,20 @@ import shlex
 from orchestration import mlspace_launch as launch
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
-from experiments.real_readout_run import (
-    ROOT,
-    PARENT,
-    experiment_configs,
-    ARM,
-    OUT,
-    LEGACY_HORIZONS,
-)
+from experiments.real_readout_run import family_config as real_readout_run_settings
+from experiments.real_readout_run import experiment_configs
+ARM, = experiment_configs
+ROOT = real_readout_run_settings.ROOT
+PARENT = real_readout_run_settings.PARENT
+OUT = real_readout_run_settings.OUT
+LEGACY_HORIZONS = real_readout_run_settings.LEGACY_HORIZONS
 
 
 def trained():
     marker = json.loads((OUT / "trained.json").read_text())
     if (marker["checkpoint"] != str(OUT / "final.pt") or marker["parent"] != str(PARENT)
-            or marker["step"] != c.TRAIN_STEPS or not marker["checkpoint_sha256"]
-            or marker.get("horizons", LEGACY_HORIZONS) != c.HORIZONS
+            or marker["step"] != c.family_config.TRAIN_STEPS or not marker["checkpoint_sha256"]
+            or marker.get("horizons", LEGACY_HORIZONS) != c.family_config.HORIZONS
             or common.recorded_schedule(marker) != common.training_schedule()):
         raise ValueError("Native readout checkpoint does not match the configured run")
     return marker
@@ -29,13 +28,13 @@ def trained():
 
 def probe_report():
     path = ROOT / "probe/prepared.json"
-    return path if path.exists() else ROOT / "prepared.json"
+    return path
 
 
 def check_probe():
     projected = common.probe_seconds(probe_report(), num_gpus=ARM.num_gpus,
                                      legacy_horizons=LEGACY_HORIZONS)
-    if projected >= c.TRAIN_HOURS * 3600:
+    if projected >= c.family_config.TRAIN_HOURS * 3600:
         raise RuntimeError("Training projection exceeds allocation")
 
 
@@ -45,15 +44,7 @@ def submit(phase, dry):
     output = ROOT / "probe" if phase == "probe" else OUT
     if not dry and not launch.pending(output):
         return
-    marker = probe_report() if phase == "probe" else OUT / "trained.json"
-    if marker.exists():
-        if phase == "probe":
-            check_probe()
-        else:
-            trained()
-        print(f"Completed {phase}")
-        return
-    script = ["timeout", f"{c.PROBE_HOURS if phase == 'probe' else c.TRAIN_HOURS}h",
+    script = ["timeout", f"{c.family_config.PROBE_HOURS if phase == 'probe' else c.family_config.TRAIN_HOURS}h",
               str(launch.PYTHON), "-m", "torch.distributed.run", "--standalone",
               f"--nproc_per_node={ARM.num_gpus}", "scripts/readout/real_readout_train.py", phase]
     body = launch.payload("train", ARM.name, staged, "d.tarasov", "mrsndmn")
@@ -63,7 +54,7 @@ def submit(phase, dry):
     body["env_variables"].update(SPS_EXPERIMENT_SUITE="ar-sps-qwen3-1.7b-instruct",
                                  HF_HUB_DISABLE_XET="1")
     if dry:
-        print(json.dumps(body))
+        launch.print_preview(body, output, staged, phase)
         return
     if phase == "train":
         check_probe()
@@ -74,7 +65,7 @@ def submit(phase, dry):
     active = {launch.normalize(j["job_desc"]): j["job_name"]
               for j in get_in_progress_jobs(client_profile="default")}
     launch.reconcile_for_outputs(client, active, [output])
-    identity = launch.output_identity(body["job_desc"], output, active)
+    identity = launch.output_identity(body["job_desc"], output)
     if identity in active:
         print(active[identity])
         return

@@ -2,10 +2,8 @@
 
 from dataclasses import dataclass
 
-from .family_arguments import configure, export_fields
 
-
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     REPO: str = "jiamingshan/qwen3-4b-dflash-official100k-prepared"
     REVISION: str = "948e343b5ccc06e21794d195f2a34872ed180b9b"
@@ -14,5 +12,4 @@ class FamilyConfig:
     MIN_LOSS_TOKENS: int = 128
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()

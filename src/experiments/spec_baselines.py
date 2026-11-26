@@ -2,11 +2,10 @@
 
 from dataclasses import dataclass, field
 
-from .family_arguments import configure, configure_runs, export_fields
 from .types import ExperimentConfig
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     BASELINE_CONTEXT: int = 1024
     BASELINE_GLOBAL_BATCH: int = 64
@@ -43,8 +42,7 @@ class FamilyConfig:
         return self.BASELINE_CONTEXT * self.BASELINE_GLOBAL_BATCH
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 experiment_configs = [
     ExperimentConfig("medusa_heads_ce", "medusa", horizons=4),
     ExperimentConfig("tiny_ar_ce", "ar_tiny", horizons=4),
@@ -60,4 +58,3 @@ experiment_configs = [
         for n in (2, 3, 4)
     ],
 ]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

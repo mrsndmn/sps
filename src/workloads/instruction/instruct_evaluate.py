@@ -110,21 +110,21 @@ def likelihood(model, tokenizer, root, limit):
             with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
                 return model(inps).logits
     adapter = Adapter(pretrained=model.backbone, tokenizer=tokenizer, backend='causal',
-                      batch_size=c.EVAL_BATCH, max_length=c.LIKELIHOOD_CONTEXT,
+                      batch_size=c.family_config.EVAL_BATCH, max_length=c.family_config.LIKELIHOOD_CONTEXT,
                       device='cuda', logits_cache=False)
-    for task in c.LIKELIHOOD_TASKS:
+    for task in c.family_config.LIKELIHOOD_TASKS:
         path = root / f'{task}.json'
         if path.exists():
             continue
-        source = c.LIKELIHOOD_DATASETS[task]
+        source = c.family_config.LIKELIHOOD_DATASETS[task]
         task_config = dict(task=task, dataset_path=source['repo'],
                            dataset_kwargs=dict(revision=source['revision'],
                                                trust_remote_code=task == 'lambada_openai'))
         if 'config' in source:
             task_config['dataset_name'] = source['config']
         result = evaluator.simple_evaluate(model=adapter, tasks=[task_config], num_fewshot=0,
-                 batch_size=c.EVAL_BATCH, log_samples=True, limit=limit, random_seed=c.SEED,
-                 numpy_random_seed=c.SEED, torch_random_seed=c.SEED, fewshot_random_seed=c.SEED)
+                 batch_size=c.family_config.EVAL_BATCH, log_samples=True, limit=limit, random_seed=c.family_config.SEED,
+                 numpy_random_seed=c.family_config.SEED, torch_random_seed=c.family_config.SEED, fewshot_random_seed=c.family_config.SEED)
         write_json(path, result)
 
 
@@ -137,7 +137,7 @@ def evaluate(exp, limit=None):
     from transformers import AutoTokenizer
     from lm_eval.tasks.ifeval import utils as ifeval_utils, instructions, instructions_registry, instructions_util
     from langdetect import DetectorFactory
-    DetectorFactory.seed = c.SEED
+    DetectorFactory.seed = c.family_config.SEED
     ensure_ifeval_resources()
     started = time.monotonic()
     root = e.output_dir(exp) / 'eval-smoke' if limit else e.phase_work('eval', e.output_dir(exp) / 'eval')
@@ -147,12 +147,10 @@ def evaluate(exp, limit=None):
         raise ValueError('Run heldout generation audit before evaluation')
     gate_data = json.loads(gate.read_text())
     signature = e.SUITE
-    if gate_data['generation'] != c.GENERATION:
+    if gate_data['generation'] != c.family_config.GENERATION:
         raise ValueError('Stale generation protocol audit')
     manifest = dict(design_signature=signature, experiment=exp.__dict__, limit=limit,
-                    generation=c.GENERATION, datasets={c.MMLU_DATASET:c.MMLU_REVISION,c.IFEVAL_DATASET:c.IFEVAL_REVISION},
-                    ifeval_code={Path(m.__file__).name:hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()
-                                 for m in (ifeval_utils,instructions,instructions_registry,instructions_util)},
+                    generation=c.family_config.GENERATION, datasets={c.family_config.MMLU_DATASET:c.family_config.MMLU_REVISION,c.family_config.IFEVAL_DATASET:c.family_config.IFEVAL_REVISION},
                     lm_eval_version=importlib.metadata.version('lm_eval'))
     meta = root / 'manifest.json'
     if meta.exists() and json.loads(meta.read_text()) != manifest:
@@ -161,20 +159,20 @@ def evaluate(exp, limit=None):
     model = load_model(exp.recipe, 'cuda').eval().requires_grad_(False)
     if exp.trainable:
         restore(e.output_dir(exp) / 'final.pt', model, 'cuda')
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
     result = dict(design_signature=signature, experiment=exp.name)
     heldout = data_rows('test')
     result['assistant_nll'] = nll(model, heldout[:limit] if limit else heldout, torch.device('cuda'))
     write_json(root/'heldout.json', result['assistant_nll'])
     likelihood(model, tokenizer, root, limit)
-    datasets = {'mmlu': list(load_dataset(c.MMLU_DATASET, 'all', revision=c.MMLU_REVISION, split='test')),
-                'ifeval': list(load_dataset(c.IFEVAL_DATASET, revision=c.IFEVAL_REVISION, split='train'))}
+    datasets = {'mmlu': list(load_dataset(c.family_config.MMLU_DATASET, 'all', revision=c.family_config.MMLU_REVISION, split='test')),
+                'ifeval': list(load_dataset(c.family_config.IFEVAL_DATASET, revision=c.family_config.IFEVAL_REVISION, split='train'))}
     with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
         for task, task_rows in datasets.items():
             task_rows = task_rows[:limit] if limit else task_rows
-            for mode, settings in c.GENERATION.items():
+            for mode, settings in c.family_config.GENERATION.items():
                 result[f'{task}-{mode}'] = evaluate_generation(model,tokenizer,task_rows,task,mode,settings,
-                                    root,signature,c.SEED,started,c.EVAL_MAX_HOURS)
+                                    root,signature,c.family_config.SEED,started,c.family_config.EVAL_MAX_HOURS)
     write_json(root/'results.json', result)
     if not limit:
         write_json(e.phase_work('eval', e.output_dir(exp))/'evaluated.json', result)
@@ -190,28 +188,28 @@ def audit():
     from transformers import AutoTokenizer
     ensure_ifeval_resources()
     model = load_model('original_ar', 'cuda').eval().requires_grad_(False)
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
-    validation = rows('val')[:c.GENERATION_AUDIT_COUNT]
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
+    validation = rows('val')[:c.family_config.GENERATION_AUDIT_COUNT]
     if not validation:
         raise ValueError('No validation dialogs for generation audit')
     results = []
     with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
         for index, row in enumerate(validation):
             messages = row['messages'][:-1]
-            for mode, settings in c.GENERATION.items():
+            for mode, settings in c.family_config.GENERATION.items():
                 generated = generate(model,tokenizer,messages,mode=='thinking',settings,
-                                      document_seed(c.SEED,'validation',mode,index))
+                                      document_seed(c.family_config.SEED,'validation',mode,index))
                 results.append(dict(index=index,mode=mode,**generated))
     # Compare cached inference to full forward on actual chat tokens, both model paths.
     ids = tokenizer.apply_chat_template(validation[0]['messages'][:-1], tokenize=True,
-                        add_generation_prompt=True, enable_thinking=False, return_tensors='pt').to('cuda')[:, :c.AUDIT_LENGTH]
+                        add_generation_prompt=True, enable_thinking=False, return_tensors='pt').to('cuda')[:, :c.family_config.AUDIT_LENGTH]
     parity = {}
     for sps in (False, True):
         model.sps = sps
         decoder = Decoder(model)
         actual = decoder.step(ids)
         expected = model(ids).logits[:, -1]
-        torch.testing.assert_close(actual, expected, atol=c.GENERATION_PARITY_ATOL, rtol=c.GENERATION_PARITY_RTOL)
+        torch.testing.assert_close(actual, expected, atol=c.family_config.GENERATION_PARITY_ATOL, rtol=c.family_config.GENERATION_PARITY_RTOL)
         parity[str(sps)] = (actual-expected).abs().max().item()
         # Exercise the continuation path too; prefill-only parity misses cache errors.
         for token in ids[0, -2:]:
@@ -219,13 +217,13 @@ def audit():
             actual = decoder.step(next_id)
             ids_extended = torch.cat((ids, next_id), dim=1)
             expected = model(ids_extended).logits[:, -1]
-            torch.testing.assert_close(actual, expected, atol=c.GENERATION_PARITY_ATOL, rtol=c.GENERATION_PARITY_RTOL)
+            torch.testing.assert_close(actual, expected, atol=c.family_config.GENERATION_PARITY_ATOL, rtol=c.family_config.GENERATION_PARITY_RTOL)
             ids = ids_extended
     write_json(e.SANITY_ROOT/'generation-audit-samples.json', results)
     write_json(e.SANITY_ROOT/'generation-protocol.json',dict(design_signature=e.SUITE,
-               generation=c.GENERATION, validation_count=len(validation), parity=parity,
+               generation=c.family_config.GENERATION, validation_count=len(validation), parity=parity,
                length_rates={mode:sum(x['stop']=='length' for x in results if x['mode']==mode)/len(validation)
-                             for mode in c.GENERATION}))
+                             for mode in c.family_config.GENERATION}))
 
 
 def main():

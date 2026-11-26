@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch import nn
 
@@ -14,8 +15,8 @@ def test_epoch_shuffling_and_anchor_sampling():
     first = training.sample_anchors(mask, 0, 37)
     assert first == training.sample_anchors(mask, 0, 37)
     assert first != training.sample_anchors(mask, 1, 37)
-    assert len(set(first)) == training.MAX_ANCHORS
-    assert all(i >= 12 and i + training.PROPOSALS < len(mask) for i in first)
+    assert len(set(first)) == training.EXPERIMENT.max_anchors
+    assert all(i >= 12 and i + training.EXPERIMENT.proposals < len(mask) for i in first)
 
 
 def test_block_visibility_does_not_reveal_supervised_future_or_other_blocks():
@@ -53,7 +54,6 @@ def test_checkpoint_restores_optimizer_cursor_and_schedule(tmp_path):
 
 
 def test_worker_payload_requests_matching_training_topology_and_single_eval_gpu(tmp_path, monkeypatch):
-    monkeypatch.setattr(training, "signature", lambda: "abc" * 21)
     for phase in ("probe", "train"):
         body = jobs.payload(phase, None, tmp_path)
         assert body["instance_type"] == "a100.4gpu"
@@ -86,3 +86,16 @@ def test_milestone_evaluation_waits_for_published_training(tmp_path, monkeypatch
     exp.output("eval", 5000).mkdir()
     jobs.submit_phase(training, "eval", 5000, jobs.marker, {}, "test")
     assert len(calls) == 1
+
+
+def test_checkpoint_inputs_detect_reordered_selection(tmp_path, monkeypatch):
+    from workloads.distillation import dflash_repro_eval as evaluation
+
+    selection = tmp_path / "selection.json"
+    monkeypatch.setattr(training.previous, "selection_path", lambda: selection)
+    selection.write_text('{"train":[1,2],"val":[3]}')
+    inputs = training.training_inputs(training.EXPERIMENT)
+    training.launch.store_json(tmp_path / "inputs.json", inputs)
+    selection.write_text('{"train":[2,1],"val":[3]}')
+    with pytest.raises(ValueError, match="checkpoint training inputs"):
+        evaluation.evaluate(tmp_path, tmp_path / "eval.json")

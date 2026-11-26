@@ -5,7 +5,7 @@ from orchestration.named.standalone import job, load
 
 def shared_training_settings(source):
     fields = ("CONTEXT", "EMBED_LR", "FULL_LR", "BETAS", "WEIGHT_DECAY", "CLIP")
-    return {field: getattr(source, field) for field in fields}
+    return {field: getattr(source.family_config, field) for field in fields}
 
 
 def serving(family):
@@ -33,7 +33,7 @@ def serving(family):
                 "--filter",
                 run.name,
                 config=config,
-                output_dir=config.ROOT / ("sanity" if phase == "probe" else "runs") / "out" / run.name,
+                output_dir=config.family_config.ROOT / ("sanity" if phase == "probe" else "runs") / "out" / run.name,
                 parameters=shared_training_settings(config.source)
                 if phase in {"train", "probe"}
                 else None,

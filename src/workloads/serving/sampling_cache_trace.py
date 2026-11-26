@@ -169,7 +169,7 @@ def engine_worker(exp):
     cases = json.loads((root() / 'cases.json').read_text())
     prefixes, plain, speculative = evidence()
     arguments = engine_arguments(audit.source.Experiment(exp.name, exp.arm),
-                                saved['precision']['audit']['checkpoint']['export'], audit.source.EAGLE_REVISION)
+                                saved['precision']['audit']['checkpoint']['export'], audit.source.family_config.EAGLE_REVISION)
     arguments.update(hf_overrides={'head_dtype': 'float32'},
                      worker_extension_cls='workloads.serving.sampling_cache_trace.CacheTraceWorkerExtension')
     llm = LLM(**arguments)

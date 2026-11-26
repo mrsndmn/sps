@@ -1,4 +1,5 @@
 """Single-GPU native vLLM gate and benchmark using the isolated serving runtime."""
+from experiments.family_cli import worker_child
 from orchestration.named.publication import work_path
 
 import argparse
@@ -22,12 +23,11 @@ from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 from workloads.serving import vllm_sps_evaluate as evaluator
 from workloads.serving.vllm_sps_run import reserve
-from experiments.serving_benchmark import (
-    AUDIT_NAME,
-    AUDIT_HOURS,
-    MAX_ACTIVE_JOBS,
-    experiment_configs,
-)
+from experiments.serving_benchmark import family_config as serving_benchmark_settings
+from experiments.serving_benchmark import experiment_configs
+AUDIT_NAME = serving_benchmark_settings.AUDIT_NAME
+AUDIT_HOURS = serving_benchmark_settings.AUDIT_HOURS
+MAX_ACTIVE_JOBS = serving_benchmark_settings.MAX_ACTIVE_JOBS
 
 
 def protocol_signature():
@@ -40,17 +40,17 @@ def protocol_signature():
 
 
 def root_for(exp):
-    return work_path(c.ROOT / "runs/out" / exp.name)
+    return work_path(c.family_config.ROOT / "runs/out" / exp.name)
 
 
 def reference_path():
-    return work_path(c.ROOT / "runs/out" / AUDIT_NAME) / "reference.json"
+    return work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME) / "reference.json"
 
 
 def verify_runtime():
     manifest = json.loads((runtime.ARTIFACTS / "prepared.json").read_text())
     installed = json.loads((runtime.RUNTIME / "sps-runtime.json").read_text())
-    if manifest != installed:
+    if manifest != installed or any(installed.get(key) != value for key, value in runtime.identity().items()):
         raise RuntimeError("Runtime provenance mismatch")
     site = Path(manifest["site_packages"])
     if (
@@ -88,7 +88,7 @@ def trained():
 
 
 def audit_protocol():
-    root = work_path(c.ROOT / "runs/out" / AUDIT_NAME)
+    root = work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME)
     return json.loads((root / "serving-protocol.json").read_text())["protocol_signature"]
 
 
@@ -100,9 +100,9 @@ def reference_tokens(checkpoint, *, protocol=None):
     ):
         raise RuntimeError("Greedy oracle provenance mismatch")
     samples = data["samples"]
-    if len(samples) != c.AUDIT_COUNT or any(
+    if len(samples) != c.family_config.AUDIT_COUNT or any(
         not x["prompt_token_ids"]
-        or not 0 < len(x["expected_token_ids"]) <= c.AUDIT_NEW_TOKENS
+        or not 0 < len(x["expected_token_ids"]) <= c.family_config.AUDIT_NEW_TOKENS
         for x in samples
     ):
         raise RuntimeError("Incomplete greedy oracle")
@@ -136,10 +136,10 @@ def audit_arm(arm):
     checkpoint = trained()
     refs = reference_tokens(checkpoint)
     exp = c.Experiment(arm, arm)
-    llm = vllm.LLM(**engine_arguments(exp, checkpoint["export"], c.EAGLE_REVISION))
+    llm = vllm.LLM(**engine_arguments(exp, checkpoint["export"], c.family_config.EAGLE_REVISION))
     samples = native_audit.verify(llm, refs)
     launch.store_json(
-        work_path(c.ROOT / "runs/out" / AUDIT_NAME) / f"{arm}.json", {"samples": samples}
+        work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME) / f"{arm}.json", {"samples": samples}
     )
     if not all(x["equal"] for x in samples):
         raise RuntimeError(f"{arm} native vLLM greedy parity failed")
@@ -171,7 +171,7 @@ def serving_tokenizer(loader, *args, **kwargs):
 
 
 def child(command, env, hours):
-    process = subprocess.Popen(list(map(str, command)), env=env, start_new_session=True)
+    process = subprocess.Popen(worker_child(list(map(str, command))), env=env, start_new_session=True)
     try:
         code = process.wait(timeout=hours * 3600)
         if code:
@@ -202,7 +202,7 @@ def worker(exp):
     env.update(SPS_VLLM_SOURCE=manifest["site_packages"], VLLM_USE_V2_MODEL_RUNNER="0")
     python = runtime.RUNTIME / "bin/python"
     deadline = (
-        time.monotonic() + (AUDIT_HOURS if exp.arm == "audit" else c.EVAL_HOURS) * 3600
+        time.monotonic() + (AUDIT_HOURS if exp.arm == "audit" else c.family_config.EVAL_HOURS) * 3600
     )
 
     def stage(command, settings):
@@ -275,14 +275,14 @@ def payload(exp, staged, phase):
 
 
 def check_gate(manifest, *, protocol=None):
-    data = json.loads((work_path(c.ROOT / "runs/out" / AUDIT_NAME) / "evaluated.json").read_text())
+    data = json.loads((work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME) / "evaluated.json").read_text())
     if (
         data["runtime_signature"] != runtime.signature()
         or data["checkpoint_sha256"] != trained()["checkpoint_sha256"]
     ):
         raise RuntimeError("Greedy audit does not match this model and runtime")
     recorded = json.loads(
-        (work_path(c.ROOT / "runs/out" / AUDIT_NAME) / "serving-runtime.json").read_text()
+        (work_path(c.family_config.ROOT / "runs/out" / AUDIT_NAME) / "serving-runtime.json").read_text()
     )
     if recorded != manifest:
         raise RuntimeError("Greedy audit runtime manifest changed")
@@ -315,7 +315,7 @@ def submit(args):
     staged = launch.STAGING_ROOT / commit
     if args.dry:
         for exp in choices:
-            print(json.dumps(payload(exp, staged, args.phase), indent=2))
+            launch.print_preview(payload(exp, staged, args.phase), root_for(exp), staged, args.phase)
         return
     choices = [exp for exp in choices if launch.pending(root_for(exp))]
     if not choices:
@@ -346,7 +346,7 @@ def submit(args):
             print("Already completed:", exp.name)
             continue
         body = payload(exp, staged, args.phase)
-        identity = launch.output_identity(body["job_desc"], root_for(exp), active)
+        identity = launch.output_identity(body["job_desc"], root_for(exp))
         if identity in active:
             jobs.append(
                 {"name": exp.name, "job_name": active[identity], "reused": True}
@@ -388,8 +388,8 @@ def main():
         if args.eval_worker:
             return evaluate(choices[0])
         return worker(choices[0])
-    launch.ARTIFACTS_ROOT = c.ROOT
-    launch.RUN_ROOT = c.ROOT / "runs"
+    launch.ARTIFACTS_ROOT = c.family_config.ROOT
+    launch.RUN_ROOT = c.family_config.ROOT / "runs"
     if args.dry:
         return submit(args)
     with launch.submission_lock():

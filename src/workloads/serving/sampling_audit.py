@@ -22,17 +22,15 @@ from workloads.serving import serving_runtime as runtime
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as source
 
-from experiments.sampling_audit import (
-    SAMPLES,
-    SEED,
-    PREFIX_LENGTHS,
-    OUTPUT_LENGTHS,
-    KERNEL_CASES,
-    Experiment,
-    experiment_configs,
-)
+from experiments.sampling_audit import family_config as sampling_audit_settings
+from experiments.sampling_audit import Experiment, experiment_configs
+SAMPLES = sampling_audit_settings.SAMPLES
+SEED = sampling_audit_settings.SEED
+PREFIX_LENGTHS = sampling_audit_settings.PREFIX_LENGTHS
+OUTPUT_LENGTHS = sampling_audit_settings.OUTPUT_LENGTHS
+KERNEL_CASES = sampling_audit_settings.KERNEL_CASES
 
-ROOT = source.ROOT.parent / 'sps-sampling-audit'
+ROOT = source.family_config.ROOT.parent / 'sps-sampling-audit'
 
 
 def signature():
@@ -160,7 +158,7 @@ def constrained_probabilities(weights, temperature, top_p, top_k):
 def prepare_prefixes():
     rows = common.data('val')
     result = []
-    for mode in source.GENERATION:
+    for mode in source.family_config.GENERATION:
         eligible = sorted((r for r in rows if r['mode']==mode), key=lambda r:len(r['input_ids']), reverse=True)
         if not eligible or len(eligible[0]['input_ids']) < max(PREFIX_LENGTHS):
             raise RuntimeError('No sufficiently long held-out prefix')
@@ -178,7 +176,7 @@ def decode_worker(arm, execution):
     if torch.cuda.device_count() != 1:
         raise RuntimeError('Exactly one GPU required')
     identity = json.loads((output_dir()/'identity.json').read_text())
-    arguments = engine_arguments(source.Experiment(arm,arm), identity['checkpoint']['export'], source.EAGLE_REVISION)
+    arguments = engine_arguments(source.Experiment(arm,arm), identity['checkpoint']['export'], source.family_config.EAGLE_REVISION)
     if execution == 'graphs':
         arguments = graphs.graph_arguments(lambda: arguments)
     llm = LLM(**arguments)
@@ -267,7 +265,7 @@ def submit(dry=False):
     staged = launch.STAGING_ROOT/commit
     exp = experiment_configs[0]
     if dry:
-        print(json.dumps(payload(exp,staged),indent=2)); return
+        launch.print_preview(payload(exp,staged), output_dir(), staged, "eval"); return
     if not launch.pending(output_dir()):
         return
     identity = input_identity()
@@ -288,7 +286,7 @@ def submit(dry=False):
         active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
     launch.reconcile_for_outputs(client, active, [output_dir()])
     body = payload(exp,staged)
-    name = launch.output_identity(body['job_desc'], output_dir(), active)
+    name = launch.output_identity(body['job_desc'], output_dir())
     if name in active:
         job = dict(name=exp.name, job_name=active[name],reused=True)
     else:

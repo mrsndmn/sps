@@ -35,13 +35,13 @@ def test_active_file_is_never_modified(tmp_path):
 
 def test_subset_reuse_noncontiguous_ids(tmp_path):
     from types import SimpleNamespace
-    from workloads.evaluation.mmlu_subset import selected_indices, reuse_samples, validate_saved, SOURCE_SIGNATURE
+    from workloads.evaluation.mmlu_subset import selected_indices, reuse_samples, validate_saved
     data = [dict(subject=s, answer=0) for s in ['anatomy', 'astronomy', 'anatomy', 'machine_learning']]
     indices = selected_indices(data, stem=True)
     assert indices == [1, 3]
     assert selected_indices(data, stem=True, limit=1) == [1]
     exp = SimpleNamespace(name='fixture')
-    (tmp_path/'manifest.json').write_text(json.dumps(dict(design_signature=SOURCE_SIGNATURE, limit=None, experiment=exp.__dict__)))
+    (tmp_path/'manifest.json').write_text(json.dumps(dict(design_signature='archived', limit=None, experiment=exp.__dict__)))
     rows = [sample(i, row, 'A') | {'correct': True} for i, row in enumerate(data)]
     (tmp_path/'samples.jsonl').write_text(''.join(json.dumps(x)+'\n' for x in rows))
     reused = reuse_samples(tmp_path, exp, data, indices)
@@ -56,12 +56,12 @@ def test_subset_reuse_noncontiguous_ids(tmp_path):
 
 def test_merge_full_stem_deduplicates_and_rejects_conflicts(tmp_path):
     from types import SimpleNamespace
-    from workloads.evaluation.mmlu_subset import reuse_full_and_stem, SOURCE_SIGNATURE, STEM_SIGNATURE
+    from workloads.evaluation.mmlu_subset import reuse_full_and_stem
     data = [dict(subject=s, answer=0) for s in ['anatomy', 'astronomy', 'machine_learning']]
     exp = SimpleNamespace(name='fixture')
     rows = [sample(i, row, 'A') | {'correct': True} for i, row in enumerate(data)]
-    for suite, signature, selected in [('mmlu-generation', SOURCE_SIGNATURE, rows[:2]),
-                                       ('mmlu-stem-generation', STEM_SIGNATURE, rows[1:])]:
+    for suite, signature, selected in [('mmlu-generation', 'archived', rows[:2]),
+                                       ('mmlu-stem-generation', 'archived', rows[1:])]:
         folder = tmp_path/suite/'runs/out'/exp.name/'full'
         folder.mkdir(parents=True)
         (folder/'manifest.json').write_text(json.dumps(dict(design_signature=signature, limit=None, experiment=exp.__dict__)))
@@ -84,7 +84,7 @@ def test_historical_stem_report_ignores_current_evaluator_signature(tmp_path, mo
     exp = experiment_configs[0]
     folder = tmp_path/'mmlu-stem-generation/runs/out'/exp.name/'full'
     folder.mkdir(parents=True)
-    meta = dict(design_signature=report.STEM_SIGNATURE, limit=None, experiment=exp.__dict__)
+    meta = dict(design_signature='archived', limit=None, experiment=exp.__dict__)
     (folder/'manifest.json').write_text(json.dumps(meta))
     (folder/'samples.jsonl').write_text(json.dumps(sample(0, data[0], 'A'))+'\n')
     monkeypatch.setattr(environment, 'COMMON_ROOT', tmp_path)

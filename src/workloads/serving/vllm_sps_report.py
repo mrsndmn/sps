@@ -32,15 +32,15 @@ def report():
     table = []
     for arm in ("ar", "eagle3", "sps", "sps_mtp"):
         row = {"experiment": arm}
-        for mode in c.GENERATION:
+        for mode in c.family_config.GENERATION:
             name = f"{arm}-{mode}"
             baseline_name = f"{'sps' if arm.startswith('sps') else 'ar'}-{mode}"
             trials = results[name]["trials"]
             baselines = results[baseline_name]["trials"]
             if (
-                len(trials) != c.REPEATS
-                or len(baselines) != c.REPEATS
-                or any(x["count"] != c.EVAL_COUNT for x in trials + baselines)
+                len(trials) != c.family_config.REPEATS
+                or len(baselines) != c.family_config.REPEATS
+                or any(x["count"] != c.family_config.EVAL_COUNT for x in trials + baselines)
             ):
                 raise RuntimeError("Incomplete benchmark trial")
             speedups = [
@@ -64,7 +64,7 @@ def report():
                 }
             )
         table.append(row)
-    target = c.ROOT / "reports"
+    target = c.family_config.ROOT / "reports"
     target.mkdir(parents=True, exist_ok=True)
     store_json(
         target / "results.json",

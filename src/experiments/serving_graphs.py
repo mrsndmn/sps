@@ -2,10 +2,8 @@
 
 from dataclasses import dataclass, field
 
-from .family_arguments import configure, export_fields
 
-
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     IMPLEMENTATION: str = "31ba03a874f775372154f0edf3e17d436f2d7462"
     COMPILATION: dict = field(
@@ -17,5 +15,4 @@ class FamilyConfig:
     )
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()

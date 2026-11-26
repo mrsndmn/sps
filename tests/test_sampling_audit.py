@@ -29,7 +29,7 @@ def test_payload_is_single_gpu_staged_and_separate():
     assert body['instance_type']==a.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
     assert 'scripts/serving/sampling_audit.py --worker' in body['script']
     assert '/staged/commit' in body['script']
-    assert a.ROOT != a.source.ROOT and a.ROOT != a.graphs.ROOT
+    assert a.ROOT != a.source.family_config.ROOT and a.ROOT != a.graphs.ROOT
 
 
 def test_completed_audit_skips_after_code_changes(tmp_path,monkeypatch):

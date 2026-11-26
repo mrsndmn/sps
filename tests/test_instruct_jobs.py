@@ -46,9 +46,9 @@ assert len(arms) == 5
 assert [(x.recipe, x.distillation_weight) for x in arms] == [
     ('original_ar',0), ('staged_sps',0), ('staged_sps',.5),
     ('continued_ar',0), ('continued_ar',.5)]
-assert c.MODEL == 'Qwen/Qwen3-1.7B' and len(c.REVISION) == 40
+assert c.family_config.MODEL == 'Qwen/Qwen3-1.7B' and len(c.family_config.REVISION) == 40
 assert not arms[0].trainable and e.training_marker(arms[0]) is None
-assert c.GLOBAL_BATCH % (4*c.MICRO_BATCH) == 0
+assert c.family_config.GLOBAL_BATCH % (4*c.family_config.MICRO_BATCH) == 0
 for arm in arms[1:]:
     assert arm.num_gpus == 4 and arm.trainable
     command = e.train_command(arm)

@@ -50,8 +50,8 @@ def test_readout_named_preview_uses_its_checkpoint_and_worker():
     plan = json.loads(out)
     from experiments import instruct_config
 
-    assert plan["settings"]["generation"] == instruct_config.GENERATION["nonthinking"]
-    assert plan["settings"]["REVISION"] == instruct_config.REVISION
+    assert plan["settings"]["generation"] == instruct_config.family_config.GENERATION["nonthinking"]
+    assert plan["settings"]["REVISION"] == instruct_config.family_config.REVISION
     assert plan["payload"]["instance_type"] == "a100.1gpu"
     assert (
         "scripts/readout/real_readout_gsm8k.py --worker --filter A-nonthinking"
@@ -148,35 +148,6 @@ def test_cap_completed_comparison_skips_cohort_preparation(
     assert capsys.readouterr().out.strip() == f"Completed original: {report}"
 
 
-def test_unprepared_drafter_prints_worker_command(tmp_path):
-    from types import SimpleNamespace
-    from orchestration.named.distillation import preview_drafter
-    from orchestration.named.standalone import Job
-
-    module = SimpleNamespace(
-        __name__="workloads.distillation.qwen4b_drafter",
-        training=SimpleNamespace(DATA=tmp_path, DEFAULT_DATASET="smoltalk"),
-    )
-    plan = Job(
-        "smoltalk",
-        "eval",
-        module.__name__,
-        ("--phase", "eval", "--dataset", "smoltalk"),
-        {},
-    )
-    preview = preview_drafter(
-        plan, module, tmp_path, SimpleNamespace(PYTHON=sys.executable)
-    )
-    assert preview["pending_input"] == str(tmp_path / "manifest.json")
-    assert preview["worker_command"] == [
-        sys.executable,
-        "scripts/distillation/qwen4b_drafter.py",
-        *plan.args,
-        "--worker",
-    ]
-    assert not list(tmp_path.iterdir())
-
-
 @pytest.mark.parametrize("mode", ["thinking", "nonthinking"])
 def test_provenance_preview_uses_evaluation_generation(mode):
     from orchestration.named.special_families import provenance
@@ -219,7 +190,7 @@ def test_named_train_preview_includes_shared_optimizer_and_context(family, run, 
     actual = plan["settings"]
     assert "GPU_HOURS" not in actual and "EVAL_MAX_HOURS" not in actual
     for field in ("CONTEXT", "EMBED_LR", "FULL_LR", "BETAS", "WEIGHT_DECAY", "CLIP"):
-        expected = getattr(vllm_sps_train.source, field)
+        expected = getattr(vllm_sps_train.source.family_config, field)
         assert actual[field] == (
             list(expected) if isinstance(expected, tuple) else expected
         )

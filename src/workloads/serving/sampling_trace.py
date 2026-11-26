@@ -18,12 +18,10 @@ import numpy as np
 from workloads.serving import sampling_audit as audit
 from orchestration import mlspace_launch as launch
 
-from experiments.sampling_trace import (
-    ARMS,
-    NATIVE_ARMS,
-    Experiment,
-    experiment_configs,
-)
+from experiments.sampling_trace import family_config as sampling_trace_settings
+from experiments.sampling_trace import Experiment, experiment_configs
+ARMS = sampling_trace_settings.ARMS
+NATIVE_ARMS = sampling_trace_settings.NATIVE_ARMS
 
 ROOT = audit.ROOT.parent/'sps-sampling-trace'
 SOURCE = audit.output_dir()
@@ -106,7 +104,7 @@ def engine_worker(arm):
     saved=json.loads((output_dir()/'identity.json').read_text())
     cases=json.loads((output_dir()/'cases.json').read_text())
     arguments=engine_arguments(audit.source.Experiment(arm,'sps' if arm=='sps_four_slots' else arm),
-                               saved['audit']['checkpoint']['export'],audit.source.EAGLE_REVISION)
+                               saved['audit']['checkpoint']['export'],audit.source.family_config.EAGLE_REVISION)
     arguments.update(max_logprobs=-1,logprobs_mode='raw_logprobs',
                      worker_extension_cls='workloads.serving.sampling_trace.TraceWorkerExtension')
     llm=LLM(**arguments)
@@ -137,7 +135,7 @@ def native_worker():
     model=audit.common.load_model('cpu',backend='sdpa')
     checkpoint = audit.common.checked_checkpoint(saved['audit']['checkpoint'])
     state=torch.load(checkpoint,map_location='cpu',mmap=True,weights_only=False)
-    if not audit.common.matches_training_input(state) or state['step'] != audit.source.TRAIN_STEPS:
+    if not audit.common.matches_training_input(state) or state['step'] != audit.source.family_config.TRAIN_STEPS:
         raise RuntimeError('Checkpoint identity mismatch')
     model.load_state_dict(state['model']);del state
     single=PretrainedSPS(model.backbone,sps=True);single.prediction=model.prediction

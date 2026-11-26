@@ -9,7 +9,7 @@ from torch.utils.checkpoint import checkpoint
 
 def configuration():
     from experiments import instruct_config
-    return instruct_config
+    return instruct_config.family_config
 
 
 def load_model(recipe, device):

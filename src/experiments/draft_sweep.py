@@ -3,10 +3,9 @@
 from dataclasses import dataclass
 
 from . import vllm_sps_config as c
-from .family_arguments import configure, configure_runs, export_fields
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     DRAFT_LENGTHS: tuple[int, ...] = (4, 8)
     EVAL_HOURS: int = 2
@@ -17,8 +16,7 @@ class FamilyConfig:
         return {"sps": 0, **{f"sps_mtp-{n}": n for n in self.DRAFT_LENGTHS}}
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)
@@ -28,12 +26,11 @@ class Evaluation(c.Experiment):
 
 experiment_configs = [
     Evaluation(f"{arm}-{mode}", arm, mode)
-    for mode in c.GENERATION
+    for mode in c.family_config.GENERATION
     for arm in ("ar", "sps")
 ] + [
     Evaluation(f"{arm}-{length}-{mode}", arm, mode, draft_tokens=length)
     for length in family_config.DRAFT_LENGTHS
-    for mode in c.GENERATION
+    for mode in c.family_config.GENERATION
     for arm in ("eagle3", "sps_mtp")
 ]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

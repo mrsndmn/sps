@@ -12,7 +12,9 @@ from workloads.distillation import qwen4b_drafter_data as prepared
 from workloads.distillation import qwen4b_drafter_eval as evaluation
 from workloads.distillation import qwen4b_drafter_train as training
 
-from experiments.qwen4b_drafter import DATASET_DIRECTORIES, PHASE_TIMEOUT
+from experiments.qwen4b_drafter import family_config as qwen4b_drafter_settings
+DATASET_DIRECTORIES = qwen4b_drafter_settings.DATASET_DIRECTORIES
+PHASE_TIMEOUT = qwen4b_drafter_settings.PHASE_TIMEOUT
 PREPARED_TRAIN_TIMEOUT = "24h"
 ARCHIVE = "smoltalk-2048"
 ARCHIVE_TRAIN = DATASET_DIRECTORIES[ARCHIVE]
@@ -30,9 +32,6 @@ def phase_output(phase, name, dataset):
 def marker(phase, name, dataset):
     output = work_path(phase_output(phase, name, dataset))
     if phase == "probe":
-        legacy = root(dataset) / "prepared.json"
-        if output == phase_output(phase, name, dataset) and legacy.is_file():
-            return legacy
         return output / "prepared.json"
     return output / (
         "trained.json" if phase == "train" else "evaluated.json"
@@ -52,7 +51,7 @@ def names(phase, dataset=training.DEFAULT_DATASET):
 def payload(phase, name, staged, dataset=training.DEFAULT_DATASET):
     body = launch.payload("eval", name, staged, "d.tarasov", "mrsndmn")
     body["job_desc"] = (
-        f"qwen4b-drafter {dataset} {phase} {name} {training.signature(dataset)[:16]} "
+        f"qwen4b-drafter {dataset} {phase} {name} "
         "#d.tarasov @mrsndmn"
     )
     timeout = PHASE_TIMEOUT[phase]
@@ -71,7 +70,7 @@ def submit(phase, selected, dry, dataset):
     staged = launch.STAGING_ROOT / commit
     if dry:
         for name in selected:
-            print(json.dumps(payload(phase, name, staged, dataset), indent=2))
+            launch.print_preview(payload(phase, name, staged, dataset), phase_output(phase, name, dataset), staged, phase)
         return
     selected = [name for name in selected if launch.pending(phase_output(phase, name, dataset))]
     if not selected:
@@ -110,7 +109,7 @@ def submit_pending(phase, selected, commit, staged, dataset):
             continue
         body = payload(phase, name, staged, dataset)
         body["region"] = options["region"]
-        identity = launch.output_identity(body["job_desc"], phase_output(phase, name, dataset), active)
+        identity = launch.output_identity(body["job_desc"], phase_output(phase, name, dataset))
         if identity in active:
             result = {"name": name, "job_name": active[identity], "reused": True}
         else:

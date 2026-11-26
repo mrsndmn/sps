@@ -10,8 +10,6 @@ college_computer_science college_mathematics college_physics computer_security
 conceptual_physics electrical_engineering elementary_mathematics high_school_biology
 high_school_chemistry high_school_computer_science high_school_mathematics
 high_school_physics high_school_statistics machine_learning'''.split())
-SOURCE_SIGNATURE = '78399971569afb2da34334515f2a4943e4429212c3a8077a82fd059e7045bf58'
-STEM_SIGNATURE = '1e42f6ab6d346a07097daca5b12f7f484c41bb1775c15c7f1271b6af7b04ab4e'
 
 
 def read_samples(path):
@@ -70,7 +68,6 @@ def main():
     from experiments.mmlu_config import DATASET, REVISION, experiment_configs
     dataset = list(load_dataset(DATASET, 'all', revision=REVISION, split='test'))
     root = COMMON_ROOT / args.suite
-    signature = SOURCE_SIGNATURE if args.suite == 'mmlu-generation' else STEM_SIGNATURE
     results = {}
     for exp in experiment_configs:
         folder = families[args.suite].for_run(COMMON_ROOT, exp)
@@ -84,7 +81,7 @@ def main():
             samples = read_samples(folder / 'samples.jsonl')
         results[exp.name] = summarize(samples, dataset)
     report = dict(benchmark='mmlu_stem_generation', dataset=DATASET, revision=REVISION,
-                  source_signature=signature, subjects=sorted(STEM_SUBJECTS), results=results)
+                  subjects=sorted(STEM_SUBJECTS), results=results)
     output = root / 'reports/mmlu_stem.json'
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix('.tmp')

@@ -2,10 +2,8 @@
 
 from dataclasses import dataclass
 
-from .family_arguments import configure, configure_runs, export_fields
 
-
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     SAMPLES: int = 32768
     SEED: int = 9147
@@ -21,8 +19,7 @@ class FamilyConfig:
     )
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)
@@ -33,4 +30,3 @@ class Experiment:
 
 
 experiment_configs = [Experiment()]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

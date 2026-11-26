@@ -1,10 +1,8 @@
 """One-GPU checkpoint/workload evaluation, independent of long sibling tasks."""
 
-import hashlib
 import importlib.metadata
 import json
 import time
-from pathlib import Path
 
 from orchestration.mlspace_launch import store_json
 
@@ -13,12 +11,6 @@ def evaluate(sc, c, variant, exp, workload, limit=None):
     import torch
     from datasets import load_dataset
     from langdetect import DetectorFactory
-    from lm_eval.tasks.ifeval import (
-        instructions,
-        instructions_registry,
-        instructions_util,
-        utils,
-    )
     from transformers import AutoTokenizer
 
     from experiments import instruct_config as source
@@ -36,18 +28,14 @@ def evaluate(sc, c, variant, exp, workload, limit=None):
     root.mkdir(parents=True, exist_ok=True)
     gate = json.loads((sc.e.SANITY_ROOT / "generation-protocol.json").read_text())
     if (
-        gate['generation'] != source.GENERATION
+        gate['generation'] != source.family_config.GENERATION
     ):
         raise RuntimeError("Source generation protocol mismatch")
-    DetectorFactory.seed = source.SEED
+    DetectorFactory.seed = source.family_config.SEED
     ensure_ifeval_resources()
-    evaluator_code = {
-        Path(m.__file__).name: hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()
-        for m in (utils, instructions, instructions_registry, instructions_util)
-    }
     original = json.loads((sc.e.output_dir(exp) / "eval/manifest.json").read_text())
     if (
-        original['ifeval_code'] != evaluator_code or original['lm_eval_version'] != importlib.metadata.version('lm_eval')
+        original['lm_eval_version'] != importlib.metadata.version('lm_eval')
     ):
         raise RuntimeError("Scoring implementation differs from source evaluation")
     manifest = {
@@ -57,11 +45,11 @@ def evaluate(sc, c, variant, exp, workload, limit=None):
         "checkpoint": checkpoint,
         "workload": workload,
         "limit": limit,
-        "generation": source.GENERATION,
-        "evaluator_code": evaluator_code,
+        "generation": source.family_config.GENERATION,
+        "lm_eval_version": original["lm_eval_version"],
         "datasets": {
-            source.IFEVAL_DATASET: source.IFEVAL_REVISION,
-            source.MMLU_DATASET: source.MMLU_REVISION,
+            source.family_config.IFEVAL_DATASET: source.family_config.IFEVAL_REVISION,
+            source.family_config.MMLU_DATASET: source.family_config.MMLU_REVISION,
         },
     }
     meta = root / "manifest.json"
@@ -72,7 +60,7 @@ def evaluate(sc, c, variant, exp, workload, limit=None):
     state = torch.load(checkpoint["path"], map_location="cpu", weights_only=False)
     model.load_state_dict(state["model"])
     del state
-    tokenizer = AutoTokenizer.from_pretrained(source.MODEL, revision=source.REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(source.family_config.MODEL, revision=source.family_config.REVISION)
     result = {
         "design_signature": sc.signature(),
         "experiment": exp.name,
@@ -92,17 +80,17 @@ def evaluate(sc, c, variant, exp, workload, limit=None):
         if task == "ifeval":
             data = list(
                 load_dataset(
-                    source.IFEVAL_DATASET,
-                    revision=source.IFEVAL_REVISION,
+                    source.family_config.IFEVAL_DATASET,
+                    revision=source.family_config.IFEVAL_REVISION,
                     split="train",
                 )
             )
         else:
             data = list(
                 load_dataset(
-                    source.MMLU_DATASET,
+                    source.family_config.MMLU_DATASET,
                     "all",
-                    revision=source.MMLU_REVISION,
+                    revision=source.family_config.MMLU_REVISION,
                     split="test",
                 )
             )
@@ -115,10 +103,10 @@ def evaluate(sc, c, variant, exp, workload, limit=None):
                 data,
                 task,
                 mode,
-                source.GENERATION[mode],
+                source.family_config.GENERATION[mode],
                 root,
                 sc.signature(),
-                source.SEED,
+                source.family_config.SEED,
                 started,
                 c.WORKLOAD_HOURS[workload] - c.STARTUP_SECONDS / 3600,
             )

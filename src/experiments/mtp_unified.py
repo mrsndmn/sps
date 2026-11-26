@@ -2,11 +2,10 @@
 
 from dataclasses import dataclass
 
-from .family_arguments import configure, configure_runs, export_fields
 from .types import ExperimentConfig
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     UNIFIED_PROMPTS: int = 64
     UNIFIED_PROMPT_TOKENS: int = 128
@@ -15,8 +14,7 @@ class FamilyConfig:
     UNIFIED_TIMEOUT: int = 4 * 3600
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 experiment_configs = [
     ExperimentConfig(
         f"mtp_n{n}_self",
@@ -27,4 +25,3 @@ experiment_configs = [
     )
     for n in (2, 3, 4)
 ]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

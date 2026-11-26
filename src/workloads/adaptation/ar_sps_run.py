@@ -1,4 +1,5 @@
 """Bounded workers for the isolated AR-to-SPS suite."""
+from experiments.family_cli import worker_child
 import argparse
 import json
 import math
@@ -12,7 +13,7 @@ from orchestration.mlspace_launch import store_json
 
 
 def hours(phase):
-    return {'prepare': c.PREPARE_HOURS, 'train': c.TRAIN_HOURS, 'eval': c.EVAL_HOURS}[phase]
+    return {'prepare': c.family_config.PREPARE_HOURS, 'train': c.family_config.TRAIN_HOURS, 'eval': c.family_config.EVAL_HOURS}[phase]
 
 
 def reserve(phase, name):
@@ -25,8 +26,8 @@ def reserve(phase, name):
     ledger = json.loads(path.read_text()) if path.exists() else {'attempts': []}
     cost = hours(phase)*(1 if phase == 'eval' else 4)
     used = sum(row['gpu_hours'] for row in ledger['attempts'])
-    if used+cost > c.GPU_HOURS:
-        raise RuntimeError(f'Aggregate GPU-hour reservation cap exceeded: {used}+{cost}>{c.GPU_HOURS}')
+    if used+cost > c.family_config.GPU_HOURS:
+        raise RuntimeError(f'Aggregate GPU-hour reservation cap exceeded: {used}+{cost}>{c.family_config.GPU_HOURS}')
     ledger['attempts'].append(dict(phase=phase, name=name, gpu_hours=cost, time=time.time()))
     store_json(path, ledger)
 
@@ -39,25 +40,25 @@ def calibrated_plan(probes):
         if 'staged' in name:
             if probe['embedding'] <= 0 or not math.isfinite(probe['embedding']):
                 raise RuntimeError('Missing frozen-stage throughput')
-            rates.append(c.STAGE_FRACTION*probe['embedding'] + (1-c.STAGE_FRACTION)*probe['full'])
+            rates.append(c.family_config.STAGE_FRACTION*probe['embedding'] + (1-c.family_config.STAGE_FRACTION)*probe['full'])
         else:
             rates.append(probe['full'])
-    available = c.TRAIN_HOURS*3600-c.STARTUP_SECONDS
-    steps = min(c.MAX_STEPS, int(available/(max(rates)*c.SAFETY)))
-    if c.DISTILLATION:
-        source_root = e.COMMON_ROOT/c.REFERENCE_SUITE
+    available = c.family_config.TRAIN_HOURS*3600-c.family_config.STARTUP_SECONDS
+    steps = min(c.family_config.MAX_STEPS, int(available/(max(rates)*c.family_config.SAFETY)))
+    if c.family_config.DISTILLATION:
+        source_root = e.COMMON_ROOT/c.family_config.REFERENCE_SUITE
         report = source_root/'prepared/prepared.json'
         parent = json.loads((report if report.exists() else source_root/'prepared.json').read_text())
-        if (parent.get('steps') != c.MAX_STEPS or parent.get('stage_steps') != int(c.MAX_STEPS * c.STAGE_FRACTION) or parent.get('text_tokens') != c.MAX_STEPS * c.GLOBAL_BATCH * c.CONTEXT):
+        if (parent.get('steps') != c.family_config.MAX_STEPS or parent.get('stage_steps') != int(c.family_config.MAX_STEPS * c.family_config.STAGE_FRACTION) or parent.get('text_tokens') != c.family_config.MAX_STEPS * c.family_config.GLOBAL_BATCH * c.family_config.CONTEXT):
             raise RuntimeError('Reference training plan mismatch')
         if steps != parent['steps']:
             raise RuntimeError('Distillation cannot fit matched exposure within the time cap')
-    if (c.LARGE_CE or c.QWEN) and steps != c.MAX_STEPS:
+    if (c.family_config.LARGE_CE or c.family_config.QWEN) and steps != c.family_config.MAX_STEPS:
         raise RuntimeError('Fresh model run cannot fit matched exposure within the time cap')
-    if steps < c.MIN_STEPS:
+    if steps < c.family_config.MIN_STEPS:
         raise RuntimeError('No meaningful common training budget fits the cap')
-    return dict(steps=steps, stage_steps=max(1, int(steps*c.STAGE_FRACTION)),
-                text_tokens=steps*c.GLOBAL_BATCH*c.CONTEXT, probes=probes,
+    return dict(steps=steps, stage_steps=max(1, int(steps*c.family_config.STAGE_FRACTION)),
+                text_tokens=steps*c.family_config.GLOBAL_BATCH*c.family_config.CONTEXT, probes=probes,
                 design_signature=e.SUITE)
 
 
@@ -71,10 +72,10 @@ def internal(phase, name):
             for exp in e.collect_experiments():
                 if not exp.trainable:
                     continue
-                subprocess.run(e.train_command(exp, probe=True), check=True)
+                subprocess.run(worker_child(e.train_command(exp, probe=True)), check=True)
                 probes[exp.name] = json.loads((e.SANITY_ROOT/'out'/exp.name/'probe.json').read_text())
             # Native AR parity is a hard preparation gate, before marker publication.
-            subprocess.run([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--audit'], check=True)
+            subprocess.run(worker_child([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--audit']), check=True)
             store_json(e.prepared_path(), calibrated_plan(probes))
     else:
         matches = [exp for exp in e.collect_experiments() if exp.name == name]
@@ -82,9 +83,9 @@ def internal(phase, name):
             raise ValueError('Unknown experiment')
         exp = matches[0]
         if phase == 'train':
-            subprocess.run(e.train_command(exp), check=True)
+            subprocess.run(worker_child(e.train_command(exp)), check=True)
         else:
-            subprocess.run([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--filter', name], check=True)
+            subprocess.run(worker_child([str(e.PYTHON), 'scripts/adaptation/ar_sps_evaluate.py', '--filter', name]), check=True)
         dest = e.phase_work('eval', e.output_dir(exp))
         store_json(dest/('trained.json' if phase == 'train' else 'evaluated.json'),
                    dict(design_signature=e.SUITE))
@@ -105,9 +106,9 @@ def main():
     command = [str(e.PYTHON), 'scripts/adaptation/ar_sps_run.py', args.phase, '--internal']
     if args.filter:
         command += ['--filter', args.filter]
-    process = subprocess.Popen(command, start_new_session=True)
+    process = subprocess.Popen(worker_child(command), start_new_session=True)
     try:
-        result = process.wait(timeout=hours(args.phase)*3600-c.STARTUP_SECONDS)
+        result = process.wait(timeout=hours(args.phase)*3600-c.family_config.STARTUP_SECONDS)
         if result:
             raise RuntimeError(f'{args.phase} worker exited {result}')
     except BaseException:

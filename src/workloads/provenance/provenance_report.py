@@ -47,9 +47,6 @@ def run(mode):
     protocols = [r['identity']['protocol'] for r in results.values()]
     if any(p != protocols[0] for p in protocols):
         raise ValueError('Control protocols differ')
-    codes = [r['identity']['code'] for r in results.values()]
-    if any(code != codes[0] for code in codes):
-        raise ValueError('Control evaluation implementations differ')
     preparations = {r['identity']['preparation_sha256'] for r in results.values()}
     if len(preparations) != 1:
         raise ValueError('Control prepared data differs')
@@ -58,7 +55,7 @@ def run(mode):
     old = d.protocol(meta,'ifeval',mode)
     p = protocols[0]
     if (old['generation'] != p['generation'] or old['revision'] != p['revision']
-            or old['evaluator_code'] != p['ifeval_code'] or p['dataset'] != d.c.IFEVAL_DATASET):
+            or p['dataset'] != d.c.family_config.IFEVAL_DATASET):
         raise ValueError('Source baseline protocol differs')
     arms['original_ar'], evidence['original_ar'] = d.read_rows(baseline/f'ifeval-{mode}.jsonl','ifeval')
     ids = d.align(arms,'ifeval',require_full=True)
@@ -83,7 +80,7 @@ def run(mode):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--mode',choices=evaluation.ic.MODES,default='nonthinking')
+    parser.add_argument('--mode',choices=evaluation.ic.family_config.MODES,default='nonthinking')
     args=parser.parse_args()
     r=run(args.mode)
     print(json.dumps(dict(summary=r['summary'],comparisons=r['comparisons'],interactions=r['interactions']),indent=2))

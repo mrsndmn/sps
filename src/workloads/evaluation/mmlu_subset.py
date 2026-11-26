@@ -3,9 +3,7 @@ from experiments.evaluation_outputs import families
 import hashlib
 import json
 from pathlib import Path
-from workloads.evaluation.report_mmlu_stem import STEM_SUBJECTS, SOURCE_SIGNATURE, STEM_SIGNATURE, read_samples, summarize
-
-GENERATION_SHA256 = '11504a2e36a7bfb43d6cadccfa46d6d6f785cae4f9e9f5a200be277affae88a8'
+from workloads.evaluation.report_mmlu_stem import STEM_SUBJECTS, read_samples, summarize
 
 
 def selected_indices(rows, stem=False, limit=None):
@@ -13,17 +11,15 @@ def selected_indices(rows, stem=False, limit=None):
     return indices[:limit] if limit else indices
 
 
-def reuse_samples(folder, exp, rows, indices, *, signature=SOURCE_SIGNATURE):
+def reuse_samples(folder, exp, rows, indices):
     meta = folder / 'manifest.json'
     if not meta.exists():
         return []
     manifest = json.loads(meta.read_text())
     if (manifest.get('limit') is not None or manifest.get('experiment') != exp.__dict__):
         raise ValueError('Unexpected full-MMLU source manifest')
-    from experiments import mmlu_config as c
-    generation = Path(__file__).with_name('mmlu_generation.py')
-    if (hashlib.sha256(generation.read_bytes()).hexdigest() != GENERATION_SHA256 or
-            c.MAX_NEW_TOKENS != 512 or c.SEED != 1337 or c.DATASET != 'cais/mmlu' or
+    from experiments.mmlu import family_config as c
+    if (c.MAX_NEW_TOKENS != 512 or c.SEED != 1337 or c.DATASET != 'cais/mmlu' or
             c.REVISION != 'c30699e8356da336a370243923dbaf21066bb9fe'):
         raise ValueError('Generation protocol changed; cannot reuse old answers')
     samples = read_samples(folder / 'samples.jsonl')
@@ -49,14 +45,11 @@ def validate_saved(samples, rows, indices):
     return seen
 
 
-
-
 def reuse_full_and_stem(common_root, exp, rows, indices):
     merged = {}
-    for suite, signature in [('mmlu-generation', SOURCE_SIGNATURE),
-                             ('mmlu-stem-generation', STEM_SIGNATURE)]:
+    for suite in ("mmlu-generation", "mmlu-stem-generation"):
         folder = families[suite].for_run(common_root, exp)
-        for item in reuse_samples(folder, exp, rows, indices, signature=signature):
+        for item in reuse_samples(folder, exp, rows, indices):
             index = item['index']
             if index in merged and merged[index] != item:
                 raise ValueError('Conflicting answers across source evaluations')

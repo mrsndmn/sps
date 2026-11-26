@@ -16,7 +16,7 @@ from orchestration.mlspace_launch import store_json
 
 
 def protocol_signature():
-    return hashlib.sha256(json.dumps(c.GENERATION, sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(c.family_config.GENERATION, sort_keys=True).encode()).hexdigest()
 
 
 def select_examples(rows):
@@ -26,14 +26,14 @@ def select_examples(rows):
     for index, row in enumerate(rows):
         if row["subject"] in STEM_SUBJECTS:
             groups.setdefault(row["subject"], []).append(index)
-    rng = random.Random(c.SEED)
+    rng = random.Random(c.family_config.SEED)
     for indices in groups.values():
         rng.shuffle(indices)
     selected = []
-    while len(selected) < c.EVAL_COUNT:
+    while len(selected) < c.family_config.EVAL_COUNT:
         before = len(selected)
         for subject in sorted(groups):
-            if groups[subject] and len(selected) < c.EVAL_COUNT:
+            if groups[subject] and len(selected) < c.family_config.EVAL_COUNT:
                 selected.append(groups[subject].pop())
         if len(selected) == before:
             raise RuntimeError("Insufficient MMLU STEM questions")
@@ -61,37 +61,37 @@ def check_runtime():
 
 def engine_arguments(exp, export, eagle_revision):
     common_args = {
-        "model": str(export) if exp.arm.startswith("sps") else c.MODEL,
-        "revision": None if exp.arm.startswith("sps") else c.REVISION,
-        "tokenizer": c.MODEL,
-        "tokenizer_revision": c.REVISION,
+        "model": str(export) if exp.arm.startswith("sps") else c.family_config.MODEL,
+        "revision": None if exp.arm.startswith("sps") else c.family_config.REVISION,
+        "tokenizer": c.family_config.MODEL,
+        "tokenizer_revision": c.family_config.REVISION,
         "dtype": "bfloat16",
         "tensor_parallel_size": 1,
         "max_num_seqs": 1,
-        "max_model_len": c.MAX_MODEL_LEN,
+        "max_model_len": c.family_config.MAX_MODEL_LEN,
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
         "enforce_eager": True,
         "async_scheduling": False,
         "attention_config": {"backend": "TRITON_ATTN"},
-        "gpu_memory_utilization": c.GPU_MEMORY_UTILIZATION,
+        "gpu_memory_utilization": c.family_config.GPU_MEMORY_UTILIZATION,
         "disable_log_stats": False,
-        "seed": c.SEED,
+        "seed": c.family_config.SEED,
     }
     if exp.arm == "sps_mtp":
         common_args["speculative_config"] = {
             "method": "custom_class",
             "model": "vllm.v1.spec_decode.sps_proposer.SPSProposer",
-            "num_speculative_tokens": c.HORIZONS - 1,
+            "num_speculative_tokens": c.family_config.HORIZONS - 1,
         }
     elif exp.arm == "eagle3":
         if not eagle_revision:
             raise ValueError("A pinned EAGLE-3 revision is required")
         common_args["speculative_config"] = {
             "method": "eagle3",
-            "model": c.EAGLE_MODEL,
+            "model": c.family_config.EAGLE_MODEL,
             "revision": eagle_revision,
-            "num_speculative_tokens": c.HORIZONS - 1,
+            "num_speculative_tokens": c.family_config.HORIZONS - 1,
         }
     return common_args
 
@@ -112,23 +112,23 @@ def evaluate(exp):
 
     trained = common.trained()
     common.checked_checkpoint(trained)
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
     rows = list(
         load_dataset(
-            source.MMLU_DATASET, "all", revision=source.MMLU_REVISION, split="test"
+            source.family_config.MMLU_DATASET, "all", revision=source.family_config.MMLU_REVISION, split="test"
         )
     )
     selected = select_examples(rows)
     # The immutable revision lives in executable configuration; no mutable
     # publication file is shared between concurrently starting eval workers.
-    arguments = engine_arguments(exp, trained["export"], c.EAGLE_REVISION)
+    arguments = engine_arguments(exp, trained["export"], c.family_config.EAGLE_REVISION)
     references = None
     if exp.arm.startswith("sps"):
         from workloads.serving.vllm_sps_audit import reference
 
         references = reference(trained)
     llm = LLM(**arguments)
-    root = work_path(c.ROOT / "runs/out" / exp.name)
+    root = work_path(c.family_config.ROOT / "runs/out" / exp.name)
     root.mkdir(parents=True, exist_ok=True)
     if references is not None:
         from workloads.serving.vllm_sps_audit import verify
@@ -149,19 +149,19 @@ def evaluate(exp):
         "vllm_source": os.environ["SPS_VLLM_SOURCE"],
         "torch_version": torch.__version__,
         "gpu": torch.cuda.get_device_name(),
-        "dataset": source.MMLU_DATASET,
-        "dataset_revision": source.MMLU_REVISION,
+        "dataset": source.family_config.MMLU_DATASET,
+        "dataset_revision": source.family_config.MMLU_REVISION,
         "timer": "host request wall time; engine first/last token timestamps for decode",
         "draft_policy": "greedy SPS horizon proposals; target sampling uses matched settings",
     }
     store_json(root / "manifest.json", manifest)
 
     def generate(index, warmup=False):
-        settings = dict(c.GENERATION[exp.mode])
+        settings = dict(c.family_config.GENERATION[exp.mode])
         settings["max_tokens"] = settings.pop("max_new_tokens")
         if warmup:
             settings["max_tokens"] = min(settings["max_tokens"], 32)
-        seed = document_seed(c.SEED, "mmlu", exp.mode, index)
+        seed = document_seed(c.family_config.SEED, "mmlu", exp.mode, index)
         params = SamplingParams(**settings, seed=seed)
         ids = tokenizer.apply_chat_template(
             mmlu_messages(rows[index]),
@@ -169,7 +169,7 @@ def evaluate(exp):
             add_generation_prompt=True,
             enable_thinking=exp.mode == "thinking",
         )
-        if len(ids) + settings["max_tokens"] > c.MAX_MODEL_LEN:
+        if len(ids) + settings["max_tokens"] > c.family_config.MAX_MODEL_LEN:
             raise RuntimeError("Prompt and output cap exceed benchmark context")
         torch.cuda.synchronize()
         started = time.perf_counter()
@@ -203,19 +203,19 @@ def evaluate(exp):
             ttft_seconds=stats.first_token_latency,
         )
 
-    for i in range(c.WARMUP_REQUESTS):
+    for i in range(c.family_config.WARMUP_REQUESTS):
         generate(selected[i], warmup=True)
     samples = []
     # A failed timed arm is rerun wholly; partially warmed runs are never merged.
     with (root / "samples.jsonl").open("w") as stream:
-        for repeat in range(c.REPEATS):
+        for repeat in range(c.family_config.REPEATS):
             for index in selected:
                 item = dict(repeat=repeat, **generate(index))
                 stream.write(json.dumps(item) + "\n")
                 stream.flush()
                 samples.append(item)
     result = []
-    for repeat in range(c.REPEATS):
+    for repeat in range(c.family_config.REPEATS):
         trial = [x for x in samples if x["repeat"] == repeat]
         decode = sum(x["decode_seconds"] for x in trial)
         result.append(

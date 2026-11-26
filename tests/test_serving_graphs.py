@@ -135,7 +135,7 @@ def test_graph_engine_uses_named_rpc_and_installs_importable_extension(
     def run(exp):
         arguments = evaluator.engine_arguments(exp, "/export", "revision")
         llm = vllm.LLM(**arguments)
-        for _ in range(graphs.c.WARMUP_REQUESTS + 1):
+        for _ in range(graphs.c.family_config.WARMUP_REQUESTS + 1):
             assert llm.generate() == "output"
 
     graphs.with_graph_engine(

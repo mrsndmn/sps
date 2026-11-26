@@ -20,12 +20,12 @@ from workloads.serving.vllm_sps_model import horizon_targets
 
 def labels_for(row, device):
     # Fixed physical shape prevents recompiling FlexAttention per dialog length.
-    padding = source.CONTEXT - len(row["input_ids"])
+    padding = source.family_config.CONTEXT - len(row["input_ids"])
     if padding < 0:
         raise ValueError("Instruction row exceeds the pinned training context")
     tokens = torch.tensor(row["input_ids"] + [0] * padding, device=device)[None]
     mask = torch.tensor(row["loss_mask"] + [0] * padding, device=device)[None]
-    return tokens[:, :-1], horizon_targets(tokens, mask, c.HORIZONS)
+    return tokens[:, :-1], horizon_targets(tokens, mask, c.family_config.HORIZONS)
 
 
 @torch.no_grad()
@@ -51,9 +51,9 @@ def optimizer_for(model, frozen):
         )
     return torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
-        lr=source.EMBED_LR if frozen else source.FULL_LR,
-        betas=source.BETAS,
-        weight_decay=0.0 if frozen else source.WEIGHT_DECAY,
+        lr=source.family_config.EMBED_LR if frozen else source.family_config.FULL_LR,
+        betas=source.family_config.BETAS,
+        weight_decay=0.0 if frozen else source.family_config.WEIGHT_DECAY,
     )
 
 
@@ -83,21 +83,21 @@ def main():
     rank = int(os.environ["RANK"])
     world = int(os.environ["WORLD_SIZE"])
     local = int(os.environ["LOCAL_RANK"])
-    if world != c.experiment_configs[0].num_gpus or c.GLOBAL_BATCH % world:
+    if world != c.experiment_configs[0].num_gpus or c.family_config.GLOBAL_BATCH % world:
         raise ValueError("Unexpected training allocation")
     torch.cuda.set_device(local)
     device = torch.device("cuda", local)
     dist.init_process_group("nccl")
-    torch.manual_seed(c.SEED)
+    torch.manual_seed(c.family_config.SEED)
     data = common.data("train")
-    heldout = common.data("val")[: c.VAL_ROWS]
+    heldout = common.data("val")[: c.family_config.VAL_ROWS]
     if not {x["mode"] for x in heldout} == {"thinking", "nonthinking"}:
         raise RuntimeError("Validation must contain both generation modes")
-    steps = c.PROBE_STEPS if args.probe else c.TRAIN_STEPS
-    transition = steps // 2 if args.probe else c.STAGE_STEPS
-    if len(data) < steps * c.GLOBAL_BATCH:
+    steps = c.family_config.PROBE_STEPS if args.probe else c.family_config.TRAIN_STEPS
+    transition = steps // 2 if args.probe else c.family_config.STAGE_STEPS
+    if len(data) < steps * c.family_config.GLOBAL_BATCH:
         raise RuntimeError("Insufficient instruction training data")
-    root = work_path(c.ROOT / ("sanity" if args.probe else "runs") / "out" / "qwen3_sps_mtp")
+    root = work_path(c.family_config.ROOT / ("sanity" if args.probe else "runs") / "out" / "qwen3_sps_mtp")
     root.mkdir(parents=True, exist_ok=True)
     model = common.load_model(device)
     start = 0
@@ -117,7 +117,7 @@ def main():
         restore_optimizer(optimizer, state["optimizer"])
     state = None
     ddp = DDP(model, device_ids=[local], broadcast_buffers=False)
-    accumulation = c.GLOBAL_BATCH // world
+    accumulation = c.family_config.GLOBAL_BATCH // world
     times = {"embedding": [], "full": []}
 
     def save(path, step):
@@ -129,13 +129,13 @@ def main():
                 "step": step,
                 "training_steps": steps,
                 "stage_steps": transition,
-                "global_batch": c.GLOBAL_BATCH,
+                "global_batch": c.family_config.GLOBAL_BATCH,
                 "best": best,
                 "frozen": frozen,
-                "parent": str(c.PARENT),
-                "horizons": c.HORIZONS,
-                "source": c.MODEL,
-                "revision": c.REVISION,
+                "parent": str(c.family_config.PARENT),
+                "horizons": c.family_config.HORIZONS,
+                "source": c.family_config.MODEL,
+                "revision": c.family_config.REVISION,
             },
             temporary,
         )
@@ -150,7 +150,7 @@ def main():
             best = float("inf")
         optimizer.zero_grad(set_to_none=True)
         batch = [
-            labels_for(data[step * c.GLOBAL_BATCH + j * world + rank], device)
+            labels_for(data[step * c.family_config.GLOBAL_BATCH + j * world + rank], device)
             for j in range(accumulation)
         ]
         denominator = sum(
@@ -171,7 +171,7 @@ def main():
                 loss, _ = ddp(tokens, targets=labels)
                 (loss * (world / denominator)).backward()
         norm = torch.nn.utils.clip_grad_norm_(
-            [p for p in model.parameters() if p.requires_grad], source.CLIP
+            [p for p in model.parameters() if p.requires_grad], source.family_config.CLIP
         )
         if not torch.isfinite(norm):
             raise RuntimeError("Nonfinite MTP gradient")
@@ -194,7 +194,7 @@ def main():
                 ),
                 flush=True,
             )
-        milestone = (step + 1) % c.CHECKPOINT_INTERVAL == 0 or step + 1 in {
+        milestone = (step + 1) % c.family_config.CHECKPOINT_INTERVAL == 0 or step + 1 in {
             transition,
             steps,
         }
@@ -234,7 +234,7 @@ def main():
             }
             store_json(root / "probe.json", probe)
             if public_path(root) == root:
-                store_json(c.ROOT / "prepared.json", probe)
+                store_json(c.family_config.ROOT / "prepared.json", probe)
     elif rank == 0:
         save(root / "final.pt", steps)
         # Export the final checkpoint; ordinary and speculative SPS share it.
@@ -244,12 +244,12 @@ def main():
             {
                 "checkpoint": str(public_path(root / "final.pt")),
                 "export": str(public_path(root / "hf")),
-                "parent": str(c.PARENT),
-                "parent_sha256": common.file_hash(c.PARENT),
+                "parent": str(c.family_config.PARENT),
+                "parent_sha256": common.file_hash(c.family_config.PARENT),
                 "checkpoint_sha256": common.file_hash(root / "final.pt"),
                 "steps": steps,
                 **common.training_schedule(),
-                "horizons": c.HORIZONS,
+                "horizons": c.family_config.HORIZONS,
             },
         )
     dist.barrier()

@@ -13,9 +13,16 @@ import time
 import torch
 from torch.nn import functional as F
 
-from experiments.mtp import (MTP_INFERENCE_BACKEND, MTP_CONTEXT, MTP_EVAL_PROMPTS,
-    MTP_NEW_TOKENS, MTP_PROMPT_TOKENS, MTP_SEED, MTP_SOURCE,
-    MTP_TEMPERATURE, MTP_VAL_TOKENS)
+from experiments.mtp import family_config as mtp_settings
+MTP_INFERENCE_BACKEND = mtp_settings.MTP_INFERENCE_BACKEND
+MTP_CONTEXT = mtp_settings.MTP_CONTEXT
+MTP_EVAL_PROMPTS = mtp_settings.MTP_EVAL_PROMPTS
+MTP_NEW_TOKENS = mtp_settings.MTP_NEW_TOKENS
+MTP_PROMPT_TOKENS = mtp_settings.MTP_PROMPT_TOKENS
+MTP_SEED = mtp_settings.MTP_SEED
+MTP_SOURCE = mtp_settings.MTP_SOURCE
+MTP_TEMPERATURE = mtp_settings.MTP_TEMPERATURE
+MTP_VAL_TOKENS = mtp_settings.MTP_VAL_TOKENS
 from orchestration.experiment_suite import output_dir, phase_work
 from workloads.speculative.mtp_common import (TokenSequences, load_mtp, shifted_targets,
                                 validation_starts, restore_draft, load_reference)

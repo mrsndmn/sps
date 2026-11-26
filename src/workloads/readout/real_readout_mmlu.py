@@ -1,4 +1,5 @@
 """Full, zero-shot MMLU chat generation for the final native and SPS readouts."""
+from experiments.family_cli import worker_child
 from orchestration.named.publication import work_path
 import argparse
 from collections import Counter
@@ -16,21 +17,20 @@ from workloads.readout import real_readout_eval as quality
 from workloads.readout import real_readout_serving as serving
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
-from experiments.real_readout_mmlu import (
-    ROOT,
-    HOURS,
-    COUNT,
-    SUBJECTS,
-    experiment_configs,
-)
+from experiments.real_readout_mmlu import family_config as real_readout_mmlu_settings
+from experiments.real_readout_mmlu import experiment_configs
+ROOT = real_readout_mmlu_settings.ROOT
+HOURS = real_readout_mmlu_settings.HOURS
+COUNT = real_readout_mmlu_settings.COUNT
+SUBJECTS = real_readout_mmlu_settings.SUBJECTS
 
 
 def dataset():
     from experiments.environment import HF_HOME
     from huggingface_hub import hf_hub_download
     from pyarrow.parquet import read_table
-    path = hf_hub_download(source.MMLU_DATASET, "all/test-00000-of-00001.parquet",
-                           revision=source.MMLU_REVISION, cache_dir=HF_HOME/"hub",
+    path = hf_hub_download(source.family_config.MMLU_DATASET, "all/test-00000-of-00001.parquet",
+                           revision=source.family_config.MMLU_REVISION, cache_dir=HF_HOME/"hub",
                            repo_type="dataset", local_files_only=True)
     docs = read_table(path).to_pylist()
     if len(docs) != COUNT or len({d["subject"] for d in docs}) != SUBJECTS:
@@ -40,8 +40,8 @@ def dataset():
 
 def identity(exp, marker, digest):
     return dict(serving=serving.signature(exp, marker), mode=exp.mode, layout="sequential",
-                model=c.MODEL, revision=c.REVISION, seed=c.SEED, settings=c.GENERATION[exp.mode],
-                dataset=source.MMLU_DATASET, dataset_revision=source.MMLU_REVISION,
+                model=c.family_config.MODEL, revision=c.family_config.REVISION, seed=c.family_config.SEED, settings=c.family_config.GENERATION[exp.mode],
+                dataset=source.family_config.MMLU_DATASET, dataset_revision=source.family_config.MMLU_REVISION,
                 split="all/test", dataset_sha256=digest)
 
 
@@ -50,7 +50,7 @@ def score(row, index, doc, mode, stats):
     target = "ABCD"[doc["answer"]]
     prediction = parse_answer(row["final_text"])
     if (row["index"] != index or row["subject"] != doc["subject"] or row["target"] != target
-            or row["answer"] != prediction or row["seed"] != document_seed(c.SEED, "mmlu", mode, index)
+            or row["answer"] != prediction or row["seed"] != document_seed(c.family_config.SEED, "mmlu", mode, index)
             or row["correct"] != (prediction == target)):
         raise ValueError("Saved MMLU answer does not match its question or score")
     stats.update(count=1, correct=int(row["correct"]), invalid=int(prediction is None),
@@ -89,20 +89,20 @@ def generate(exp, export):
     if ident != identity(exp, marker, digest):
         raise ValueError("Export or evaluation identity changed")
     model = serving.engine(exp, "sps", export)
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
     stats = Counter()
     path = root/"answers.jsonl"
     recover(path, docs, exp.mode, stats)
-    settings = dict(c.GENERATION[exp.mode])
+    settings = dict(c.family_config.GENERATION[exp.mode])
     cap = settings.pop("max_new_tokens")
     thinking = exp.mode == "thinking"
     with path.open("a") as stream:
         for i in range(stats["count"], len(docs)):
             doc = docs[i]
-            seed = document_seed(c.SEED, "mmlu", exp.mode, i)
+            seed = document_seed(c.family_config.SEED, "mmlu", exp.mode, i)
             ids = tokenizer.apply_chat_template(mmlu_messages(doc), tokenize=True, return_dict=False,
                                                  add_generation_prompt=True, enable_thinking=thinking)
-            if len(ids) + cap > c.MAX_MODEL_LEN:
+            if len(ids) + cap > c.family_config.MAX_MODEL_LEN:
                 raise ValueError(f"Question {i} exceeds serving context")
             params = SamplingParams(**settings, max_tokens=cap, seed=seed)
             output = model.generate([{"prompt_token_ids": ids}], params, use_tqdm=False)[0].outputs[0]
@@ -152,8 +152,18 @@ def worker(exp):
         env = serving.runtime.runtime_environment()
         env.update(PYTHONPATH=os.pathsep.join([str(site), env["PYTHONPATH"]]),
                    SPS_VLLM_SOURCE=str(site), VLLM_USE_V2_MODEL_RUNNER="0")
-        subprocess.run([serving.runtime.RUNTIME/"bin/python", "scripts/readout/real_readout_mmlu.py",
-                        "--filter", exp.name, "--export", export], env=env, check=True)
+        subprocess.run(worker_child([serving.runtime.RUNTIME/"bin/python", "scripts/readout/real_readout_mmlu.py",
+                        "--filter", exp.name, "--export", export]), env=env, check=True)
+
+
+def payload(exp, staged):
+    body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
+    body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1],
+                job_desc=f"sps-readout-full-mmlu {exp.name} #d.tarasov @mrsndmn",
+                script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
+                    "timeout", f"{HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_mmlu.py", "--worker", "--filter", exp.name]))
+    body["env_variables"]["SPS_EXPERIMENT_SUITE"] = "ar-sps-qwen3-1.7b-instruct"
+    return body
 
 
 def main():
@@ -161,8 +171,14 @@ def main():
     parser.add_argument("--filter", choices=[e.name for e in experiment_configs])
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--export")
+    parser.add_argument("--dry", action="store_true")
     args = parser.parse_args()
     selected = [e for e in experiment_configs if args.filter in (None, e.name)]
+    if args.dry:
+        staged = launch.STAGING_ROOT / launch.git("rev-parse", "HEAD")
+        for exp in selected:
+            launch.print_preview(payload(exp, staged), ROOT / "runs/out" / exp.name, staged, "eval")
+        return
     if args.worker or args.export:
         exp, = selected
         return generate(exp, args.export) if args.export else worker(exp)
@@ -190,13 +206,9 @@ def main():
                         or done["answers_sha256"] != common.file_hash(root/"answers.jsonl")):
                     raise ValueError("Stale full MMLU result")
                 continue
-            body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
-            body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1], region=opts["region"],
-                        job_desc=f"sps-readout-full-mmlu {exp.name} #d.tarasov @mrsndmn",
-                        script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
-                            "timeout", f"{HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_mmlu.py", "--worker", "--filter", exp.name]))
-            body["env_variables"]["SPS_EXPERIMENT_SUITE"] = "ar-sps-qwen3-1.7b-instruct"
-            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name, active)
+            body = payload(exp, staged)
+            body["region"] = opts["region"]
+            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name)
             if key in active:
                 print(exp.name, active[key], flush=True)
             else:

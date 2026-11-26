@@ -56,9 +56,6 @@ class ARSettings:
     VAL_BOUNDARY: float = 0.99
     DISTILLATION_TEMPERATURE: float = 1.0
     REFERENCE_SUITE: str = "ar-sps"
-    REFERENCE_SIGNATURE: str = (
-        "e9ed3e07768d5fb918301f5f23af9aa3020740a9578cb18f19543365a228a04d"
-    )
     REFERENCE_DATA_SHA256: dict[str, str] = field(
         default_factory=lambda: {
             "train": "9d5f3fe5b6c0d88436145c49d721e821771fc5ee3c64988504deeb911a54796a",
@@ -89,16 +86,10 @@ class ARSettings:
         "smollm2_direct_sps",
         "smollm2_continued_ar",
     )
-    LARGE_KD_REFERENCES: dict[str, tuple[str, str]] = field(
+    LARGE_KD_REFERENCES: dict[str, str] = field(
         default_factory=lambda: {
-            "ar-sps-360m-kd": (
-                "ar-sps-360m-ce",
-                "a91952db7534868c2d23050e447080d6682191ddb1df4ddd398c1db9bcbf8657",
-            ),
-            "ar-sps-1.7b-kd": (
-                "ar-sps-1.7b-ce",
-                "555846063de2a68b13a7efa818d5330be55fbf90074453ee5736ba4ad11df82a",
-            ),
+            "ar-sps-360m-kd": "ar-sps-360m-ce",
+            "ar-sps-1.7b-kd": "ar-sps-1.7b-ce",
         }
     )
     REPORT_BASELINE: str = "smollm2_original_ar"
@@ -177,7 +168,7 @@ def configuration(suite: str) -> ARSettings:
     # Same-size frozen source teachers; fresh students matched to each completed CE run.
     if suite in c.LARGE_KD_REFERENCES:
         c.DISTILLATION = True
-        c.REFERENCE_SUITE, c.REFERENCE_SIGNATURE = c.LARGE_KD_REFERENCES[suite]
+        c.REFERENCE_SUITE = c.LARGE_KD_REFERENCES[suite]
         c.MODEL, c.REVISION, c.MICRO_BATCH, c.TRAIN_HOURS, c.EVAL_HOURS = (
             c.LARGE_CE_MODELS[c.REFERENCE_SUITE]
         )

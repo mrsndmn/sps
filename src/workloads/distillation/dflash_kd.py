@@ -28,10 +28,6 @@ def arm_name(phase, step):
 def marker(phase, step):
     directory = work_path(training.EXPERIMENT.output(phase, step))
     file = {"probe": "prepared.json", "train": "trained.json", "eval": "evaluated.json"}[phase]
-    if phase == "probe" and directory == training.EXPERIMENT.output("probe"):
-        legacy = training.run_root() / "prepared.json"
-        if legacy.is_file() and not (directory / file).is_file():
-            return legacy
     return directory / file
 
 
@@ -59,10 +55,10 @@ def evaluate(step, result):
     result.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=result.parent) as tmp:
         raw = Path(tmp) / "raw.json"
-        evaluation.evaluate(training.checkpoint_path(step), raw)
+        evaluation.evaluate(training.checkpoint_path(step), raw, experiment=training.EXPERIMENT)
         report = json.loads(raw.read_text())
-        report.update(design=training.signature(), evaluation=evaluation_signature(),
-                      hard_design=hard.signature(), objective="soft-kl")
+        report.update(design=training.EXPERIMENT.name, evaluation=evaluation_signature(),
+                      hard_design=hard.EXPERIMENT.name, objective="soft-kl")
         launch.store_json(result, report)
 
 
@@ -77,8 +73,14 @@ def main():
     phase, step = args.phase, args.step
     if phase == "eval":
         if step is None:
-            step = runner.final_step()
-        elif step not in hard.MILESTONES and step != runner.final_step():
+            try:
+                step = runner.final_step()
+            except FileNotFoundError as error:
+                if not args.dry:
+                    raise
+                print(json.dumps({"pending_input": error.filename}))
+                return
+        elif step not in hard.EXPERIMENT.milestones and step != runner.final_step():
             parser.error("Choose a scheduled DFlash checkpoint")
     elif step is not None:
         parser.error("--step is only available for evaluation")
@@ -95,11 +97,11 @@ def main():
                 raise RuntimeError("Complete DFlash training before evaluating any checkpoint")
             evaluate(step, result)
         else:
-            training.train(probe=phase == "probe")
+            training.train(experiment=training.EXPERIMENT, probe=phase == "probe")
     else:
         commit = launch.git("rev-parse", "HEAD")
         body = payload(phase, step, launch.STAGING_ROOT / commit)
         if args.dry:
-            print(json.dumps(body, indent=2))
+            launch.print_preview(body, training.EXPERIMENT.output(phase, step), launch.STAGING_ROOT / commit, phase)
             return
         runner.submit_phase(training, phase, step, marker, body, commit)

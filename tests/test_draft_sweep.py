@@ -19,17 +19,17 @@ def test_worker_entry_point_runs_from_staged_directory():
 
 
 def test_sweep_has_matched_one_gpu_evaluations(monkeypatch):
-    monkeypatch.setattr(sweep.c, "HORIZONS", sweep.HORIZONS)
+    monkeypatch.setattr(sweep.c.family_config, "HORIZONS", sweep.HORIZONS)
     arms = {(exp.arm, exp.mode, exp.draft_tokens) for exp in sweep.experiment_configs}
     assert len(arms) == len(sweep.experiment_configs) == 12
-    for mode in sweep.c.GENERATION:
+    for mode in sweep.c.family_config.GENERATION:
         assert ("ar", mode, 0) in arms
         assert ("sps", mode, 0) in arms
         for draft in (4, 8):
             for arm in ("sps_mtp", "eagle3"):
                 assert (arm, mode, draft) in arms
     for exp in sweep.experiment_configs:
-        args = sweep.engine_arguments(exp, "/test/hf", sweep.c.EAGLE_REVISION)
+        args = sweep.engine_arguments(exp, "/test/hf", sweep.c.family_config.EAGLE_REVISION)
         assert args["max_num_seqs"] == 1
         assert (args.get("speculative_config") or {}).get(
             "num_speculative_tokens", 0
@@ -121,7 +121,7 @@ def test_snapshot_excludes_warmup(tmp_path, monkeypatch, arm):
     vllm = SimpleNamespace(LLM=Engine)
     monkeypatch.setitem(sys.modules, "vllm", vllm)
     monkeypatch.setattr(sweep.bench, "root_for", lambda _: tmp_path)
-    untimed = sweep.c.WARMUP_REQUESTS
+    untimed = sweep.c.family_config.WARMUP_REQUESTS
 
     def run_graph(*_):
         llm = vllm.LLM()

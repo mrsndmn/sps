@@ -21,15 +21,13 @@ from workloads.serving import serving_benchmark as bench
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as source
 
-from experiments.provenance_prepare import (
-    SPLITS,
-    GENERATION,
-    MIN_PAIRED_FRACTION,
-    Experiment,
-    experiment_configs,
-)
+from experiments.provenance_prepare import family_config as provenance_prepare_settings
+from experiments.provenance_prepare import Experiment, experiment_configs
+SPLITS = provenance_prepare_settings.SPLITS
+GENERATION = provenance_prepare_settings.GENERATION
+MIN_PAIRED_FRACTION = provenance_prepare_settings.MIN_PAIRED_FRACTION
 
-ROOT = source.ROOT.parent/'instruct-response-provenance'
+ROOT = source.family_config.ROOT.parent/'instruct-response-provenance'
 
 
 def prepared_dir():
@@ -44,7 +42,7 @@ def results():
 
 
 def signature():
-    return data.digest(dict(generation=GENERATION, model=c.MODEL, revision=c.REVISION))
+    return data.digest(dict(generation=GENERATION, model=c.family_config.MODEL, revision=c.family_config.REVISION))
 
 
 def source_rows():
@@ -63,9 +61,9 @@ def source_rows():
 
 
 def identity():
-    manifest = json.loads((source.SOURCE_ROOT/'runs/data/manifest.json').read_text())
+    manifest = json.loads((source.family_config.SOURCE_ROOT/'runs/data/manifest.json').read_text())
     return dict(design_signature=signature(), source_manifest=manifest,
-                model=c.MODEL, revision=c.REVISION, generation=GENERATION)
+                model=c.family_config.MODEL, revision=c.family_config.REVISION, generation=GENERATION)
 
 
 def record_path(row):
@@ -97,7 +95,7 @@ def generate_worker():
     torch.cuda.set_device(device)
     expected = signature()
     records = [(split,row) for split,rows in source_rows().items() for row in rows if row['mode']=='nonthinking']
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL,revision=c.REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL,revision=c.family_config.REVISION)
     teacher = None
     for i,(split,row) in enumerate(records):
         if i % world != rank:
@@ -107,17 +105,17 @@ def generate_worker():
             validate_record(json.loads(path.read_text()),row,split,expected)
             continue
         if teacher is None:
-            teacher = AutoModelForCausalLM.from_pretrained(c.MODEL,revision=c.REVISION,
+            teacher = AutoModelForCausalLM.from_pretrained(c.family_config.MODEL,revision=c.family_config.REVISION,
                 torch_dtype=torch.bfloat16,attn_implementation='sdpa').to(device).eval().requires_grad_(False)
         prompt = tokenizer.apply_chat_template(row['messages'][:-1],tokenize=True,
             add_generation_prompt=True,enable_thinking=False,return_tensors='pt').to(device)
-        budget = min(GENERATION['max_new_tokens'], c.CONTEXT-prompt.shape[1])
+        budget = min(GENERATION['max_new_tokens'], c.family_config.CONTEXT-prompt.shape[1])
         record = dict(design_signature=expected,source_id=row['source_id'],split=split,
                       source_row_sha256=data.digest(row))
         if budget < 1:
             record['rejected']='no_generation_room'
             data.atomic_json(path,record); continue
-        seed=(c.SEED+int(row['source_id'][:8],16)) % 2**31
+        seed=(c.family_config.SEED+int(row['source_id'][:8],16)) % 2**31
         torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
         with torch.inference_mode():
             generated=teacher.generate(prompt,attention_mask=torch.ones_like(prompt),do_sample=True,
@@ -137,7 +135,7 @@ def generate_worker():
         else:
             messages=row['messages'][:-1]+[dict(role='assistant',content=text)]
             try:
-                record['row']=data.encode_example(tokenizer,messages,'nonthinking',row['source_id'],c.CONTEXT)
+                record['row']=data.encode_example(tokenizer,messages,'nonthinking',row['source_id'],c.family_config.CONTEXT)
             except ValueError as error:
                 record['rejected']=str(error)
         validate_record(record,row,split,expected)
@@ -156,7 +154,7 @@ def pair_rows(rows, samples, split, expected):
         if 'rejected' in record:
             rejected[record['rejected']]+=1;continue
         original.append(row);teacher.append(record['row'])
-    counts={mode:sum(r['mode']==mode for r in original) for mode in c.GENERATION}
+    counts={mode:sum(r['mode']==mode for r in original) for mode in c.family_config.GENERATION}
     source_count=sum(r['mode']=='nonthinking' for r in rows)
     if not all(counts.values()) or counts['nonthinking'] < MIN_PAIRED_FRACTION*source_count:
         raise RuntimeError(f'Insufficient paired data in {split}: {counts}; rejected={dict(rejected)}')
@@ -165,7 +163,7 @@ def pair_rows(rows, samples, split, expected):
 
 def summarize(rows):
     result={}
-    for mode in c.GENERATION:
+    for mode in c.family_config.GENERATION:
         selected=[r for r in rows if r['mode']==mode]
         tokens=sorted(sum(r['loss_mask'][1:]) for r in selected)
         result[mode]=dict(examples=len(selected),supervised_tokens=sum(tokens),
@@ -233,7 +231,7 @@ def submit(dry=False):
     commit=launch.git('rev-parse','HEAD');staged=launch.STAGING_ROOT/commit
     exp=experiment_configs[0]
     if dry:
-        print(json.dumps(payload(exp,staged),indent=2));return
+        launch.print_preview(payload(exp,staged), prepared_dir(), staged, "prepare");return
     if not launch.pending(prepared_dir()):
         return
     if completed():print('Already completed');return
@@ -246,7 +244,7 @@ def submit(dry=False):
         if 'jobs' not in response:raise RuntimeError('Cannot establish active jobs')
         active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
     launch.reconcile_for_outputs(client, active, [prepared_dir()])
-    key=launch.output_identity(payload(exp,staged)['job_desc'], prepared_dir(), active)
+    key=launch.output_identity(payload(exp,staged)['job_desc'], prepared_dir())
     if key in active:
         job=dict(name=exp.name,job_name=active[key],reused=True)
     else:

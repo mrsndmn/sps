@@ -4,12 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import vllm_sps_config as c
-from .family_arguments import configure, export_fields
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
-    ROOT: Path = c.ROOT.parent / "vllm-sps-draft-sweep"
+    ROOT: Path = c.family_config.ROOT.parent / "vllm-sps-draft-sweep"
     LEGACY_HORIZONS: int = 9
 
     @property
@@ -17,8 +16,7 @@ class FamilyConfig:
         return self.LEGACY_HORIZONS
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 EXPERIMENT = c.experiment_configs[0]

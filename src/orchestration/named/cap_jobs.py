@@ -40,9 +40,9 @@ def main():
             relative = marker.relative_to(root).as_posix()
             identity = hashlib.sha256(relative.encode()).hexdigest()
         body = launch.payload("eval", name, staged, "d.tarasov", "mrsndmn")
-        config = comparison_config if args.arm else teacher_config
+        config = (comparison_config if args.arm else teacher_config).family_config
         if args.arm:
-            body["env_variables"].update(comparison_config.RUNTIME_ENV)
+            body["env_variables"].update(comparison_config.family_config.RUNTIME_ENV)
         body.update(
             job_desc=f"sps-{root.name} eval {name} {identity} #d.tarasov @mrsndmn",
             script=f"cd {shlex.quote(str(staged))} && "
@@ -56,12 +56,12 @@ def main():
         folder = (
             compare.folder(args.arm)
             if args.arm
-            else root / teacher_config.OUTPUT_NAME
+            else root / teacher_config.family_config.OUTPUT_NAME
         )
         return folder / "report.json"
 
     if args.dry:
-        print(json.dumps(payload(report_path()), indent=2))
+        launch.print_preview(payload(report_path()), report_path().parent, staged, "eval")
         return
     with patch.object(launch, "ARTIFACTS_ROOT", root), launch.submission_lock():
         marker = report_path()
@@ -91,7 +91,7 @@ def main():
             launch.normalize(j["job_desc"]): j["job_name"]
             for j in get_in_progress_jobs(client_profile="default")
         }
-        identity = launch.output_identity(body["job_desc"], marker.parent, active)
+        identity = launch.output_identity(body["job_desc"], marker.parent)
         launch.reconcile_for_outputs(client, active, [marker.parent])
         if identity in active:
             print(active[identity])

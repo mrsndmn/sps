@@ -21,8 +21,8 @@ from orchestration.mlspace_launch import store_json
 def optimizer_for(model, embedding_only):
     model.set_stage(embedding_only)
     return torch.optim.AdamW([p for p in model.parameters() if p.requires_grad],
-                            lr=c.EMBED_LR if embedding_only else c.FULL_LR,
-                            betas=c.BETAS, weight_decay=0. if embedding_only else c.WEIGHT_DECAY)
+                            lr=c.family_config.EMBED_LR if embedding_only else c.family_config.FULL_LR,
+                            betas=c.family_config.BETAS, weight_decay=0. if embedding_only else c.family_config.WEIGHT_DECAY)
 
 
 def finalize(root, model, optimizer, step, best, frozen, plan):
@@ -57,7 +57,7 @@ def main():
     model = load_model(exp.recipe, device)
     teacher = load_teacher(device) if exp.distillation_weight else None
     data = rows('train'); validation = rows('val')
-    if len(data) < steps*c.GLOBAL_BATCH:
+    if len(data) < steps*c.family_config.GLOBAL_BATCH:
         raise RuntimeError('Insufficient unique training rows')
     start = 0; best = float('inf'); state = None
     if (root/'latest.pt').exists():
@@ -70,8 +70,8 @@ def main():
     if state and state['stage'] == frozen:
         optimizer.load_state_dict(state['optimizer'])
     ddp = DDP(model, device_ids=[local], broadcast_buffers=False)
-    accumulation = c.GLOBAL_BATCH//(world*c.MICRO_BATCH)
-    if accumulation*world*c.MICRO_BATCH != c.GLOBAL_BATCH:
+    accumulation = c.family_config.GLOBAL_BATCH//(world*c.family_config.MICRO_BATCH)
+    if accumulation*world*c.family_config.MICRO_BATCH != c.family_config.GLOBAL_BATCH:
         raise ValueError('Invalid global batch')
     interval = config.CHECKPOINT_INTERVAL
     for step in range(start, steps):
@@ -87,18 +87,18 @@ def main():
         ce_total = 0.
         kd_total = 0.
         for micro in range(accumulation):
-            offset = step*c.GLOBAL_BATCH + (micro*world+rank)*c.MICRO_BATCH
-            batch = torch.tensor(np.asarray(data[offset:offset+c.MICRO_BATCH], dtype='int64'), device=device)
+            offset = step*c.family_config.GLOBAL_BATCH + (micro*world+rank)*c.family_config.MICRO_BATCH
+            batch = torch.tensor(np.asarray(data[offset:offset+c.family_config.MICRO_BATCH], dtype='int64'), device=device)
             sync = contextlib.nullcontext() if micro == accumulation-1 else ddp.no_sync()
             with sync, torch.autocast('cuda', dtype=torch.bfloat16):
                 value, ce, kd = loss(ddp, batch, teacher=teacher, weight=exp.distillation_weight,
-                                     temperature=c.DISTILLATION_TEMPERATURE, components=True)
+                                     temperature=c.family_config.DISTILLATION_TEMPERATURE, components=True)
                 value = value/accumulation
                 value.backward()
             total += value.detach().item()
             ce_total += ce.item()/accumulation
             kd_total += kd.item()/accumulation
-        norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], c.CLIP)
+        norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], c.family_config.CLIP)
         if not torch.isfinite(norm):
             raise RuntimeError('Nonfinite gradient')
         lr = config.learning_rate(step)
@@ -121,7 +121,7 @@ def main():
                 if step+1 == transition:
                     save(root/'stage_endpoint.pt', model, optimizer, step+1, best, frozen, plan)
                 with (root/'metrics.jsonl').open('a') as handle:
-                    handle.write(json.dumps(dict(step=step+1, tokens=(step+1)*c.GLOBAL_BATCH*c.CONTEXT,
+                    handle.write(json.dumps(dict(step=step+1, tokens=(step+1)*c.family_config.GLOBAL_BATCH*c.family_config.CONTEXT,
                                                  val_nll=score, lr=lr, rank_zero_train_loss=total,
                                                  rank_zero_ce=ce_total, rank_zero_kd=kd_total,
                                                  distillation_weight=exp.distillation_weight))+'\n')

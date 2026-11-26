@@ -17,27 +17,26 @@ from workloads.distillation import dflash_mask_ablation as reference
 from data import instruct_data
 from orchestration import mlspace_launch as launch
 from workloads.distillation import qwen4b_drafter_data as prepared
-from experiments.vllm_sps_config import SOURCE_ROOT
-from experiments.qwen4b_drafter_train import (
-    ROOT,
-    DATA,
-    LENGTHS,
-    TARGET_LAYERS,
-    CONTEXT,
-    DEFAULT_DATASET,
-    DATASETS,
-    ROWS,
-    ANCHORS,
-    EPOCHS,
-    ACCUMULATION,
-    LR,
-    WARMUP,
-    GAMMA,
-    SEED,
-    PROBE_STEPS,
-    Experiment,
-    experiment_configs,
-)
+from experiments.vllm_sps_config import family_config as vllm_sps_settings
+SOURCE_ROOT = vllm_sps_settings.SOURCE_ROOT
+from experiments.qwen4b_drafter_train import family_config as qwen4b_drafter_train_settings
+from experiments.qwen4b_drafter_train import Experiment, experiment_configs
+ROOT = qwen4b_drafter_train_settings.ROOT
+DATA = qwen4b_drafter_train_settings.DATA
+LENGTHS = qwen4b_drafter_train_settings.LENGTHS
+TARGET_LAYERS = qwen4b_drafter_train_settings.TARGET_LAYERS
+CONTEXT = qwen4b_drafter_train_settings.CONTEXT
+DEFAULT_DATASET = qwen4b_drafter_train_settings.DEFAULT_DATASET
+DATASETS = qwen4b_drafter_train_settings.DATASETS
+ROWS = qwen4b_drafter_train_settings.ROWS
+ANCHORS = qwen4b_drafter_train_settings.ANCHORS
+EPOCHS = qwen4b_drafter_train_settings.EPOCHS
+ACCUMULATION = qwen4b_drafter_train_settings.ACCUMULATION
+LR = qwen4b_drafter_train_settings.LR
+WARMUP = qwen4b_drafter_train_settings.WARMUP
+GAMMA = qwen4b_drafter_train_settings.GAMMA
+SEED = qwen4b_drafter_train_settings.SEED
+PROBE_STEPS = qwen4b_drafter_train_settings.PROBE_STEPS
 
 
 def prepared_settings():
@@ -46,7 +45,7 @@ def prepared_settings():
 
 
 def selection_path():
-    return prepared.selection_path(ROOT, **prepared_settings())
+    return qwen4b_drafter_train_settings.SELECTION_FILE
 
 
 def selection():
@@ -60,8 +59,9 @@ def training_rows(dataset):
     return ROWS["train"] if dataset == DEFAULT_DATASET else len(selection()["train"])
 
 
-def signature(dataset=DEFAULT_DATASET):
-    return dataset
+def data_digest(dataset):
+    path = DATA / "manifest.json" if dataset == DEFAULT_DATASET else selection_path()
+    return instruct_data.file_hash(path)
 
 
 class BlockDrafter(nn.Module):
@@ -266,7 +266,7 @@ def train(target, tokenizer, exp, root, *, probe=False, dataset=DEFAULT_DATASET)
         history.append(validate(target, draft, val_rows, exp, device))
         print(f"{exp.name} validation {history[-1]}", flush=True)
     report = dict(
-        experiment=exp.name, dataset=dataset, design_signature=signature(dataset),
+        experiment=exp.name, dataset=dataset, data_sha256=data_digest(dataset),
         initial_sha256=initial.hexdigest(),
         steps=steps * epochs, rows=len(rows), validation=history,
         seconds_per_probed_step=median(durations[1:]),

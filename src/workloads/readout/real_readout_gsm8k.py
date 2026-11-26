@@ -15,12 +15,11 @@ from workloads.readout import real_readout_run as train
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 from workloads.evaluation.mmlu_results import recover_samples
-from experiments.real_readout_gsm8k import (
-    ROOT,
-    HOURS,
-    INSTRUCTION,
-    experiment_configs,
-)
+from experiments.real_readout_gsm8k import family_config as real_readout_gsm8k_settings
+from experiments.real_readout_gsm8k import experiment_configs
+ROOT = real_readout_gsm8k_settings.ROOT
+HOURS = real_readout_gsm8k_settings.HOURS
+INSTRUCTION = real_readout_gsm8k_settings.INSTRUCTION
 
 
 NUMBER = re.compile(r"####[ \t]+([+-]?(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?)")
@@ -53,8 +52,8 @@ def dataset():
 
 def identity(exp, marker, data):
     return dict(arm=exp.arm, mode=exp.mode, checkpoint=marker["checkpoint_sha256"],
-                model=c.MODEL, revision=c.REVISION, generation=source.GENERATION[exp.mode],
-                seed=c.SEED, data=data, prompt=INSTRUCTION)
+                model=c.family_config.MODEL, revision=c.family_config.REVISION, generation=source.family_config.GENERATION[exp.mode],
+                seed=c.family_config.SEED, data=data, prompt=INSTRUCTION)
 
 
 def evaluate(exp):
@@ -83,20 +82,20 @@ def evaluate(exp):
     for i, row in enumerate(rows):
         if (row["index"] != i or row["question"] != docs[i]["question"]
                 or row["gold"] != answer(docs[i]["answer"])
-                or row["seed"] != document_seed(c.SEED, "gsm8k", exp.mode, i)
+                or row["seed"] != document_seed(c.family_config.SEED, "gsm8k", exp.mode, i)
                 or row["predicted"] != answer(row["final_text"])
                 or row["correct"] != (row["predicted"] == row["gold"])):
             raise ValueError("Mismatched or corrupt saved answers")
     native, packed = quality.load_endpoint(exp, marker)
     del packed
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
     with path.open("a") as stream, torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
         for i in range(len(rows), len(docs)):
             doc = docs[i]
-            seed = document_seed(c.SEED, "gsm8k", exp.mode, i)
+            seed = document_seed(c.family_config.SEED, "gsm8k", exp.mode, i)
             result = generate(native, tokenizer, [{"role": "user",
                               "content": doc["question"]+"\n\n"+INSTRUCTION}],
-                              exp.mode=="thinking", source.GENERATION[exp.mode], seed)
+                              exp.mode=="thinking", source.family_config.GENERATION[exp.mode], seed)
             predicted, gold = answer(result["final_text"]), answer(doc["answer"])
             row = dict(index=i, question=doc["question"], seed=seed, predicted=predicted,
                        gold=gold, correct=predicted==gold, **result)
@@ -112,12 +111,28 @@ def evaluate(exp):
                       answers_sha256=common.file_hash(path)))
 
 
+def payload(exp, staged):
+    body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
+    body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1],
+                job_desc=f"sps-readout-gsm8k {exp.name} #d.tarasov @mrsndmn",
+                script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
+                    "timeout", f"{HOURS[exp.mode]}h", str(launch.PYTHON), "scripts/readout/real_readout_gsm8k.py", "--worker", "--filter", exp.name]))
+    body["env_variables"]["SPS_EXPERIMENT_SUITE"] = "ar-sps-qwen3-1.7b-instruct"
+    return body
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--filter", choices=[e.name for e in experiment_configs])
     parser.add_argument("--worker", action="store_true")
+    parser.add_argument("--dry", action="store_true")
     args = parser.parse_args()
     selected = [e for e in experiment_configs if args.filter in (None, e.name)]
+    if args.dry:
+        staged = launch.STAGING_ROOT / launch.git("rev-parse", "HEAD")
+        for exp in selected:
+            launch.print_preview(payload(exp, staged), ROOT / "runs/out" / exp.name, staged, "eval")
+        return
     if args.worker:
         exp, = selected
         return evaluate(exp)
@@ -145,13 +160,9 @@ def main():
                         or saved["answers_sha256"] != common.file_hash(root/"answers.jsonl")):
                     raise ValueError("Stale completion")
                 continue
-            body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
-            body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1], region=opts["region"],
-                        job_desc=f"sps-readout-gsm8k {exp.name} #d.tarasov @mrsndmn",
-                        script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
-                            "timeout", f"{HOURS[exp.mode]}h", str(launch.PYTHON), "scripts/readout/real_readout_gsm8k.py", "--worker", "--filter", exp.name]))
-            body["env_variables"]["SPS_EXPERIMENT_SUITE"] = "ar-sps-qwen3-1.7b-instruct"
-            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name, active)
+            body = payload(exp, staged)
+            body["region"] = opts["region"]
+            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name)
             if key in active:
                 print(exp.name, active[key], flush=True)
             else:

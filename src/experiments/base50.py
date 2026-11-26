@@ -3,11 +3,10 @@
 import math
 from dataclasses import dataclass
 
-from .family_arguments import configure, configure_runs, export_fields
 from .types import ARExperiment
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     SOURCE_SUITE: str = "ar-sps-qwen3-1.7b"
     ROOT_NAME: str = "qwen3-base-1.7b-ce-50k"
@@ -21,8 +20,7 @@ class FamilyConfig:
     REMINDER: str = "После успешного завершения напомнить пользователю: он хотел посчитать крамминг на этом чекпоинте."
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 def learning_rate(step):
@@ -43,4 +41,3 @@ def learning_rate(step):
 
 
 experiment_configs = [ARExperiment("qwen3_base_staged_sps_ce_50k", "staged_sps")]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

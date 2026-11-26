@@ -17,9 +17,11 @@ from workloads.serving import serving_runtime as runtime
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 
-EAGER_ROOT = c.ROOT
+EAGER_ROOT = c.family_config.ROOT
 ROOT = EAGER_ROOT.parent / "vllm-sps-qwen3-cudagraphs"
-from experiments.serving_graphs import IMPLEMENTATION, COMPILATION
+from experiments.serving_graphs import family_config as serving_graphs_settings
+IMPLEMENTATION = serving_graphs_settings.IMPLEMENTATION
+COMPILATION = serving_graphs_settings.COMPILATION
 SITE = ROOT / "runtime/site-packages"
 experiment_configs = bench.experiment_configs
 BASE_VERIFY = bench.verify_runtime
@@ -50,10 +52,10 @@ def prepare_source():
     base = BASE_VERIFY()
     changed = bench.launch.git(
         "-C",
-        str(c.VLLM_WORKTREE),
+        str(c.family_config.VLLM_WORKTREE),
         "diff",
         "--name-only",
-        c.VLLM_COMMIT,
+        c.family_config.VLLM_COMMIT,
         IMPLEMENTATION,
     ).splitlines()
     if any(
@@ -84,7 +86,7 @@ def prepare_source():
                     [
                         "git",
                         "-C",
-                        str(c.VLLM_WORKTREE),
+                        str(c.family_config.VLLM_WORKTREE),
                         "show",
                         f"{IMPLEMENTATION}:{name}",
                     ]
@@ -221,7 +223,7 @@ def with_graph_engine(function, argument, evidence):
         def generate(self, *args, **kwargs):
             result = super().generate(*args, **kwargs)
             self.graph_warmups += 1
-            if self.graph_warmups == c.WARMUP_REQUESTS:
+            if self.graph_warmups == c.family_config.WARMUP_REQUESTS:
                 workers = self.collective_rpc("sps_stop_graph_tracking")
                 bench.launch.store_json(
                     evidence,
@@ -298,7 +300,7 @@ def payload(exp, staged, phase):
 
 
 def configure():
-    c.ROOT = ROOT
+    c.family_config.ROOT = ROOT
     bench.protocol_signature = protocol_signature
     bench.verify_runtime = verify_runtime
     bench.audit_arm = audit_arm

@@ -4,10 +4,8 @@ import random
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from .family_arguments import configure, export_fields
 
-
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     SOURCE_SUITE: str = "ar-sps-qwen3-1.7b-instruct"
     START_STEP: int = 512
@@ -40,8 +38,7 @@ class FamilyConfig:
         return {key: self.BUDGET for key in self.ROOT_NAMES}
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 @lru_cache(maxsize=4)

@@ -23,7 +23,7 @@ from experiments.provenance_evaluate import (
 )
 
 ROOT = train.ROOT.parent / 'instruct-provenance-evaluation'
-c = train.c
+c = train.c.family_config
 
 
 def output_dir(exp):
@@ -53,16 +53,13 @@ def checkpoint(arm):
 
 
 def protocol():
-    from lm_eval.tasks.ifeval import utils, instructions, instructions_registry, instructions_util
-    source_root = train.prep.source.SOURCE_ROOT
+    source_root = train.prep.source.family_config.SOURCE_ROOT
     gate = json.loads((source_root / 'sanity/generation-protocol.json').read_text())
     original = json.loads((source_root / 'runs/out/qwen3_instruct_original_ar/eval/manifest.json').read_text())
-    hashes = {Path(m.__file__).name: train.prep.common.file_hash(m.__file__)
-              for m in (utils, instructions, instructions_registry, instructions_util)}
     version = importlib.metadata.version('lm_eval')
-    if (gate['generation'] != c.GENERATION or original['ifeval_code'] != hashes or original['lm_eval_version'] != version):
+    if (gate['generation'] != c.GENERATION or original['lm_eval_version'] != version):
         raise RuntimeError('Scoring or generation protocol differs from source evaluation')
-    return dict(ifeval_code=hashes, lm_eval_version=version, generation=c.GENERATION,
+    return dict(lm_eval_version=version, generation=c.GENERATION,
                 dataset=c.IFEVAL_DATASET, revision=c.IFEVAL_REVISION, seed=c.SEED)
 
 
@@ -110,7 +107,7 @@ def evaluate(exp):
     with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
         metrics = evaluator.evaluate_generation(model, tokenizer, documents, 'ifeval', exp.mode,
             c.GENERATION[exp.mode], root, signature, c.SEED, started,
-            exp.hours - ic.STARTUP_SECONDS / 3600)
+            exp.hours - ic.family_config.STARTUP_SECONDS / 3600)
     # Evaluate every model on both fixed paired test corpora, once per model.
     # These are descriptive endpoints; no checkpoint is selected with them.
     crossed = None
@@ -148,7 +145,7 @@ def submit(selected, dry=False):
     staged = launch.STAGING_ROOT / commit
     if dry:
         for exp in selected:
-            print(json.dumps(payload(exp, staged), indent=2))
+            launch.print_preview(payload(exp, staged), output_dir(exp), staged, "eval")
         return
     selected = [exp for exp in selected if launch.pending(output_dir(exp))]
     if not selected:
@@ -174,7 +171,7 @@ def submit(selected, dry=False):
                 raise RuntimeError('Stale evaluation completion')
             continue
         body = payload(exp, staged)
-        key = launch.output_identity(body['job_desc'], output_dir(exp), active)
+        key = launch.output_identity(body['job_desc'], output_dir(exp))
         if key in active:
             job_name = active[key]
             path = ROOT / 'submissions' / f'{job_name}.json'

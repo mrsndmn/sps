@@ -1,3 +1,4 @@
+import sys
 """Shared, side-effect-free planning and committed-code MLSpace submission."""
 import argparse
 import json
@@ -78,16 +79,7 @@ def submission_lock():
 def receipt_outputs(record):
     if output := record.get("output_dir"):
         return {Path(output)}
-    name = record.get("name")
-    if not name:
-        return set()
-    if record.get("phase") == "prepare":
-        return {ARTIFACTS_ROOT / "probe", ARTIFACTS_ROOT / "prepared",
-                ARTIFACTS_ROOT / "sanity/out" / name}
-    paths = {RUN_ROOT / "out" / name}
-    if record.get("phase") == "eval" and record.get("identity", "").startswith("sps-qwen3-adapters "):
-        paths.add(ARTIFACTS_ROOT / "evaluations/winner")
-    return paths
+    return set()
 
 
 def reconcile_for_outputs(client, active, outputs):
@@ -201,21 +193,12 @@ def valid_job_name(result):
 
 def pending(output, profile="default"):
     from orchestration.named.publication import pending_output
-    return pending_output(output, profile)
+    return pending_output(Path(os.environ.get("SPS_SUBMIT_OUTPUT") or output), profile)
 
 
-def output_identity(description, output, active=None):
-    """Only pre-migration jobs lack a destination in their description."""
-    original = normalize(description)
+def output_identity(description, output):
     key = hashlib.sha256(str(Path(output).resolve()).encode()).hexdigest()
-    identity = f"{original} output={key}"
-    if active and original in active and identity not in active:
-        receipt = ARTIFACTS_ROOT / "submissions" / f"{active[original]}.json"
-        if receipt.is_file():
-            record = json.loads(receipt.read_text())
-            return original if Path(output) in receipt_outputs(record) else identity
-        raise RuntimeError(f"Active legacy job lacks a destination receipt: {active[original]}")
-    return identity
+    return f"{normalize(description)} output={key}"
 
 
 def scope_payload(body, output):
@@ -224,13 +207,34 @@ def scope_payload(body, output):
     body["job_desc"] = " ".join([identity, *tags])
 
 
-def submit_payload(client, body, phase, name, commit, *, output_dir=None):
-    output = os.environ.get("SPS_SUBMIT_OUTPUT") or output_dir
-    if output:
-        scope_payload(body, output)
-        identity = normalize(body["job_desc"])
+def prepare_payload(body, output, staged, phase):
+    """Build the exact worker invocation used for preview and submission."""
+    from experiments.protocols import schemas
+    from orchestration.named.publication import published_command
+
+    destination = Path(os.environ.get("SPS_SUBMIT_OUTPUT") or output)
+    body = dict(body)
+    scope_payload(body, destination)
+    groups = schemas(Path(sys.argv[0]).stem, phase)
+    body["script"] = published_command(body["script"], destination, staged, groups, original=output)
+    return body
+
+
+def print_preview(body, output, staged, phase):
+    payload = prepare_payload(body, output, staged, phase)
+    if os.environ.get("SPS_NAMED_PREVIEW"):
+        print(json.dumps(dict(payload=payload, output_dir=os.environ.get("SPS_SUBMIT_OUTPUT") or str(output)), indent=2))
     else:
-        identity = normalize(body["job_desc"])
+        print(json.dumps(payload, indent=2))
+
+
+def submit_payload(client, body, phase, name, commit, *, output_dir=None, directory=None, before_send=None):
+    output = directory.output if directory else os.environ.get("SPS_SUBMIT_OUTPUT") or output_dir
+    if output and directory is None:
+        from orchestration.named.publication import COMMON_ROOT, RunDirectory
+        body = prepare_payload(body, output_dir or output, STAGING_ROOT / commit, phase)
+        directory = RunDirectory(COMMON_ROOT, Path(output))
+    identity = normalize(body["job_desc"])
     intent = ARTIFACTS_ROOT / 'submission-intents' / (
         hashlib.sha256(identity.encode()).hexdigest() + '.json')
     if intent.exists():
@@ -239,15 +243,19 @@ def submit_payload(client, body, phase, name, commit, *, output_dir=None):
     # resubmission, even if the server's job list has not caught up yet.
     data = dict(phase=phase, identity=identity, name=name, commit=commit,
                 attempted_at=time.time())
-    directory = None
-    if output:
-        from orchestration.named.publication import reserve_payload
-        directory = reserve_payload(body, Path(output), STAGING_ROOT / commit, original=output_dir, phase=phase, intent=intent)
-        if directory is None:
+    if directory:
+        if not directory.reserve():
             return dict(name=name, reused=True, output_dir=str(output))
-        data['output_dir'] = str(output)
-        data['attempt'] = json.loads((directory.reservation / 'submission.json').read_text())['attempt']
+        attempt = uuid.uuid4().hex
+        body["job_desc"] += f" #attempt-{attempt}"
+        data.update(output_dir=str(output), attempt=attempt)
     try:
+        if directory:
+            store_json(directory.reservation / "submission.json", dict(
+                identity=identity, attempt=attempt, receipts=str(ARTIFACTS_ROOT / "submissions"), intent=str(intent)
+            ))
+        if before_send:
+            before_send()
         store_json(intent, data)
     except Exception:
         if directory:

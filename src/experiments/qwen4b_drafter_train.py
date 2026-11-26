@@ -4,14 +4,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .environment import COMMON_ROOT
-from .family_arguments import configure, configure_runs, export_fields
-from .vllm_sps_config import SOURCE_ROOT
+from .vllm_sps_config import family_config as vllm_sps_settings
+SOURCE_ROOT = vllm_sps_settings.SOURCE_ROOT
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     ROOT: Path = COMMON_ROOT / "qwen4b-drafter"
     DATA: Path = SOURCE_ROOT / "runs" / "data"
+    SELECTION_FILE: Path = COMMON_ROOT / "qwen4b-drafter/data/dflash-100k/87586fa22c84f2b2.json"
     LENGTHS: tuple[int, ...] = (4, 8)
     TARGET_LAYERS: tuple[int, ...] = (1, 9, 17, 25, 33)
     CONTEXT: int = 3072
@@ -32,8 +33,7 @@ class FamilyConfig:
         return (self.DEFAULT_DATASET, self.PREPARED_DATASET)
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)
@@ -51,4 +51,3 @@ experiment_configs = [
     for mask in ("bidirectional", "causal")
     for embeddings in ("shared", "per-position")
 ]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)

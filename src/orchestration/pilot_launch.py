@@ -1,11 +1,9 @@
 """Submit shared MLSpace phases with the configured result directory as their identity."""
 
 from contextlib import nullcontext
-import hashlib
 import json
 import shlex
 from pathlib import Path
-from uuid import uuid4
 
 from experiments.phase_outputs import families as phase_outputs
 from experiments.evaluation_outputs import families as evaluation_outputs
@@ -44,17 +42,7 @@ def destination(phase, run=None):
 
 
 def prepare_report():
-    path = destination("prepare").output / "prepared.json"
-    if path.is_file() or path.parent != suite.ARTIFACTS_ROOT / "prepared":
-        return path
-    historic = suite.ARTIFACTS_ROOT / "prepared.json"
-    if historic.is_file() and suite.SUITE in phase_outputs:
-        return historic
-    if historic.is_file():
-        forecasts = json.loads(historic.read_text()).get("estimates", {})
-        if all(run.name in forecasts for run in suite.collect_experiments()):
-            return historic
-    return path
+    return destination("prepare").output / "prepared.json"
 
 
 def validate_forecast(run, report):
@@ -78,24 +66,6 @@ TERMINAL_FAILURES = {
     "deleted",
     "stopped",
 }
-
-
-def historical_job(root, identity, client, active):
-    """Resolve pre-migration intents and receipts, including list-API lag."""
-    if identity in active:
-        return active[identity]
-    for receipt in (root / "submissions").glob("*.json"):
-        row = json.loads(receipt.read_text())
-        if row["identity"] == identity:
-            state = str(
-                client.get_job_status(row["job_name"]).get("status", "")
-            ).casefold()
-            if state not in TERMINAL_FAILURES | {"completed", "succeeded"}:
-                return row["job_name"]
-    for intent in (root / "submission-intents").glob("*.json"):
-        if json.loads(intent.read_text())["identity"] == identity:
-            raise RuntimeError(f"Unresolved historical submission at {intent}")
-    return None
 
 
 def submit(args):
@@ -160,11 +130,7 @@ def submit(args):
                         "mtp-unified": ("mtp_unified",),
                     }.get(suite.SUITE, ())
                 body["script"] = worker_command(body["script"], schemas, name)
-            old_identity = launch.normalize(body["job_desc"])
-            key = hashlib.sha256(str(directory.output.resolve()).encode()).hexdigest()
-            body["job_desc"] = (
-                f"{old_identity} {key} #{args.author_name} @{args.telegram_nick}"
-            )
+            launch.scope_payload(body, directory.output)
             if args.dry:
                 if (
                     not args.named
@@ -196,89 +162,18 @@ def submit(args):
                 else:
                     print(json.dumps(body, indent=2))
                 continue
-            if directory.output.is_dir() or (
-                phase == "prepare" and prepare_report().is_file()
-            ):
-                print(f"Skip existing output: {directory.output}")
-                continue
-            if phase == "eval" and suite.SUITE in phase_outputs:
-                legacy = suite.RUN_ROOT / "out" / name
-                if (
-                    directory.output == suite.ARTIFACTS_ROOT / "evaluations" / name
-                    and (legacy / "evaluated.json").is_file()
-                ):
-                    print(f"Skip existing evaluation: {legacy}")
-                    continue
-            from mls.manager.job.utils import (
-                get_in_progress_jobs,
-                training_job_api_from_profile,
-            )
+            from orchestration.named.publication import retryable
+            from mls.manager.job.utils import training_job_api_from_profile
 
+            if directory.reservation.exists() and not retryable(
+                directory, args.profile
+            ):
+                job = directory.job_name()
+                if job:
+                    jobs.append(dict(name=name, job_name=job, reused=True))
+                continue
             client, extra = training_job_api_from_profile(args.profile)
             launch.disable_submission_retries(client)
-            listed = list(get_in_progress_jobs(client_profile=args.profile))
-            active = {
-                launch.normalize(j["job_desc"]): j["job_name"]
-                for j in listed
-            }
-            identity = launch.normalize(body["job_desc"])
-            # Historic descriptions lacked a destination. Match only the original layout.
-            historic = (
-                run is None and directory.output == suite.ARTIFACTS_ROOT / "prepared"
-            ) or (
-                run is not None
-                and directory.output
-                == suite.RUN_ROOT / "out" / name / ("eval" if phase == "eval" else "")
-            )
-            if suite.SUITE in phase_outputs and phase == "eval":
-                historic = directory.output in {
-                    suite.RUN_ROOT / "out" / name / "eval",
-                    suite.ARTIFACTS_ROOT / "evaluations" / name,
-                }
-            if suite.SUITE in evaluation_outputs:
-                historic = directory.output == suite.RUN_ROOT / "out" / name / (
-                    "full" if suite.SUITE.startswith("mmlu-") else ""
-                )
-            job = active.get(identity)
-            if historic and not job:
-                job = historical_job(suite.ARTIFACTS_ROOT, old_identity, client, active)
-            if directory.reservation.exists():
-                attempt_file = directory.reservation / "attempt.json"
-                if attempt_file.is_file():
-                    attempt = json.loads(attempt_file.read_text())["attempt"]
-                    job = next(
-                        (
-                            row["job_name"]
-                            for row in listed
-                            if launch.normalize(row["job_desc"]) == identity
-                            and f"#attempt-{attempt}" in row["job_desc"].split()
-                        ),
-                        None,
-                    )
-                job = directory.job_name() or job
-                if job and not directory.job_name():
-                    directory.record(job)
-                if job:
-                    state = str(client.get_job_status(job).get("status", "")).lower()
-                    if (
-                        state in {"completed", "succeeded"}
-                        and not directory.output.is_dir()
-                    ):
-                        raise RuntimeError(
-                            f"Completed job {job} did not publish {directory.output}"
-                        )
-                    if state in TERMINAL_FAILURES:
-                        directory.retire()
-                        job = None
-                    else:
-                        jobs.append(dict(name=name, job_name=job, reused=True))
-                        continue
-                else:
-                    print(f"Skip unresolved reservation: {directory.reservation}")
-                    continue
-            if job:
-                jobs.append(dict(name=name, job_name=job, reused=True))
-                continue
             if phase in {"train", "eval"} and suite.SUITE in suite.AR_SPS_SUITES | {
                 suite.INSTRUCT_SUITE
             }:
@@ -309,12 +204,8 @@ def submit(args):
                     raise FileNotFoundError(checkpoint)
             launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
             body["region"] = extra["region"]
-            if not directory.reserve():
-                continue
-            try:
-                attempt = uuid4().hex
-                body["job_desc"] += f" #attempt-{attempt}"
-                launch.store_json(directory.reservation / "attempt.json", {"attempt": attempt})
+
+            def reserve_budget():
                 if suite.SUITE in suite.AR_SPS_SUITES:
                     from workloads.adaptation.ar_sps_run import reserve
 
@@ -325,24 +216,18 @@ def submit(args):
 
                     with launch.submission_lock():
                         reserve(phase, name)
-            except Exception:
-                directory.retire()
-                raise
-            result = client.run_job(body)
-            job = launch.valid_job_name(result)
-            if not job:
-                if isinstance(result, dict) and result.get("error_code") == 1:
-                    directory.retire()
-                    raise RuntimeError(f"MLSpace rejected submission: {result}")
-                raise RuntimeError(
-                    f"Unconfirmed submission; inspect {directory.reservation}"
+
+            jobs.append(
+                launch.submit_payload(
+                    client,
+                    body,
+                    phase,
+                    name,
+                    commit,
+                    directory=directory,
+                    before_send=reserve_budget,
                 )
-            try:
-                directory.record(job)
-            except FileNotFoundError:
-                if not directory.output.is_dir():
-                    raise
-            jobs.append(dict(name=name, job_name=job, commit=commit))
+            )
     print("__MLS_JOBS_JSON__")
     print(json.dumps(dict(phase=phase, jobs=jobs)))
     return 0

@@ -2,10 +2,8 @@
 
 from dataclasses import dataclass, field
 
-from .family_arguments import configure, export_fields
 
-
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     SOURCE_SUITE: str = "ar-sps-qwen3-1.7b-instruct"
     ROOT_NAMES: dict[str, str] = field(
@@ -44,5 +42,4 @@ class FamilyConfig:
         }
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()

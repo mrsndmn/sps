@@ -69,7 +69,7 @@ def test_train_payload_and_stage_configs():
     for exp in t.experiment_configs:
         p=t.payload(exp,Path('/staged'))
         assert p['instance_type']==t.launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus]
-        assert p['env_variables']['SPS_EXPERIMENT_SUITE']==t.c.SUITE
+        assert p['env_variables']['SPS_EXPERIMENT_SUITE']==t.c.family_config.SUITE
         assert f'--worker --arm {exp.name}' in p['script']
 
 

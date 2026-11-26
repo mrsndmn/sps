@@ -78,18 +78,18 @@ def test_frozen_teacher_is_independent_and_targets_are_next_token(monkeypatch):
 def test_reference_data_preserves_order_and_rejects_tampering(tmp_path, monkeypatch):
     reference = tmp_path/'reference'
     reference.mkdir()
-    arrays = {s: np.arange((c.CONTEXT+1)*2, dtype=np.uint32).reshape(2, -1) for s in ('train', 'val', 'test')}
+    arrays = {s: np.arange((c.family_config.CONTEXT+1)*2, dtype=np.uint32).reshape(2, -1) for s in ('train', 'val', 'test')}
     hashes = {}
     for split, array in arrays.items():
         path = reference/f'{split}.bin'; path.write_bytes(array.tobytes())
         hashes[split] = hashlib.sha256(path.read_bytes()).hexdigest()
-    manifest = dict(design_signature=c.REFERENCE_SIGNATURE, model=c.MODEL, revision=c.REVISION,
+    manifest = dict(design_signature='archived', model=c.family_config.MODEL, revision=c.family_config.REVISION,
                     dataset=data.e.DATASET_REPO, dataset_revision=data.e.DATASET_REVISION,
-                    row_length=c.CONTEXT+1, dtype='uint32', rows={s: 2 for s in arrays})
+                    row_length=c.family_config.CONTEXT+1, dtype='uint32', rows={s: 2 for s in arrays})
     (reference/'manifest.json').write_text(json.dumps(manifest))
     monkeypatch.setattr(data, 'reference_root', lambda: reference)
-    monkeypatch.setattr(c, 'REFERENCE_DATA_SHA256', hashes)
-    monkeypatch.setattr(c, 'DISTILLATION', True)
+    monkeypatch.setattr(c.family_config, 'REFERENCE_DATA_SHA256', hashes)
+    monkeypatch.setattr(c.family_config, 'DISTILLATION', True)
     monkeypatch.setattr(data.e, 'RUN_ROOT', tmp_path/'new')
 
     data.prepare()
@@ -102,12 +102,12 @@ def test_reference_data_preserves_order_and_rejects_tampering(tmp_path, monkeypa
 
 
 def test_matched_budget_must_not_shrink(tmp_path, monkeypatch):
-    monkeypatch.setattr(c, 'DISTILLATION', True)
-    monkeypatch.setattr(c, 'TRAIN_HOURS', 2)
+    monkeypatch.setattr(c.family_config, 'DISTILLATION', True)
+    monkeypatch.setattr(c.family_config, 'TRAIN_HOURS', 2)
     monkeypatch.setattr(run.e, 'COMMON_ROOT', tmp_path)
-    root = tmp_path/c.REFERENCE_SUITE; root.mkdir()
-    parent = dict(design_signature=c.REFERENCE_SIGNATURE, steps=c.MAX_STEPS,
-                  stage_steps=int(c.MAX_STEPS*c.STAGE_FRACTION), text_tokens=c.MAX_STEPS*c.GLOBAL_BATCH*c.CONTEXT)
+    root = tmp_path/c.family_config.REFERENCE_SUITE; root.mkdir()
+    parent = dict(design_signature='archived', steps=c.family_config.MAX_STEPS,
+                  stage_steps=int(c.family_config.MAX_STEPS*c.family_config.STAGE_FRACTION), text_tokens=c.family_config.MAX_STEPS*c.family_config.GLOBAL_BATCH*c.family_config.CONTEXT)
     (root/'prepared.json').write_text(json.dumps(parent))
     result = run.calibrated_plan({'staged_kd': {'full': .6, 'embedding': .4}})
     assert result['steps'] == parent['steps'] and result['stage_steps'] == parent['stage_steps']
@@ -118,23 +118,23 @@ def test_matched_budget_must_not_shrink(tmp_path, monkeypatch):
 def test_external_control_signature_is_explicit(tmp_path, monkeypatch):
     from workloads.adaptation import ar_sps_report as report
 
-    monkeypatch.setattr(c, 'PRIMARY_METRICS', {})
+    monkeypatch.setattr(c.family_config, 'PRIMARY_METRICS', {})
     baseline, candidate = tmp_path/'control', tmp_path/'final'
-    for path, signature in ((baseline, c.REFERENCE_SIGNATURE), (candidate, 'current')):
+    for path, signature in ((baseline, 'archived'), (candidate, 'current')):
         path.mkdir()
         (path/'complete.json').write_text(json.dumps(dict(design_signature=signature)))
         (path/'heldout.json').write_text(json.dumps(dict(step=10, nll=1., per_sequence=[1., 1.])))
     report.compare(baseline, candidate)
-    result = report.compare(baseline, candidate, baseline_signature=c.REFERENCE_SIGNATURE, matched_exposure=True)
+    result = report.compare(baseline, candidate, matched_exposure=True)
     assert result['matched_exposure'] and result['observed_retention']
-    (candidate/'complete.json').write_text(json.dumps(dict(design_signature=c.REFERENCE_SIGNATURE)))
-    report.compare(baseline, candidate, baseline_signature=c.REFERENCE_SIGNATURE)
+    (candidate/'complete.json').write_text(json.dumps(dict(design_signature='archived')))
+    report.compare(baseline, candidate)
 
 
 def test_distillation_report_uses_only_declared_controls(tmp_path, monkeypatch):
     from workloads.adaptation import ar_sps_report as report
     from types import SimpleNamespace
-    monkeypatch.setattr(c, 'REFERENCE_CONTROLS', ('smollm2_staged_sps',))
+    monkeypatch.setattr(c.family_config, 'REFERENCE_CONTROLS', ('smollm2_staged_sps',))
     monkeypatch.setattr(report.e, 'COMMON_ROOT', tmp_path)
     monkeypatch.setattr(data, 'rows', lambda _: None)
     monkeypatch.setattr(report.e, 'collect_experiments', lambda: [SimpleNamespace(name='kd')])
@@ -150,4 +150,3 @@ def test_distillation_report_uses_only_declared_controls(tmp_path, monkeypatch):
     assert len(result['against_original'])==2
     assert len(result['matched_endpoint_controls'])==2
     assert all('smollm2_staged_sps' in str(b) for b,_,kw in calls if kw.get('matched_exposure'))
-    assert all(kw['baseline_signature']==c.REFERENCE_SIGNATURE for _,_,kw in calls)

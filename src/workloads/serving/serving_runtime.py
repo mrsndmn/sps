@@ -17,11 +17,11 @@ from experiments import vllm_sps_config as c
 
 ENV_ROOT = Path("/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/envs")
 RUNTIME = ENV_ROOT / "vllm_sps_main_py312_cu130"
-ARTIFACTS = c.ROOT / "runtime"
+ARTIFACTS = c.family_config.ROOT / "runtime"
 UV = ENV_ROOT / ".tools/uv-0.9.11"
 UV_BOOTSTRAP = Path("/home/jovyan/.local/bin/uv")
 WHEEL = (
-    f"https://wheels.vllm.ai/{c.VLLM_BASE}/"
+    f"https://wheels.vllm.ai/{c.family_config.VLLM_BASE}/"
     "vllm-0.33.0rc1.dev930%2Bg3fe0d4421-cp38-abi3-manylinux_2_28_x86_64.whl"
 )
 OVERLAY = (
@@ -38,8 +38,8 @@ def identity():
         "runtime": str(RUNTIME),
         "python": "3.12.12",
         "wheel": WHEEL,
-        "upstream": c.VLLM_BASE,
-        "implementation": c.VLLM_COMMIT,
+        "upstream": c.family_config.VLLM_BASE,
+        "implementation": c.family_config.VLLM_COMMIT,
         "overlay": list(OVERLAY),
         "extra_packages": [
             "datasets==5.1.0",
@@ -78,9 +78,9 @@ def replace_overlay(source, target):
 
 def source_snapshot():
     """Independent immutable checkout, without copying repository credentials."""
-    target = ARTIFACTS / "source" / c.VLLM_COMMIT
+    target = ARTIFACTS / "source" / c.family_config.VLLM_COMMIT
     if target.exists():
-        if (target / "source-commit.txt").read_text().strip() != c.VLLM_COMMIT:
+        if (target / "source-commit.txt").read_text().strip() != c.family_config.VLLM_COMMIT:
             raise RuntimeError("Snapshot identity mismatch")
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -90,18 +90,18 @@ def source_snapshot():
             [
                 "git",
                 "-C",
-                c.VLLM_WORKTREE,
+                c.family_config.VLLM_WORKTREE,
                 "archive",
                 "--output",
                 archive_path,
-                c.VLLM_COMMIT,
+                c.family_config.VLLM_COMMIT,
             ]
         )
         checkout = Path(tmp) / "checkout"
         checkout.mkdir()
         with tarfile.open(archive_path) as archive:
             archive.extractall(checkout)
-        (checkout / "source-commit.txt").write_text(c.VLLM_COMMIT + "\n")
+        (checkout / "source-commit.txt").write_text(c.family_config.VLLM_COMMIT + "\n")
         checkout.rename(target)
     return target
 
@@ -110,11 +110,11 @@ def validate_overlay():
     changed = set(
         launch.git(
             "-C",
-            str(c.VLLM_WORKTREE),
+            str(c.family_config.VLLM_WORKTREE),
             "diff",
             "--name-only",
-            c.VLLM_BASE,
-            c.VLLM_COMMIT,
+            c.family_config.VLLM_BASE,
+            c.family_config.VLLM_COMMIT,
         ).splitlines()
     )
     runtime_changes = {
@@ -223,7 +223,7 @@ def worker():
     )
     if not site.is_relative_to(RUNTIME):
         raise RuntimeError("Installer selected an unrelated environment")
-    snapshot = ARTIFACTS / "source" / c.VLLM_COMMIT
+    snapshot = ARTIFACTS / "source" / c.family_config.VLLM_COMMIT
     hashes = {}
     for name in OVERLAY:
         source = snapshot / name

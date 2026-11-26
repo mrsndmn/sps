@@ -101,6 +101,7 @@ def _load_worker(monkeypatch):
     registry.collect_experiments = lambda: exps
     registry.SUITE = 'instruct'
     monkeypatch.setitem(sys.modules, 'orchestration.experiment_suite', registry)
+    config.family_config = config
     monkeypatch.setitem(sys.modules, 'experiments.instruct_config', config)
     import experiments
     import orchestration

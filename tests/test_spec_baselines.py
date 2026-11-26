@@ -51,7 +51,7 @@ def test_medusa_training_freezes_source_and_masks_future_gaps(monkeypatch):
     from orchestration import experiment_suite as e
     from workloads.speculative.spec_baseline_common import MedusaTraining,loss_for
     from test_mtp_evaluate import model as source
-    monkeypatch.setattr(e.spec_baselines,'BASELINE_CONTEXT',4)
+    monkeypatch.setattr(e.spec_baselines.family_config,'BASELINE_CONTEXT',4)
     m=MedusaTraining(source().reference).train()
     ids=torch.tensor([[1,2,3,4,5,6,7,8,9]])
     logits=m(ids[:,:4]);loss=loss_for(logits,ids,'medusa',m.config);loss.backward()
@@ -152,7 +152,7 @@ def test_cuda_head_and_ar_training_step(monkeypatch):
     from workloads.speculative.spec_baseline_common import MedusaTraining,loss_for
     from modeling.models.sps import SPSModel,SPSConfig
     from dataclasses import replace
-    monkeypatch.setattr(e.spec_baselines,'BASELINE_CONTEXT',8)
+    monkeypatch.setattr(e.spec_baselines.family_config,'BASELINE_CONTEXT',8)
     torch.manual_seed(4)
     ref=SPSModel(SPSConfig(vocab_size=39,block_size=32,n_layer=2,n_head=2,
         hidden_size=128,intermediate_size=192,eos_token_id=36,pad_token_id=37,
@@ -185,7 +185,7 @@ def test_probe_forecast_uses_only_steady_steps(tmp_path,monkeypatch):
     (dest/'metrics.jsonl').write_text('\n'.join(json.dumps(dict(event='train',step_seconds=t)) for t in [9999]*8+[2.]*8))
     result=estimate(exp)
     assert result['seconds_per_step']==2.
-    assert result['tokens']==e.spec_baselines.BASELINE_STEPS*e.spec_baselines.BASELINE_STEP_TOKENS
+    assert result['tokens']==e.spec_baselines.family_config.BASELINE_STEPS*e.spec_baselines.family_config.BASELINE_STEP_TOKENS
     assert result['estimated_hours_range'][0]<result['estimated_hours_range'][1]<24
 
 
@@ -209,7 +209,7 @@ def test_resume_refuses_inconsistent_identity(change):
     from orchestration import experiment_suite as e
     from workloads.speculative.spec_baseline_common import validate_resume
     identity={'source_sha256':'source','data_manifest_sha256':'data'}
-    state=dict(step=5,tokens=5*e.spec_baselines.BASELINE_STEP_TOKENS,design_signature='sig',**identity)
+    state=dict(step=5,tokens=5*e.spec_baselines.family_config.BASELINE_STEP_TOKENS,design_signature='sig',**identity)
     assert validate_resume(state,'sig',identity)==5
     state.update(change)
     with pytest.raises(RuntimeError,match='resume identity'):validate_resume(state,'sig',identity)
@@ -222,7 +222,7 @@ def test_completed_baseline_refuses_changed_checkpoint_provenance(tmp_path,monke
     exp=e.ExperimentConfig('head','medusa',horizons=4)
     path=tmp_path/'final.pt';marker=tmp_path/'trained.json'
     identity=dict(source_sha256='source',data_manifest_sha256='data')
-    state=dict(recipe='medusa',step=e.spec_baselines.BASELINE_STEPS,tokens=e.spec_baselines.BASELINE_STEPS*e.spec_baselines.BASELINE_STEP_TOKENS,
+    state=dict(recipe='medusa',step=e.spec_baselines.family_config.BASELINE_STEPS,tokens=e.spec_baselines.family_config.BASELINE_STEPS*e.spec_baselines.family_config.BASELINE_STEP_TOKENS,
         design_signature='sig',model={},**identity)
     torch.save(state,path)
     marker.write_text(json.dumps(dict(checkpoint=str(path),design_signature='sig',**identity)))
@@ -251,18 +251,18 @@ def test_completed_resume_recovers_final_checkpoint_idempotently(tmp_path):
     from workloads.speculative.spec_baseline_common import finalize_checkpoint,validate_resume
     exp=e.ExperimentConfig('heads','medusa')
     identity=dict(source_sha256='source',data_manifest_sha256='data')
-    state=dict(recipe=exp.recipe,step=e.spec_baselines.BASELINE_STEPS,
-        tokens=e.spec_baselines.BASELINE_STEPS*e.spec_baselines.BASELINE_STEP_TOKENS,design_signature='sig',
+    state=dict(recipe=exp.recipe,step=e.spec_baselines.family_config.BASELINE_STEPS,
+        tokens=e.spec_baselines.family_config.BASELINE_STEPS*e.spec_baselines.family_config.BASELINE_STEP_TOKENS,design_signature='sig',
         model={'weight':torch.tensor([3.])},optimizer={},**identity)
     torch.save(state,tmp_path/'latest.pt')
-    assert list(range(validate_resume(state,'sig',identity),e.spec_baselines.BASELINE_STEPS))==[]
+    assert list(range(validate_resume(state,'sig',identity),e.spec_baselines.family_config.BASELINE_STEPS))==[]
     for _ in range(2):
         final=finalize_checkpoint(tmp_path,exp,'sig',identity)
         restored=torch.load(final,weights_only=False)
-        assert restored['step']==e.spec_baselines.BASELINE_STEPS
+        assert restored['step']==e.spec_baselines.family_config.BASELINE_STEPS
         torch.testing.assert_close(restored['model']['weight'],state['model']['weight'])
     final.unlink()
-    state.update(step=e.spec_baselines.BASELINE_STEPS-1,tokens=(e.spec_baselines.BASELINE_STEPS-1)*e.spec_baselines.BASELINE_STEP_TOKENS)
+    state.update(step=e.spec_baselines.family_config.BASELINE_STEPS-1,tokens=(e.spec_baselines.family_config.BASELINE_STEPS-1)*e.spec_baselines.family_config.BASELINE_STEP_TOKENS)
     torch.save(state,tmp_path/'latest.pt')
     with pytest.raises(RuntimeError,match='incomplete'):finalize_checkpoint(tmp_path,exp,'sig',identity)
     assert not final.exists()

@@ -2,10 +2,8 @@
 
 from dataclasses import dataclass, field
 
-from .family_arguments import configure, export_fields
 
-
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     DATASET: str = "cais/mmlu"
     REVISION: str = "c30699e8356da336a370243923dbaf21066bb9fe"
@@ -64,8 +62,7 @@ class FamilyConfig:
     FULL_RESUME_EXCLUDED: frozenset[str] = frozenset({"qwen0.6_ce"})
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)

@@ -69,17 +69,17 @@ TRAIN_TOKENS = _training.max_tokens
 PROBE_STEPS = _training.probe_steps
 if SUITE in {"mtp", "mtp-unfreeze", "mtp-parallel"}:
     experiment_configs = mtp.experiment_configs
-    BLOCK_SIZE = mtp.MTP_CONTEXT
-    GLOBAL_BATCH_SIZE = mtp.MTP_GLOBAL_BATCH
-    TOKENS_PER_STEP = mtp.MTP_STEP_TOKENS
-    TRAIN_TOKENS = mtp.MTP_TRAIN_STEPS * TOKENS_PER_STEP
-    PROBE_STEPS = mtp.MTP_PROBE_STEPS
-    if mtp.MTP_UNFREEZE:
-        MAX_HOURS = mtp.MTP_UNFREEZE_MAX_HOURS
+    BLOCK_SIZE = mtp.family_config.MTP_CONTEXT
+    GLOBAL_BATCH_SIZE = mtp.family_config.MTP_GLOBAL_BATCH
+    TOKENS_PER_STEP = mtp.family_config.MTP_STEP_TOKENS
+    TRAIN_TOKENS = mtp.family_config.MTP_TRAIN_STEPS * TOKENS_PER_STEP
+    PROBE_STEPS = mtp.family_config.MTP_PROBE_STEPS
+    if mtp.family_config.MTP_UNFREEZE:
+        MAX_HOURS = mtp.family_config.MTP_UNFREEZE_MAX_HOURS
 elif SUITE == "spec-baselines":
     experiment_configs = spec_baselines.experiment_configs
-    MAX_HOURS = spec_baselines.BASELINE_MAX_HOURS
-    TRAIN_TOKENS = spec_baselines.BASELINE_STEPS * spec_baselines.BASELINE_STEP_TOKENS
+    MAX_HOURS = spec_baselines.family_config.BASELINE_MAX_HOURS
+    TRAIN_TOKENS = spec_baselines.family_config.BASELINE_STEPS * spec_baselines.family_config.BASELINE_STEP_TOKENS
 elif SUITE == "mtp-unified":
     experiment_configs = mtp_unified.experiment_configs
 elif SUITE in AR_SPS_SUITES:
@@ -209,8 +209,6 @@ def published(path):
     if work and Path(path).is_relative_to(work):
         return Path(os.environ["SPS_PUBLISHED_OUTPUT"]) / Path(path).relative_to(work)
     return path
-
-
 
 
 def training_marker(exp):

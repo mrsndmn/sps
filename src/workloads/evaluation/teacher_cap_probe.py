@@ -16,8 +16,8 @@ from experiments.teacher_cap_probe import (
 )
 
 
-ROOT = source.ROOT.parent / 'qwen3-teacher-cap-probe'
-ARCHIVE = source.SOURCE_ROOT / 'runs/data'
+ROOT = source.family_config.ROOT.parent / 'qwen3-teacher-cap-probe'
+ARCHIVE = source.family_config.SOURCE_ROOT / 'runs/data'
 
 
 def sample(config):
@@ -43,8 +43,8 @@ def sample(config):
             break
     groups = defaultdict(list)
     remaining = set(candidates)
-    for name in c.DATA_FILES:
-        path = hf_hub_download(c.DATASET_REPO, name, revision=c.DATASET_REVISION, repo_type='dataset')
+    for name in c.family_config.DATA_FILES:
+        path = hf_hub_download(c.family_config.DATASET_REPO, name, revision=c.family_config.DATASET_REVISION, repo_type='dataset')
         for batch in pq.ParquetFile(path).iter_batches(batch_size=512):
             for doc in batch.to_pylist():
                 if not data.valid_messages(doc['messages']):
@@ -61,13 +61,14 @@ def sample(config):
         raise RuntimeError('Failed to reconstruct rejected training population')
     selected = []
     for domain, keys in sorted(groups.items()):
-        ordered = sorted(keys, key=lambda k: hashlib.sha256(f'{c.SEED}:{k}'.encode()).digest())
+        ordered = sorted(keys, key=lambda k: hashlib.sha256(f'{c.family_config.SEED}:{k}'.encode()).digest())
         for key in ordered[:config.per_source]:
             selected.append((domain, len(keys), *candidates[key]))
     return selected
 
 
-from experiments.teacher_cap_probe import SHARDS
+from experiments.teacher_cap_probe import family_config as teacher_cap_probe_settings
+SHARDS = teacher_cap_probe_settings.SHARDS
 
 
 def run(shard=None):
@@ -83,12 +84,13 @@ def run(shard=None):
             raise ValueError('Invalid shard')
         # The original job scans forward. Start helpers at the opposite end.
         selected = list(reversed(selected))[shard::SHARDS]
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
-    model = AutoModelForCausalLM.from_pretrained(c.MODEL, revision=c.REVISION,
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
+    model = AutoModelForCausalLM.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION,
         torch_dtype=torch.bfloat16, attn_implementation='sdpa').to('cuda').eval()
     eos = model.generation_config.eos_token_id
     eos = {eos} if isinstance(eos, int) else set(eos)
-    from experiments.teacher_cap_probe import OUTPUT_NAME
+    from experiments.teacher_cap_probe import family_config as teacher_cap_probe_settings
+    OUTPUT_NAME = teacher_cap_probe_settings.OUTPUT_NAME
     folder = worker_output(ROOT / OUTPUT_NAME)
     results = []
     for domain, population, row, archive in selected:
@@ -96,7 +98,7 @@ def run(shard=None):
         path = folder/'samples'/f'{key}.json'
         prefix = archive['generated_ids']
         ident = dict(source_id=key, domain=domain, population=population,
-                     input_hash=data.digest([row['messages'][:-1], prefix]), revision=c.REVISION)
+                     input_hash=data.digest([row['messages'][:-1], prefix]), revision=c.family_config.REVISION)
         if path.exists():
             result = json.loads(path.read_bytes())
             if result['identity'] != ident:
@@ -108,7 +110,7 @@ def run(shard=None):
             torch.manual_seed(archive['seed'] ^ 0xCEA1)
             with torch.inference_mode():
                 out = model.generate(ids, attention_mask=torch.ones_like(ids), do_sample=True,
-                    temperature=c.TEACHER_TEMPERATURE, top_k=c.TEACHER_TOP_K, top_p=c.TEACHER_TOP_P,
+                    temperature=c.family_config.TEACHER_TEMPERATURE, top_k=c.family_config.TEACHER_TOP_K, top_p=c.family_config.TEACHER_TOP_P,
                     max_new_tokens=config.caps[-1]-len(prefix), pad_token_id=tokenizer.eos_token_id)
             tokens = out[0, len(prompt):].tolist()
             text = tokenizer.decode(tokens, skip_special_tokens=True)
@@ -116,7 +118,7 @@ def run(shard=None):
             fits = False
             if assistant:
                 try:
-                    data.encode_example(tokenizer, row['messages'][:-1]+[assistant], 'thinking', key, c.CONTEXT)
+                    data.encode_example(tokenizer, row['messages'][:-1]+[assistant], 'thinking', key, c.family_config.CONTEXT)
                     fits = True
                 except ValueError as err:
                     if 'exceeds context' not in str(err):

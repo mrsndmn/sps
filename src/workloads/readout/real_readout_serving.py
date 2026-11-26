@@ -1,4 +1,5 @@
 """Matched single-request CUDA-graph audit and STEM benchmark for both endpoints."""
+from experiments.family_cli import worker_child
 from orchestration.named.publication import work_path
 import argparse
 import gc
@@ -18,12 +19,11 @@ from workloads.serving import serving_runtime as runtime
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 from orchestration import mlspace_launch as launch
-from experiments.real_readout_serving import (
-    ROOT,
-    experiment_configs,
-    LAYOUTS,
-    AUDIT_PREFIXES,
-)
+from experiments.real_readout_serving import family_config as real_readout_serving_settings
+from experiments.real_readout_serving import experiment_configs
+ROOT = real_readout_serving_settings.ROOT
+LAYOUTS = real_readout_serving_settings.LAYOUTS
+AUDIT_PREFIXES = real_readout_serving_settings.AUDIT_PREFIXES
 
 
 PATCH = Path(__file__).with_name("real_readout_vllm.patch")
@@ -74,14 +74,14 @@ def prepare(exp, marker, folder, root):
             launch.store_json(index, value)
         config = json.loads((export / "config.json").read_text())
         config.update(architectures=["Qwen3SPSForCausalLM"], native_first_readout=True,
-                      sps_horizons=c.HORIZONS)
+                      sps_horizons=c.family_config.HORIZONS)
         launch.store_json(export / "config.json", config)
-        AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION).save_pretrained(export)
+        AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION).save_pretrained(export)
     model.to(torch.bfloat16).eval()
     refs = []
     with torch.inference_mode():
         for row in common.data("val")[:AUDIT_PREFIXES]:
-            prefix = row["input_ids"][:c.AUDIT_PREFIX_TOKENS]
+            prefix = row["input_ids"][:c.family_config.AUDIT_PREFIX_TOKENS]
             ids = torch.tensor([prefix], device="cuda")
             logits = model(ids, positions=[-1]).logits[0, 0].float()
             values, indices = logits.topk(2, dim=-1)
@@ -132,7 +132,7 @@ def audit(llm, layout, root):
             predictions, = llm.collective_rpc("readout_proposals", args=(len(ref["prefix"])-1,))
             if predictions[0] != first_id:
                 raise ValueError("Proposer row disagrees with emitted first token")
-        seq = llm.generate(prompt, SamplingParams(temperature=0, max_tokens=c.AUDIT_NEW_TOKENS),
+        seq = llm.generate(prompt, SamplingParams(temperature=0, max_tokens=c.family_config.AUDIT_NEW_TOKENS),
                            use_tqdm=False)[0].outputs[0].token_ids
         evidence = {}
         if layout == "sps":
@@ -160,7 +160,7 @@ def audit(llm, layout, root):
     launch.store_json(root / f"{layout}-audit.json", rows)
     # Large-margin oracle disagreements flag layout or weight-loading errors.
     for r in rows:
-        if len(r["predicted"]) != (c.HORIZONS if layout == "sps_mtp" else 1):
+        if len(r["predicted"]) != (c.family_config.HORIZONS if layout == "sps_mtp" else 1):
             raise ValueError("Incorrect horizon count")
         if any(actual != oracle and margin > 1. for actual, oracle, margin
                in zip(r["predicted"], r["expected"], r["margin"])):
@@ -177,15 +177,15 @@ def benchmark(llm, exp, layout, root):
     from workloads.instruction.instruct_generation import document_seed, mmlu_messages, parse_answer, split_response
     from workloads.serving.vllm_sps_evaluate import select_examples
 
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
-    docs = list(load_dataset(source.MMLU_DATASET, "all", revision=source.MMLU_REVISION, split="test"))
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
+    docs = list(load_dataset(source.family_config.MMLU_DATASET, "all", revision=source.family_config.MMLU_REVISION, split="test"))
     indices = select_examples(docs)
-    for mode, settings in c.GENERATION.items():
+    for mode, settings in c.family_config.GENERATION.items():
         def generate(index, warm=False):
             params = dict(settings)
             cap = params.pop("max_new_tokens")
             sampling = SamplingParams(**params, max_tokens=min(cap, 32) if warm else cap,
-                                      seed=document_seed(c.SEED, "mmlu", mode, index))
+                                      seed=document_seed(c.family_config.SEED, "mmlu", mode, index))
             tokens = tokenizer.apply_chat_template(mmlu_messages(docs[index]), tokenize=True,
                         return_dict=False, add_generation_prompt=True, enable_thinking=mode=="thinking")
             torch.cuda.synchronize()
@@ -201,7 +201,7 @@ def benchmark(llm, exp, layout, root):
                         correct=answer == "ABCD"[docs[index]["answer"]], stop=out.finish_reason)
 
         llm.collective_rpc("sps_start_graph_tracking")
-        for index in indices[:c.WARMUP_REQUESTS]:
+        for index in indices[:c.family_config.WARMUP_REQUESTS]:
             generate(index, True)
         evidence = root / f"{layout}-{mode}-graphs.json"
         workers = llm.collective_rpc("sps_stop_graph_tracking")
@@ -209,7 +209,7 @@ def benchmark(llm, exp, layout, root):
         graphs.validate_evidence(evidence)
         trials = []
         with (root / f"{layout}-{mode}.jsonl").open("w") as stream:
-            for repeat in range(c.REPEATS):
+            for repeat in range(c.family_config.REPEATS):
                 before = counts(llm)
                 rows = []
                 for index in indices:
@@ -224,7 +224,7 @@ def benchmark(llm, exp, layout, root):
                     decode_tokens_s=sum(max(0, len(r["output_ids"])-1) for r in rows)/seconds,
                     counters_before=before, counters_after=after,
                     acceptance=counter_metrics({"acceptance_counters_including_warmup": after},
-                                          c.HORIZONS-1 if layout=="sps_mtp" else 0, before)))
+                                          c.family_config.HORIZONS-1 if layout=="sps_mtp" else 0, before)))
         launch.store_json(root / f"{layout}-{mode}.json", trials)
 
 
@@ -245,9 +245,9 @@ def worker(exp):
                    SPS_VLLM_SOURCE=str(site), VLLM_USE_V2_MODEL_RUNNER="0")
         for phase in ("audit", "benchmark"):
             for layout in LAYOUTS:
-                subprocess.run([runtime.RUNTIME/"bin/python", "scripts/readout/real_readout_serving.py",
+                subprocess.run(worker_child([runtime.RUNTIME/"bin/python", "scripts/readout/real_readout_serving.py",
                                 "--arm", exp.arm, "--internal", phase, "--layout", layout,
-                                "--export", export], env=env, check=True)
+                                "--export", export]), env=env, check=True)
             if phase == "audit":
                 seq, block = [json.loads((root / f"{name}-audit.json").read_text()) for name in LAYOUTS]
                 matches = sum(s["greedy"] == b["greedy"] for s, b in zip(seq, block, strict=True))
@@ -264,9 +264,18 @@ def artifact_hashes(root):
     names = ["prefixes.json", "greedy.json"]
     for layout in LAYOUTS:
         names.extend((f"{layout}-audit.json", f"{layout}-graphs.json"))
-        for mode in c.GENERATION:
+        for mode in c.family_config.GENERATION:
             names.extend(f"{layout}-{mode}{suffix}" for suffix in (".json", ".jsonl", "-graphs.json"))
     return {name: common.file_hash(root / name) for name in names}
+
+
+def payload(exp, staged):
+    body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
+    body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1],
+                job_desc=f"sps-real-readout-serving {exp.name} #d.tarasov @mrsndmn",
+                script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
+                    "timeout", f"{c.family_config.EVAL_HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_serving.py", "--worker", "--arm", exp.arm]))
+    return body
 
 
 def main():
@@ -276,8 +285,14 @@ def main():
     parser.add_argument("--internal", choices=("audit", "benchmark"))
     parser.add_argument("--layout", choices=LAYOUTS)
     parser.add_argument("--export")
+    parser.add_argument("--dry", action="store_true")
     args = parser.parse_args()
     selected = [e for e in experiment_configs if args.arm in (None, e.arm)]
+    if args.dry:
+        staged = launch.STAGING_ROOT / launch.git("rev-parse", "HEAD")
+        for exp in selected:
+            launch.print_preview(payload(exp, staged), ROOT / "runs/out" / exp.name, staged, "eval")
+        return
     if args.internal or args.worker:
         exp, = selected
         if args.internal:
@@ -307,12 +322,9 @@ def main():
                         or saved["artifacts"] != artifact_hashes(result.parent)):
                     raise ValueError("Stale serving result")
                 continue
-            body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
-            body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1], region=options["region"],
-                        job_desc=f"sps-real-readout-serving {exp.name} #d.tarasov @mrsndmn",
-                        script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
-                            "timeout", f"{c.EVAL_HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_serving.py", "--worker", "--arm", exp.arm]))
-            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name, active)
+            body = payload(exp, staged)
+            body["region"] = options["region"]
+            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name)
             if key in active:
                 print(exp.name, active[key], flush=True)
             else:

@@ -8,17 +8,17 @@ from workloads.speculative.mtp_common import file_sha256,sequence_starts
 
 
 def check_inputs():
-    manifest=json.loads((mtp.MTP_DATA/'manifest.json').read_text())
+    manifest=json.loads((mtp.family_config.MTP_DATA/'manifest.json').read_text())
     if (manifest.get('revision')!=e.DATASET_REVISION or manifest.get('repo')!=e.DATASET_REPO
             or manifest.get('dtype')!='uint16' or manifest.get('tokenizer')!='gpt2'):
         raise RuntimeError('Unexpected baseline corpus')
     for split in ('train','val'):
-        if (mtp.MTP_DATA/f'{split}.bin').stat().st_size!=2*manifest['tokens'][split]:raise RuntimeError('Incomplete corpus')
+        if (mtp.family_config.MTP_DATA/f'{split}.bin').stat().st_size!=2*manifest['tokens'][split]:raise RuntimeError('Incomplete corpus')
     for rank in range(4):
-        starts=sequence_starts(manifest['tokens']['train'],spec_baselines.BASELINE_CONTEXT,4,rank,
-            reserve_horizons=spec_baselines.BASELINE_RESERVE_HORIZONS)
-        if len(starts)<spec_baselines.BASELINE_STEPS*spec_baselines.BASELINE_GLOBAL_BATCH//4:raise RuntimeError('Insufficient unique inputs')
-    if shutil.disk_usage(mtp.MTP_DATA).free<mtp.MTP_CHECKPOINT_FREE_BYTES:raise RuntimeError('Insufficient checkpoint disk space')
+        starts=sequence_starts(manifest['tokens']['train'],spec_baselines.family_config.BASELINE_CONTEXT,4,rank,
+            reserve_horizons=spec_baselines.family_config.BASELINE_RESERVE_HORIZONS)
+        if len(starts)<spec_baselines.family_config.BASELINE_STEPS*spec_baselines.family_config.BASELINE_GLOBAL_BATCH//4:raise RuntimeError('Insufficient unique inputs')
+    if shutil.disk_usage(mtp.family_config.MTP_DATA).free<mtp.family_config.MTP_CHECKPOINT_FREE_BYTES:raise RuntimeError('Insufficient checkpoint disk space')
     return identities()
 
 
@@ -27,9 +27,9 @@ def estimate(exp):
     times=[r['step_seconds'] for r in rows if r['event']=='train'][-8:]
     if len(times)!=8 or any(not math.isfinite(x) or x<=0 for x in times):raise RuntimeError('Incomplete baseline probe')
     return dict(seconds_per_step=statistics.median(times),
-        estimated_hours_range=[(statistics.median(times)*spec_baselines.BASELINE_STEPS*1.1+1800)/3600,
-                               (max(times)*spec_baselines.BASELINE_STEPS*1.5+3600)/3600],
-        tokens=spec_baselines.BASELINE_STEPS*spec_baselines.BASELINE_STEP_TOKENS,probe_steps=spec_baselines.BASELINE_PROBE_STEPS)
+        estimated_hours_range=[(statistics.median(times)*spec_baselines.family_config.BASELINE_STEPS*1.1+1800)/3600,
+                               (max(times)*spec_baselines.family_config.BASELINE_STEPS*1.5+3600)/3600],
+        tokens=spec_baselines.family_config.BASELINE_STEPS*spec_baselines.family_config.BASELINE_STEP_TOKENS,probe_steps=spec_baselines.family_config.BASELINE_PROBE_STEPS)
 
 
 def prepare():
@@ -53,7 +53,7 @@ def prepare():
             controls[exp.name]=dict(path=trained['checkpoint'],sha256=file_sha256(trained['checkpoint']))
     result=dict(design_signature=e.SUITE,**identity,estimates=forecasts,controls=controls)
     write_json(e.phase_work('prepare', e.ARTIFACTS_ROOT)/'probe-results.json',result)
-    if any(v['estimated_hours_range'][1]>spec_baselines.BASELINE_MAX_HOURS for v in forecasts.values()):
+    if any(v['estimated_hours_range'][1]>spec_baselines.family_config.BASELINE_MAX_HOURS for v in forecasts.values()):
         raise RuntimeError('Baseline forecast exceeds training cap')
     write_json(e.prepared_path(),result)
 
@@ -67,13 +67,13 @@ def approved():
 
 def train(exp):
     prepared=approved();forecast=prepared['estimates'][exp.name]
-    if forecast['estimated_hours_range'][1]>spec_baselines.BASELINE_MAX_HOURS:raise RuntimeError('Forecast exceeds cap')
+    if forecast['estimated_hours_range'][1]>spec_baselines.family_config.BASELINE_MAX_HOURS:raise RuntimeError('Forecast exceeds cap')
     dest=e.output_dir(exp);start=time.monotonic()
-    run_logged(e.train_command(exp),dest/'train.log',timeout=spec_baselines.BASELINE_MAX_HOURS*3600)
+    run_logged(e.train_command(exp),dest/'train.log',timeout=spec_baselines.family_config.BASELINE_MAX_HOURS*3600)
     checkpoint=dest/'draft_final.pt'
     import torch
     state=torch.load(checkpoint,map_location='cpu',weights_only=False,mmap=True)
-    if state['tokens'] != spec_baselines.BASELINE_STEPS * spec_baselines.BASELINE_STEP_TOKENS:
+    if state['tokens'] != spec_baselines.family_config.BASELINE_STEPS * spec_baselines.family_config.BASELINE_STEP_TOKENS:
         raise RuntimeError('Training did not complete the intended budget')
     write_json(dest/'trained.json',dict(checkpoint=str(e.published(checkpoint)),design_signature=e.SUITE,
         source_sha256=prepared['source_sha256'],data_manifest_sha256=prepared['data_manifest_sha256'],
@@ -89,7 +89,7 @@ def evaluate(exp):
     from workloads.speculative.spec_baseline_evaluate import evaluate as run
     import signal
     def expired(signum,frame):raise TimeoutError('Baseline evaluation time cap')
-    signal.signal(signal.SIGALRM,expired);signal.alarm(spec_baselines.BASELINE_EVAL_TIMEOUT)
+    signal.signal(signal.SIGALRM,expired);signal.alarm(spec_baselines.family_config.BASELINE_EVAL_TIMEOUT)
     try:run(exp)
     finally:signal.alarm(0)
 

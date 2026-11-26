@@ -6,17 +6,16 @@ from functools import partial
 from unittest.mock import patch
 
 from experiments import vllm_sps_config as c
-from experiments.draft_sweep_train import (
-    ROOT,
-    LEGACY_HORIZONS,
-    HORIZONS,
-    EXPERIMENT,
-)
+from experiments.draft_sweep_train import family_config as draft_sweep_train_settings
+from experiments.draft_sweep_train import EXPERIMENT
+ROOT = draft_sweep_train_settings.ROOT
+LEGACY_HORIZONS = draft_sweep_train_settings.LEGACY_HORIZONS
+HORIZONS = draft_sweep_train_settings.HORIZONS
 
 
 def configure():
-    c.ROOT = ROOT
-    c.HORIZONS = HORIZONS
+    c.family_config.ROOT = ROOT
+    c.family_config.HORIZONS = HORIZONS
 
 
 def training_optimizer(optimizer_for, model, frozen):

@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 
-from .family_arguments import configure, configure_runs, export_fields
 from .teacher_cap_probe import Probe
 
 
@@ -21,10 +20,9 @@ experiment_configs = {
         "unloop", "occ-ai/Qwen3.5-2B-Unloop", "3685440c358eef53ab2183f348b5ec9e9c37b12c"
     ),
 }
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     CAPS: tuple[int, ...] = Probe().caps
     OUTPUT_PARENT: tuple[str, str] = (
@@ -38,5 +36,4 @@ class FamilyConfig:
     )
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()

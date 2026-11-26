@@ -29,9 +29,9 @@ def base50():
     yield job(
         module,
         "train",
-        module.c.experiment_configs[0],
+        module.config.experiment_configs[0],
         config=(module.c, module.config),
-        output_dir=module.e.RUN_ROOT / "out" / module.c.experiment_configs[0].name,
+        output_dir=module.e.RUN_ROOT / "out" / module.config.experiment_configs[0].name,
     )
 
 
@@ -57,7 +57,7 @@ def readout():
             config = (source, load("experiments.vllm_sps_config"), module)
             effective = {}
             if exp.mode is not None:
-                modes = getattr(module, "SETTINGS", source.GENERATION)
+                modes = getattr(module, "SETTINGS", source.family_config.GENERATION)
                 effective["generation"] = modes[exp.mode]
             yield job(
                 module,
@@ -87,7 +87,7 @@ def provenance():
             config=(source, evaluator.ic),
             output_dir=evaluator.output_dir(run),
             parameters={
-                "generation": source.GENERATION[run.mode],
+                "generation": source.family_config.GENERATION[run.mode],
                 "preparation_generation": prep.GENERATION,
             },
         )
@@ -132,7 +132,7 @@ def cap_probe():
         probe,
         "teacher",
         name="continuations",
-        output_dir=module.ROOT / cap_jobs.teacher_config.OUTPUT_NAME,
+        output_dir=module.ROOT / cap_jobs.teacher_config.family_config.OUTPUT_NAME,
         config=(module.c, module, cap_jobs.teacher_config),
     )
 

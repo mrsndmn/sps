@@ -1,4 +1,5 @@
 """Submit one durable prepare+train job; data and resume state share an isolated root."""
+from experiments.family_cli import worker_child
 import argparse
 import json
 from pathlib import Path
@@ -22,7 +23,7 @@ def payload(exp, staged):
 
 def plan():
     return dict(steps=config.STEPS, stage_steps=config.STAGE_STEPS,
-                text_tokens=config.STEPS*c.GLOBAL_BATCH*c.CONTEXT,
+                text_tokens=config.STEPS*c.family_config.GLOBAL_BATCH*c.family_config.CONTEXT,
                 design_signature=e.SUITE)
 
 
@@ -31,27 +32,27 @@ def worker():
     prepare()
     launch.store_json(e.prepared_path(), plan())
     command = [str(e.PYTHON), '-m', 'torch.distributed.run', '--standalone',
-               '--nproc_per_node=4', 'scripts/adaptation/base50_train.py', '--filter', c.experiment_configs[0].name]
-    subprocess.run(command, check=True)
+               '--nproc_per_node=4', 'scripts/adaptation/base50_train.py', '--filter', config.experiment_configs[0].name]
+    subprocess.run(worker_child(command), check=True)
 
 
 def submit(dry):
     commit = launch.git('rev-parse', 'HEAD')
     staged = e.STAGING_ROOT/commit
-    exp = c.experiment_configs[0]
+    exp = config.experiment_configs[0]
     marker = e.RUN_ROOT/'out'/exp.name/'trained.json'
     if not dry and not launch.pending(marker.parent):
         return
-    if marker.exists():
+    if not dry and marker.exists():
         print('Already completed'); return
     if dry:
-        print(json.dumps(payload(exp, staged), indent=2)); return
+        launch.print_preview(payload(exp, staged), marker.parent, staged, "train"); return
     from mls.manager.job.utils import training_job_api_from_profile, get_in_progress_jobs
     client, extra = training_job_api_from_profile('default')
     launch.disable_submission_retries(client)
     active = {launch.normalize(j['job_desc']):j['job_name'] for j in get_in_progress_jobs(client_profile='default')}
     launch.reconcile_for_outputs(client, active, [marker.parent])
-    identity = launch.output_identity(payload(exp, staged)['job_desc'], marker.parent, active)
+    identity = launch.output_identity(payload(exp, staged)['job_desc'], marker.parent)
     if identity in active:
         print(json.dumps(dict(job_name=active[identity], reused=True))); return
     staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
@@ -72,7 +73,7 @@ def main():
         if not args.worker: parser.error('--internal requires --worker')
         return worker()
     if args.worker:
-        process = subprocess.Popen([str(e.PYTHON), 'scripts/adaptation/base50_run.py', '--worker', '--internal'], start_new_session=True)
+        process = subprocess.Popen(worker_child([str(e.PYTHON), 'scripts/adaptation/base50_run.py', '--worker', '--internal']), start_new_session=True)
         try:
             code = process.wait(timeout=config.JOB_HOURS*3600)
             if code: raise RuntimeError(f'Long base worker exited {code}')

@@ -128,7 +128,7 @@ def _config():
 def _overlap_texts(c):
     """Explicit pinned evaluation datasets; no reliance on mutable local caches."""
     from datasets import load_dataset
-    for spec in c.CONTAMINATION_DATASETS:
+    for spec in c.family_config.CONTAMINATION_DATASETS:
         dataset = load_dataset(spec['repo'], spec.get('config'), revision=spec['revision'], split=spec['split'],
                                trust_remote_code=spec.get('trust_remote_code', False))
         for row in dataset:
@@ -152,12 +152,12 @@ def _select(tokenizer, root, signature, c):
     from huggingface_hub import hf_hub_download
     import pyarrow.parquet as pq
     overlap = OverlapFilter(_overlap_texts(c))
-    counts = {s: 0 for s in c.DATA_ROWS}
+    counts = {s: 0 for s in c.family_config.DATA_ROWS}
     seen = set()
     selected = []
     rejected = {}
-    for filename in c.DATA_FILES:
-        path = hf_hub_download(c.DATASET_REPO, filename, revision=c.DATASET_REVISION, repo_type='dataset')
+    for filename in c.family_config.DATA_FILES:
+        path = hf_hub_download(c.family_config.DATASET_REPO, filename, revision=c.family_config.DATASET_REVISION, repo_type='dataset')
         for batch in pq.ParquetFile(path).iter_batches(batch_size=128):
             for example in batch.to_pylist():
                 messages = example.get('messages')
@@ -173,29 +173,29 @@ def _select(tokenizer, root, signature, c):
                 if group in seen:
                     continue
                 seen.add(group)
-                split = split_for(group, c.DATA_SPLIT_SALT, c.TRAIN_FRACTION, c.VAL_BOUNDARY)
-                if counts[split] >= c.DATA_ROWS[split] * c.DATA_CANDIDATE_MULTIPLIER:
+                split = split_for(group, c.family_config.DATA_SPLIT_SALT, c.family_config.TRAIN_FRACTION, c.family_config.VAL_BOUNDARY)
+                if counts[split] >= c.family_config.DATA_ROWS[split] * c.family_config.DATA_CANDIDATE_MULTIPLIER:
                     continue
                 if overlap.matches('\n'.join(m['content'] for m in messages)):
                     rejected['benchmark_overlap'] = rejected.get('benchmark_overlap', 0)+1
                     continue
-                mode = 'thinking' if int(group[:16], 16)/2**64 < c.THINKING_FRACTION else 'nonthinking'
+                mode = 'thinking' if int(group[:16], 16)/2**64 < c.family_config.THINKING_FRACTION else 'nonthinking'
                 try:
-                    row = encode_example(tokenizer, messages, 'nonthinking', group, c.CONTEXT)
+                    row = encode_example(tokenizer, messages, 'nonthinking', group, c.family_config.CONTEXT)
                     if mode == 'thinking':
                         prompt = tokenizer.apply_chat_template(messages[:-1], tokenize=True, add_generation_prompt=True, enable_thinking=True)
-                        if len(prompt) + c.TEACHER_MAX_NEW_TOKENS > c.CONTEXT:
+                        if len(prompt) + c.family_config.TEACHER_MAX_NEW_TOKENS > c.family_config.CONTEXT:
                             raise ValueError('Thinking generation budget exceeds context')
                 except ValueError:
                     rejected['length_or_template'] = rejected.get('length_or_template', 0)+1
                     continue
                 selected.append(dict(source_id=group, group_id=group, split=split, mode=mode, messages=messages))
                 counts[split] += 1
-            if all(counts[s] >= c.DATA_ROWS[s] * c.DATA_CANDIDATE_MULTIPLIER for s in counts):
+            if all(counts[s] >= c.family_config.DATA_ROWS[s] * c.family_config.DATA_CANDIDATE_MULTIPLIER for s in counts):
                 break
-        if all(counts[s] >= c.DATA_ROWS[s] * c.DATA_CANDIDATE_MULTIPLIER for s in counts):
+        if all(counts[s] >= c.family_config.DATA_ROWS[s] * c.family_config.DATA_CANDIDATE_MULTIPLIER for s in counts):
             break
-    if not all(counts[s] >= c.DATA_ROWS[s] for s in counts):
+    if not all(counts[s] >= c.family_config.DATA_ROWS[s] for s in counts):
         raise RuntimeError(f'Insufficient selected conversations: {counts}')
     atomic_json(selection, dict(design_signature=signature, records=selected, selected=counts, rejected=rejected))
     return selected
@@ -218,10 +218,10 @@ def prepare():
     root.mkdir(parents=True, exist_ok=True)
     signature = e.SUITE
     if (root/'manifest.json').exists():
-        for split in c.DATA_ROWS:
+        for split in c.family_config.DATA_ROWS:
             list(rows(split))
         return json.loads((root/'manifest.json').read_text())
-    tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
     if rank == 0:
         _select(tokenizer, root, signature, c)
     barrier()
@@ -242,16 +242,16 @@ def prepare():
         record = dict(design_signature=signature, source_id=source['source_id'], split=source['split'], mode=source['mode'])
         if source['mode'] == 'thinking':
             if teacher is None:
-                teacher = AutoModelForCausalLM.from_pretrained(c.MODEL, revision=c.REVISION, torch_dtype=torch.bfloat16, attn_implementation='sdpa').to(device).eval()
+                teacher = AutoModelForCausalLM.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION, torch_dtype=torch.bfloat16, attn_implementation='sdpa').to(device).eval()
                 teacher.requires_grad_(False)
-            seed = (c.SEED + int(source['source_id'][:8], 16)) % 2**31
+            seed = (c.family_config.SEED + int(source['source_id'][:8], 16)) % 2**31
             torch.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
             prompt = tokenizer.apply_chat_template(messages[:-1], tokenize=True, add_generation_prompt=True, enable_thinking=True, return_tensors='pt').to(device)
             with torch.inference_mode():
                 generated = teacher.generate(prompt, attention_mask=torch.ones_like(prompt), do_sample=True,
-                    max_new_tokens=c.TEACHER_MAX_NEW_TOKENS, temperature=c.TEACHER_TEMPERATURE,
-                    top_p=c.TEACHER_TOP_P, top_k=c.TEACHER_TOP_K, pad_token_id=tokenizer.eos_token_id)
+                    max_new_tokens=c.family_config.TEACHER_MAX_NEW_TOKENS, temperature=c.family_config.TEACHER_TEMPERATURE,
+                    top_p=c.family_config.TEACHER_TOP_P, top_k=c.family_config.TEACHER_TOP_K, pad_token_id=tokenizer.eos_token_id)
             tokens = generated[0, prompt.shape[1]:].tolist()
             text = tokenizer.decode(tokens, skip_special_tokens=True)
             assistant = parse_thinking(text)
@@ -264,39 +264,39 @@ def prepare():
                 continue
             messages = messages[:-1] + [assistant]
         try:
-            row = encode_example(tokenizer, messages, source['mode'], source['source_id'], c.CONTEXT)
+            row = encode_example(tokenizer, messages, source['mode'], source['source_id'], c.family_config.CONTEXT)
             record['row'] = row
         except ValueError as ex:
             record['rejected'] = str(ex)
         atomic_json(output, record)
     barrier()
     if rank == 0:
-        accepted = {s: [] for s in c.DATA_ROWS}
+        accepted = {s: [] for s in c.family_config.DATA_ROWS}
         rejected = {}
         for source in selection['records']:
             record = json.loads((samples/f'{source["source_id"]}.json').read_text())
             split = source['split']
-            if 'row' in record and len(accepted[split]) < c.DATA_ROWS[split]:
+            if 'row' in record and len(accepted[split]) < c.family_config.DATA_ROWS[split]:
                 accepted[split].append(record['row'])
             elif 'rejected' in record:
                 reason = record['rejected']
                 rejected[reason] = rejected.get(reason, 0)+1
         counts = {s: len(v) for s, v in accepted.items()}
-        if any(counts[s] < c.DATA_ROWS[s]*c.MIN_DATA_FRACTION for s in counts):
+        if any(counts[s] < c.family_config.DATA_ROWS[s]*c.family_config.MIN_DATA_FRACTION for s in counts):
             raise RuntimeError(f'Too few accepted rows: {counts}')
         mode_counts = {s: {m: sum(r['mode'] == m for r in v) for m in ('thinking','nonthinking')} for s,v in accepted.items()}
         if any(not count for modes in mode_counts.values() for count in modes.values()):
             raise RuntimeError(f'Missing required training/evaluation mode: {mode_counts}')
         import random
         for split, records in accepted.items():
-            random.Random(c.SEED + int(digest(split)[:8], 16)).shuffle(records)
+            random.Random(c.family_config.SEED + int(digest(split)[:8], 16)).shuffle(records)
             write_jsonl(root/f'{split}.jsonl', records)
-        manifest = dict(design_signature=signature, model=c.MODEL, revision=c.REVISION,
-            dataset=c.DATASET_REPO, dataset_revision=c.DATASET_REVISION, dataset_files=c.DATA_FILES,
+        manifest = dict(design_signature=signature, model=c.family_config.MODEL, revision=c.family_config.REVISION,
+            dataset=c.family_config.DATASET_REPO, dataset_revision=c.family_config.DATASET_REVISION, dataset_files=c.family_config.DATA_FILES,
             tokenizer_template_hash=digest(tokenizer.chat_template), rows=counts, modes=mode_counts,
             rejected=rejected, selection_rejected=selection.get('rejected', {}),
             sha256={s:file_hash(root/f'{s}.jsonl') for s in counts},
-            contamination_datasets=c.CONTAMINATION_DATASETS,
+            contamination_datasets=c.family_config.CONTAMINATION_DATASETS,
             scope='Exact normalized/13-token overlap filter only; pretraining contamination unknown')
         atomic_json(root/'manifest.json', manifest)
     barrier()
@@ -305,11 +305,11 @@ def prepare():
 
 def rows(split, verify=True):
     e, c = _config()
-    if split not in c.DATA_ROWS:
+    if split not in c.family_config.DATA_ROWS:
         raise ValueError(f'Unknown split {split}')
     root = e.RUN_ROOT/'data'
     manifest = json.loads((root/'manifest.json').read_text())
-    if manifest['model'] != c.MODEL or manifest['revision'] != c.REVISION:
+    if manifest['model'] != c.family_config.MODEL or manifest['revision'] != c.family_config.REVISION:
         raise RuntimeError('Stale instruct data provenance')
     path = root/f'{split}.jsonl'
     if verify and file_hash(path) != manifest['sha256'][split]:

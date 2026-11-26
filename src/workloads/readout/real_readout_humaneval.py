@@ -17,18 +17,17 @@ from workloads.readout import real_readout_run as train
 from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 from workloads.evaluation.mmlu_results import recover_samples
-from experiments.real_readout_humaneval import (
-    ROOT,
-    PROMPTS,
-    RELEASE,
-    URL,
-    ARCHIVE_SHA,
-    PROMPT_SHA,
-    REQUEST,
-    SETTINGS,
-    experiment_configs,
-    HOURS,
-)
+from experiments.real_readout_humaneval import family_config as real_readout_humaneval_settings
+from experiments.real_readout_humaneval import experiment_configs
+ROOT = real_readout_humaneval_settings.ROOT
+PROMPTS = real_readout_humaneval_settings.PROMPTS
+RELEASE = real_readout_humaneval_settings.RELEASE
+URL = real_readout_humaneval_settings.URL
+ARCHIVE_SHA = real_readout_humaneval_settings.ARCHIVE_SHA
+PROMPT_SHA = real_readout_humaneval_settings.PROMPT_SHA
+REQUEST = real_readout_humaneval_settings.REQUEST
+SETTINGS = real_readout_humaneval_settings.SETTINGS
+HOURS = real_readout_humaneval_settings.HOURS
 
 
 FENCE = re.compile(r"^[ \t]*```(?:python|py)?[ \t]*\r?\n(.*?)(?:^[ \t]*```[ \t]*\r?$|\Z)",
@@ -66,7 +65,7 @@ def solution(final_text):
 def identity(exp, marker):
     return dict(arm=exp.arm, mode=exp.mode, checkpoint=marker["checkpoint_sha256"],
                 prompts=PROMPT_SHA, release=RELEASE,
-                settings=SETTINGS[exp.mode], seed=c.SEED, request=REQUEST)
+                settings=SETTINGS[exp.mode], seed=c.family_config.SEED, request=REQUEST)
 
 
 def paths(exp):
@@ -98,14 +97,14 @@ def evaluate(exp):
     launch.store_json(meta, ident)
     rows = recover_samples(raw)
     def seed(doc):
-        return document_seed(c.SEED, "humaneval_plus", exp.mode, int(doc["task_id"].split("/")[1]))
+        return document_seed(c.family_config.SEED, "humaneval_plus", exp.mode, int(doc["task_id"].split("/")[1]))
     if len(rows) > len(docs) or any(row["task_id"] != doc["task_id"] or row["seed"] != seed(doc)
                                     for row, doc in zip(rows, docs)):
         raise ValueError("Invalid saved generations")
     if len(rows) < len(docs):
         model, packed = quality.load_endpoint(exp, marker)
         del packed
-        tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
+        tokenizer = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
         with raw.open("a") as stream, torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             for doc in docs[len(rows):]:
                 content = REQUEST+"\n\n```python\n"+doc["prompt"].strip()+"\n```"
@@ -128,12 +127,28 @@ def evaluate(exp):
                       samples_sha256=common.file_hash(samples), raw_sha256=common.file_hash(raw)))
 
 
+def payload(exp, staged):
+    body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
+    body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1],
+                job_desc=f"sps-readout-humaneval-plus {exp.name} #d.tarasov @mrsndmn",
+                script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
+                    "timeout", f"{HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_humaneval.py", "--worker", "--filter", exp.name]))
+    body["env_variables"]["SPS_EXPERIMENT_SUITE"] = "ar-sps-qwen3-1.7b-instruct"
+    return body
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--filter", choices=[e.name for e in experiment_configs])
     parser.add_argument("--worker", action="store_true")
+    parser.add_argument("--dry", action="store_true")
     args = parser.parse_args()
     selected = [e for e in experiment_configs if args.filter in (None, e.name)]
+    if args.dry:
+        staged = launch.STAGING_ROOT / launch.git("rev-parse", "HEAD")
+        for exp in selected:
+            launch.print_preview(payload(exp, staged), ROOT / "runs/out" / exp.name, staged, "eval")
+        return
     if args.worker:
         exp, = selected
         return evaluate(exp)
@@ -162,13 +177,9 @@ def main():
                         or done["raw_sha256"] != common.file_hash(root/"raw.jsonl")):
                     raise ValueError("Stale HumanEval+ result")
                 continue
-            body = launch.payload("eval", exp.name, staged, "d.tarasov", "mrsndmn")
-            body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[1], region=options["region"],
-                        job_desc=f"sps-readout-humaneval-plus {exp.name} #d.tarasov @mrsndmn",
-                        script=f"cd {shlex.quote(str(staged))} && " + shlex.join([
-                            "timeout", f"{HOURS}h", str(launch.PYTHON), "scripts/readout/real_readout_humaneval.py", "--worker", "--filter", exp.name]))
-            body["env_variables"]["SPS_EXPERIMENT_SUITE"] = "ar-sps-qwen3-1.7b-instruct"
-            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name, active)
+            body = payload(exp, staged)
+            body["region"] = options["region"]
+            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name)
             if key in active:
                 print(exp.name, active[key], flush=True)
             else:

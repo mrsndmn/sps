@@ -4,7 +4,6 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
-from uuid import uuid4
 import shlex
 import subprocess
 import sys
@@ -141,34 +140,6 @@ def published_command(command, output, staged, schemas, original=None):
             command,
         ]
     )
-
-
-def reserve_payload(body, output, staged, *, phase, intent, original=None):
-    from orchestration import mlspace_launch as launch
-
-    directory = RunDirectory(COMMON_ROOT, output)
-    from experiments.protocols import schemas
-
-    groups = schemas(Path(sys.argv[0]).stem, phase)
-    body["script"] = published_command(body["script"], output, staged, groups, original)
-    if not directory.reserve():
-        return None
-    attempt = uuid4().hex
-    body["job_desc"] += f" #attempt-{attempt}"
-    try:
-        launch.store_json(
-            directory.reservation / "submission.json",
-            {
-                "identity": launch.normalize(body["job_desc"]),
-                "attempt": attempt,
-                "receipts": str(launch.ARTIFACTS_ROOT / "submissions"),
-                "intent": str(intent),
-            },
-        )
-    except Exception:
-        directory.retire()
-        raise
-    return directory
 
 
 def main():

@@ -12,7 +12,8 @@ from workloads.distillation import dflash_repro_eval as evaluation, dflash_repro
 from orchestration import mlspace_launch as launch
 from workloads.distillation import qwen4b_drafter_train as previous
 
-from experiments.dflash_repro import TIMEOUTS
+from experiments.dflash_repro import family_config as dflash_repro_settings
+TIMEOUTS = dflash_repro_settings.TIMEOUTS
 
 
 def final_step():
@@ -28,10 +29,6 @@ def arm_name(phase, step):
 def marker(phase, step):
     directory = work_path(training.EXPERIMENT.output(phase, step))
     file = {"probe": "prepared.json", "train": "trained.json", "eval": "evaluated.json"}[phase]
-    if phase == "probe" and directory == training.EXPERIMENT.output("probe"):
-        legacy = training.run_root() / "prepared.json"
-        if legacy.is_file() and not (directory / file).is_file():
-            return legacy
     return directory / file
 
 
@@ -60,7 +57,7 @@ def submit(phase, step, dry):
     staged = launch.STAGING_ROOT / commit
     body = payload(phase, step, staged)
     if dry:
-        print(json.dumps(body, indent=2))
+        launch.print_preview(body, training.EXPERIMENT.output(phase, step), staged, phase)
         return
     submit_phase(training, phase, step, marker, body, commit)
 
@@ -104,7 +101,7 @@ def submit_job(phase, name, root, result_path, body, commit):
             active.update({launch.normalize(job["job_desc"]): job["job_name"]
                            for job in response["jobs"]})
         launch.reconcile_for_outputs(client, active, [result_path.parent])
-        identity = launch.output_identity(body["job_desc"], result_path.parent, active)
+        identity = launch.output_identity(body["job_desc"], result_path.parent)
         if identity in active:
             result = {"name": name, "job_name": active[identity], "reused": True}
         else:
@@ -125,8 +122,14 @@ def main():
     step = args.step
     if args.phase == "eval":
         if step is None:
-            step = final_step()
-        elif step not in training.MILESTONES and step != final_step():
+            try:
+                step = final_step()
+            except FileNotFoundError as error:
+                if not args.dry:
+                    raise
+                print(json.dumps({"pending_input": error.filename}))
+                return
+        elif step not in training.EXPERIMENT.milestones and step != final_step():
             parser.error("Choose a scheduled DFlash checkpoint")
     elif step is not None:
         parser.error("--step is only available for evaluation")
@@ -143,6 +146,6 @@ def main():
                 raise RuntimeError("Complete DFlash training before evaluating any checkpoint")
             evaluation.evaluate(training.checkpoint_path(step), result)
         else:
-            training.train(probe=args.phase == "probe")
+            training.train(experiment=training.EXPERIMENT, probe=args.phase == "probe")
     else:
         submit(args.phase, step, args.dry)

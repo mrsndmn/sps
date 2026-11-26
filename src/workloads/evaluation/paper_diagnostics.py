@@ -97,21 +97,21 @@ def transitions(reference, candidate, ids):
 
 
 def protocol(meta, task, mode):
-    if meta['limit'] is not None or meta['generation'][mode] != c.GENERATION[mode]:
+    if meta['limit'] is not None or meta['generation'][mode] != c.family_config.GENERATION[mode]:
         raise ValueError('Evaluation protocol differs from the paper')
     if task == 'mmlu':
-        if meta['datasets']['cais/mmlu'] != c.MMLU_REVISION:
+        if meta['datasets']['cais/mmlu'] != c.family_config.MMLU_REVISION:
             raise ValueError('MMLU revision mismatch')
         return {'generation': meta['generation'][mode], 'revision': meta['datasets']['cais/mmlu']}
-    if meta['dataset'] != c.IFEVAL_DATASET or meta['revision'] != c.IFEVAL_REVISION or mode not in meta['modes']:
+    if meta['dataset'] != c.family_config.IFEVAL_DATASET or meta['revision'] != c.family_config.IFEVAL_REVISION or mode not in meta['modes']:
         raise ValueError('IFEval protocol mismatch')
-    return {k: meta[k] for k in ('generation', 'revision', 'evaluator_code')}
+    return {k: meta[k] for k in ('generation', 'revision')}
 
 
 def run(root=ROOT, categories=None):
     report = {'scope': 'Exploratory paired question bootstrap; per-comparison 95% percentile intervals, no multiplicity correction; not training-seed uncertainty or equivalence evidence.',
               'bootstrap_replicates': BOOTSTRAPS, 'seed': SEED, 'ifeval': {}, 'mmlu': {}}
-    for mode in c.GENERATION:
+    for mode in c.family_config.GENERATION:
         arms, sources, protocols = {}, {}, []
         for arm in ARMS:
             path = root/'qwen3-instruct-ifeval/runs/out'/f'qwen3_instruct_{arm}--{mode}'/'eval'/f'ifeval-{mode}.jsonl'
@@ -199,7 +199,7 @@ def main():
     categories = None
     if args.categories:
         from datasets import load_dataset
-        categories = list(load_dataset(c.IFEVAL_DATASET, revision=c.IFEVAL_REVISION, split='train'))
+        categories = list(load_dataset(c.family_config.IFEVAL_DATASET, revision=c.family_config.IFEVAL_REVISION, split='train'))
     report = run(args.root, categories)
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output/'report.json').write_text(json.dumps(report, indent=2)+'\n')

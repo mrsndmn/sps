@@ -62,15 +62,12 @@ def main(default_phase="train"):
         if plan.submit_flag:
             cmd.append(plan.submit_flag)
         env = os.environ.copy()
-        if plan.output_dir is None:
-            return subprocess.call(cmd, env=env)
-        from orchestration.named.publication import submitting
-
-        with submitting(plan.output_dir) as ready:
-            if ready:
-                env["SPS_SUBMIT_OUTPUT"] = str(plan.output_dir)
-                return subprocess.call(cmd, env=env)
-        return 0
+        if plan.output_dir is not None:
+            if plan.output_dir.is_dir():
+                print(f"Skip existing output: {plan.output_dir}")
+                return 0
+            env["SPS_SUBMIT_OUTPUT"] = str(plan.output_dir)
+        return subprocess.call(cmd, env=env)
     try:
         family, run = resolve(args.experiment, named_runs())
     except ValueError as error:

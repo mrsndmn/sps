@@ -3,7 +3,7 @@ from workloads.instruction import sched_common as sc
 from experiments import sched_config as c
 from workloads.instruction.rerun_jobs import Rerun
 
-_runner = Rerun("sched", sc, c, "cosine")
+_runner = Rerun("sched", sc, c.family_config, "cosine")
 experiments = _runner.experiments
 payload = _runner.payload
 hours = _runner.hours

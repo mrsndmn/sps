@@ -21,7 +21,7 @@ def test_each_epoch_is_complete_and_different():
 
 
 def test_cli_and_one_gpu_eval_identity(tmp_path):
-    env={**os.environ,'SPS_EXPERIMENT_SUITE':c.SOURCE_SUITE}
+    env={**os.environ,'SPS_EXPERIMENT_SUITE':c.family_config.SOURCE_SUITE}
     # Keep real CLI parsing and payload generation, isolate completion markers.
     cli = '''from pathlib import Path
 import sys

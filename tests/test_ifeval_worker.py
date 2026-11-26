@@ -17,8 +17,8 @@ def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch
     (source/'eval').mkdir()
     (source/'final.pt').write_bytes(b'test checkpoint')
     gate = tmp_path/'sanity'; gate.mkdir()
-    (gate/'generation-protocol.json').write_text(json.dumps(dict(design_signature=r.c.SOURCE_SIGNATURE,
-                                                        generation=instruct_config.GENERATION)))
+    (gate/'generation-protocol.json').write_text(json.dumps(dict(design_signature='archived',
+                                                        generation=instruct_config.family_config.GENERATION)))
     modules = {}
     names = ('utils','instructions','instructions_registry','instructions_util')
     fingerprints = {}
@@ -32,13 +32,13 @@ def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch
     monkeypatch.setitem(sys.modules,'langdetect',SimpleNamespace(DetectorFactory=SimpleNamespace(seed=None)))
     calls = []
     def dataset(*args,**kwargs):
-        assert args==(instruct_config.IFEVAL_DATASET,)
-        assert kwargs['revision']==instruct_config.IFEVAL_REVISION
+        assert args==(instruct_config.family_config.IFEVAL_DATASET,)
+        assert kwargs['revision']==instruct_config.family_config.IFEVAL_REVISION
         return [{'prompt':'one'},{'prompt':'two'}]
     monkeypatch.setitem(sys.modules,'datasets',SimpleNamespace(load_dataset=dataset))
     monkeypatch.setitem(sys.modules,'transformers',SimpleNamespace(AutoTokenizer=SimpleNamespace(from_pretrained=lambda *a,**kw: object())))
     monkeypatch.setattr(r.importlib.metadata,'version',lambda name:'version')
-    (source/'eval/manifest.json').write_text(json.dumps(dict(design_signature=r.c.SOURCE_SIGNATURE,
+    (source/'eval/manifest.json').write_text(json.dumps(dict(design_signature='archived',
         ifeval_code=fingerprints,lm_eval_version='version')))
     monkeypatch.setattr(r.e,'output_dir',lambda exp:source)
     monkeypatch.setattr(r.e,'SANITY_ROOT',gate)
@@ -55,13 +55,13 @@ def test_worker_only_evaluates_ifeval_and_isolates_outputs(tmp_path, monkeypatch
     monkeypatch.setattr(torch,'autocast',lambda *a,**k:contextlib.nullcontext())
     def generate(model,tokenizer,rows,task,mode,settings,destination,sig,seed,*rest):
         calls.append((task,mode,len(rows),seed))
-        assert settings==instruct_config.GENERATION[mode]
+        assert settings==instruct_config.family_config.GENERATION[mode]
         assert destination != source/'eval'
         return {'count':len(rows)}
     monkeypatch.setattr(instruct_evaluate,'evaluate_generation',generate)
     exp=SimpleNamespace(name='example',trainable=trainable,recipe='staged_sps' if trainable else 'original_ar')
     r.evaluate(exp, mode=mode)
-    assert calls==[('ifeval',m,2,instruct_config.SEED) for m in ([mode] if mode else r.c.MODES)]
+    assert calls==[('ifeval',m,2,instruct_config.family_config.SEED) for m in ([mode] if mode else r.c.family_config.MODES)]
     assert bool(restored)==trainable
     assert (r.output_dir(exp, mode)/'evaluated.json').exists()
     assert not (source/'evaluated.json').exists()

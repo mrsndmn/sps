@@ -18,14 +18,14 @@ def test_separate_ifeval_dry_plan_preserves_pre_migration_design(tmp_path):
 
 def test_source_gate_rejects_mismatched_preparation(tmp_path, monkeypatch):
     from workloads.instruction import ifeval_run as r
-    monkeypatch.setattr(r.e, 'SUITE', r.c.SOURCE_SUITE)
+    monkeypatch.setattr(r.e, 'SUITE', r.c.family_config.SOURCE_SUITE)
 
     monkeypatch.setattr(r.e, 'ARTIFACTS_ROOT', tmp_path)
     (tmp_path/'prepared.json').write_text(json.dumps({'design_signature': 'wrong'}))
     assert r.source_check(SimpleNamespace(trainable=False))['design_signature'] == 'wrong'
 
 
-def test_completed_ifeval_is_skipped_and_stale_marker_rejected(tmp_path, monkeypatch, capsys):
+def test_ifeval_skips_existing_output(tmp_path, monkeypatch, capsys):
     from workloads.instruction import ifeval_run as r
     exp = SimpleNamespace(name='original', trainable=False)
     monkeypatch.setattr(r, 'RUN_ROOT', tmp_path)
@@ -35,9 +35,9 @@ def test_completed_ifeval_is_skipped_and_stale_marker_rejected(tmp_path, monkeyp
     dest = r.output_dir(exp, 'thinking'); dest.mkdir(parents=True)
     marker = dest/'evaluated.json'
     marker.write_text(json.dumps({'design_signature':'current'}))
-    args = SimpleNamespace(mode='thinking',filter=None,dry=True,author_name='a',telegram_nick='b')
+    args = SimpleNamespace(mode='thinking',filter=None,dry=False,profile="default",author_name='a',telegram_nick='b')
     r.submit(args)
-    assert 'Skip completed: original' in capsys.readouterr().out
+    assert 'Skip existing output' in capsys.readouterr().out
     marker.write_text(json.dumps({'design_signature':'stale'}))
     r.submit(args)
-    assert 'Skip completed' in capsys.readouterr().out
+    assert 'Skip existing output' in capsys.readouterr().out

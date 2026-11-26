@@ -80,7 +80,7 @@ def test_calibration_and_budget(tmp_path, monkeypatch):
     monkeypatch.setattr(run.e, 'ARTIFACTS_ROOT', tmp_path)
     probes = {'staged': {'embedding': 1., 'full': 2.}, 'direct': {'full': 2.}, 'ar': {'full': 1.}}
     plan = calibrated_plan(probes)
-    assert c.MIN_STEPS <= plan['steps'] <= c.MAX_STEPS
+    assert c.family_config.MIN_STEPS <= plan['steps'] <= c.family_config.MAX_STEPS
     assert 0 < plan['stage_steps'] < plan['steps']
     with pytest.raises(RuntimeError):
         calibrated_plan({'bad': {'full': float('nan')}})
@@ -89,7 +89,7 @@ def test_calibration_and_budget(tmp_path, monkeypatch):
     for i in range(5): reserve('eval', str(i))
     with pytest.raises(RuntimeError, match='cap'):
         reserve('train', 'retry')
-    assert sum(a['gpu_hours'] for a in json.loads((tmp_path/'budget.json').read_text())['attempts']) <= c.GPU_HOURS
+    assert sum(a['gpu_hours'] for a in json.loads((tmp_path/'budget.json').read_text())['attempts']) <= c.family_config.GPU_HOURS
 
 
 def test_content_split_and_paired_intervals():
@@ -102,7 +102,7 @@ def test_content_split_and_paired_intervals():
 
 def test_report_exposure_and_per_task_retention(tmp_path, monkeypatch):
     from workloads.adaptation import ar_sps_report as report
-    monkeypatch.setattr(report.c, 'PRIMARY_METRICS', {'task_a': 'acc,none', 'task_b': 'acc,none'})
+    monkeypatch.setattr(report.c.family_config, 'PRIMARY_METRICS', {'task_a': 'acc,none', 'task_b': 'acc,none'})
 
     def write(root, step, scores):
         root.mkdir(parents=True, exist_ok=True)
@@ -117,7 +117,7 @@ def test_report_exposure_and_per_task_retention(tmp_path, monkeypatch):
     result = report.compare(base, candidate, matched_exposure=True)
     assert not result['observed_retention']  # equal mean cannot hide a task drop
     assert result['matched_exposure']
-    assert result['candidate_text_tokens'] == 10*c.GLOBAL_BATCH*c.CONTEXT
+    assert result['candidate_text_tokens'] == 10*c.family_config.GLOBAL_BATCH*c.family_config.CONTEXT
     write(candidate, 9, [.5, .5])
     with pytest.raises(RuntimeError, match='Unequal exposure'):
         report.compare(base, candidate, matched_exposure=True)
@@ -132,7 +132,7 @@ def test_audit_checks_reference_and_production_causality(model):
     assert result['native_max_abs'] == 0
     assert result['float32']['causal_max_abs'] == 0
     assert result['bfloat16']['causal_max_abs'] == 0
-    assert result['float64_reference']['cross_length_max_abs'] < c.PARITY_ATOL
+    assert result['float64_reference']['cross_length_max_abs'] < c.family_config.PARITY_ATOL
 
 
 def test_audit_rejects_future_leakage(monkeypatch, model):
@@ -160,9 +160,9 @@ def test_audit_records_shape_drift_without_relaxing_reference(monkeypatch, model
         return output
     monkeypatch.setattr(m, 'forward', shape_dependent)
     result = audit_model(m, torch.tensor([[2, 4, 8, 6]]), 2)
-    assert result['float32']['cross_length_max_abs'] > c.PARITY_ATOL
+    assert result['float32']['cross_length_max_abs'] > c.family_config.PARITY_ATOL
     assert result['float32']['causal_max_abs'] == 0
-    assert result['float64_reference']['cross_length_max_abs'] < c.PARITY_ATOL
+    assert result['float64_reference']['cross_length_max_abs'] < c.family_config.PARITY_ATOL
 
 
 def test_qwen_rejects_sliding_layers():
@@ -193,9 +193,9 @@ def test_native_kd_teacher_freeze_and_student_update(model):
 def test_same_suite_report_control_routing(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from workloads.adaptation import ar_sps_report as report
-    monkeypatch.setattr(c,'DISTILLATION',False)
-    monkeypatch.setattr(c,'REPORT_BASELINE','qwen_ar')
-    monkeypatch.setattr(c,'ENDPOINT_COMPARISONS',(('qwen_ce','qwen_kd'),))
+    monkeypatch.setattr(c.family_config,'DISTILLATION',False)
+    monkeypatch.setattr(c.family_config,'REPORT_BASELINE','qwen_ar')
+    monkeypatch.setattr(c.family_config,'ENDPOINT_COMPARISONS',(('qwen_ce','qwen_kd'),))
     monkeypatch.setitem(report.families, report.e.SUITE, report.families['ar-sps'].__class__(eval='out/{name}/eval'))
     monkeypatch.setattr(report.e,'ARTIFACTS_ROOT',tmp_path)
     monkeypatch.setattr(report.e,'collect_experiments',lambda:[SimpleNamespace(name='qwen_ce'),SimpleNamespace(name='qwen_kd')])

@@ -1,129 +1,156 @@
-"""Pass the family dataclasses to a native worker as explicit Hugging Face CLI flags."""
+"""Pass family and run dataclasses to workers as ordinary command-line options."""
 
+from dataclasses import fields
+from importlib import import_module
 import json
-import os
+from pathlib import Path
 import shlex
 import sys
-from dataclasses import fields, make_dataclass
-from importlib import import_module
-from pathlib import Path
+from typing import get_args, get_origin
 
-from experiments.environment import PYTHON
-from experiments.family_arguments import definition_rows
+PREFIX = "--cfg."
 
 
-def wire_value(value):
+def _rows(module, table):
+    records = getattr(module, table, ())
+    if isinstance(records, dict):
+        return records.items()
+    return ((getattr(row, "name", "default"), row) for row in records)
+
+
+def _json_value(value):
     if isinstance(value, Path):
         return str(value)
-    if isinstance(value, (frozenset, set)):
+    if isinstance(value, (set, frozenset)):
         return sorted(value)
-    raise TypeError(f"Unsupported experiment argument {type(value).__name__}")
+    raise TypeError(type(value).__name__)
 
 
-def arguments(names, selected=None):
-    """Use qualified flags so that independent workloads can both declare a seed."""
-    groups = {}
-    for name in names:
-        module = import_module("experiments." + name)
-        config = getattr(module, "family_config", None)
-        values = {}
-        if config is not None:
-            values.update(
-                (f.name, getattr(config, f.name))
-                for f in fields(config)
-                if f.init and f.name.isupper()
-            )
-        for table_name in ("experiment_configs", "job_configs"):
-            entries = list(enumerate(definition_rows(module, table_name)))
-            matches = [
-                (i, row) for i, row in entries if getattr(row, "name", None) == selected
-            ]
-            for index, row in matches or entries:
-                for field in fields(row):
-                    if field.init:
-                        values[f"{table_name}__{index}__{field.name}"] = getattr(
-                            row, field.name
-                        )
-        groups[name] = values
-    return groups
+def flags(group, record):
+    result = []
+    for field in fields(record):
+        if not field.init or field.name == "experiment_configs":
+            continue
+        value = getattr(record, field.name)
+        if value is None:
+            continue
+        if isinstance(value, (dict, tuple, list, set, frozenset)):
+            value = json.dumps(value, default=_json_value, separators=(",", ":"))
+        result.append(f"{PREFIX}{group}.{field.name.lower()}={value}")
+    return result
 
 
-def flag(group, name):
-    return f"{group}__{name.lower()}"
+def worker_command(command, families, selected=None):
+    options = []
+    for family in families:
+        module = import_module("experiments." + family)
+        if hasattr(module, "family_config"):
+            options.extend(flags(family, module.family_config))
+        for table in ("experiment_configs", "job_configs"):
+            rows = list(_rows(module, table))
+            for name, row in rows:
+                if name == selected or len(rows) == 1:
+                    options.extend(flags(f"{family}.{table}.{name}", row))
+    return command + (" " + shlex.join(options) if options else "")
 
 
-def encode(groups):
-    argv = []
-    for group, values in groups.items():
-        for name, value in values.items():
-            raw = (
-                str(value)
-                if isinstance(value, (str, float, int, Path))
-                else json.dumps(value, default=wire_value, separators=(",", ":"))
-            )
-            argv.extend(("--" + flag(group, name), raw))
-    return argv
+def _collection(value, annotation):
+    kind = get_origin(annotation) or annotation
+    args = get_args(annotation)
+    if kind is dict:
+        if not args:
+            return value
+        key_type, value_type = args
+        return {
+            _collection(k, key_type): _collection(v, value_type)
+            for k, v in value.items()
+        }
+    if kind in (tuple, list, frozenset, set):
+        if not args:
+            return kind(value)
+        homogeneous = len(args) == 1 or args[-1] is Ellipsis
+        return kind(
+            _collection(v, args[0] if homogeneous else args[i])
+            for i, v in enumerate(value)
+        )
+    return kind(value)
 
 
-def parse(groups, argv):
+def parse_record(default, options):
+    """Parse the declared dataclass, retaining this experiment's inherited defaults."""
     from transformers import HfArgumentParser
 
-    schema = []
-    for group, values in groups.items():
-        for name, value in values.items():
-            kind = type(value) if type(value) in (float, int, bool, str) else str
-            schema.append((flag(group, name), kind))
-    parser = HfArgumentParser(
-        make_dataclass("FamilyArguments", schema), allow_abbrev=False
-    )
-    (parsed,) = parser.parse_args_into_dataclasses(args=argv, look_for_args_file=False)
-    overrides = {}
-    for group, values in groups.items():
-        data = {}
-        for name, default in values.items():
-            value = getattr(parsed, flag(group, name))
-            decoded = (
-                value
-                if isinstance(default, (str, float, int, Path))
-                else json.loads(value)
-            )
-            if "__" in name:
-                table, index, key = name.split("__", 2)
-                data.setdefault(table, {}).setdefault(index, {})[key] = decoded
+    class Parser(HfArgumentParser):
+        @staticmethod
+        def _parse_dataclass_field(parser, field):
+            if field.name == "experiment_configs":
+                return
+            base = get_origin(field.type) or field.type
+            if base in (dict, list, tuple, set, frozenset):
+                parser.add_argument(
+                    "--" + field.name,
+                    dest=field.name,
+                    type=lambda raw: _collection(json.loads(raw), field.type),
+                )
             else:
-                data[name] = decoded
-        overrides["experiments." + group] = data
-    return overrides
+                HfArgumentParser._parse_dataclass_field(parser, field)
 
-
-def worker_command(command, names, selected=None):
-    if not names:
-        return command
-    groups = arguments(names, selected)
-    return shlex.join(
-        [
-            str(PYTHON),
-            "-m",
-            "experiments.family_cli",
-            ",".join(groups),
-            selected or "-",
-            *encode(groups),
-            "--",
-            "/bin/bash",
-            "-c",
-            command,
-        ]
+    parser = Parser(type(default), allow_abbrev=False, add_help=False)
+    by_name = {f.name.lower(): f.name for f in fields(default)}
+    argv = []
+    for name, value in options:
+        if name not in by_name:
+            raise ValueError(f"Unknown {type(default).__name__} field {name!r}")
+        argv.append(f"--{by_name[name]}={value}")
+    parser.set_defaults(
+        **{f.name: getattr(default, f.name) for f in fields(default) if f.init}
     )
+    for action in parser._actions:
+        if action.dest in vars(default):
+            action.required = False
+    (record,) = parser.parse_args_into_dataclasses(argv, look_for_args_file=False)
+    return record
 
 
-def main():
-    separator = sys.argv.index("--")
-    names = sys.argv[1].split(",")
-    values = parse(arguments(names, sys.argv[2]), sys.argv[3:separator])
-    os.environ["SPS_FAMILY_ARGUMENTS"] = json.dumps(values, separators=(",", ":"))
-    command = sys.argv[separator + 1 :]
-    os.execvp(command[0], command)
+def read_worker_arguments(argv):
+    """Install the requested dataclasses before importing the native worker."""
+    groups = {}
+    remaining = []
+    for arg in argv:
+        if not arg.startswith(PREFIX):
+            remaining.append(arg)
+            continue
+        key, sep, value = arg[len(PREFIX) :].partition("=")
+        if not sep:
+            raise ValueError(f"Expected {PREFIX}group.field=value")
+        group, name = key.rsplit(".", 1)
+        groups.setdefault(group, []).append((name, value))
+    for group, options in groups.items():
+        family, *rest = group.split(".", 2)
+        module = import_module("experiments." + family)
+        if not rest:
+            module.family_config = parse_record(module.family_config, options)
+            continue
+        table, name = rest
+        if table not in ("experiment_configs", "job_configs"):
+            raise ValueError(f"Unknown experiment table {table}")
+        rows = getattr(module, table)
+        for key, row in rows.items() if isinstance(rows, dict) else enumerate(rows):
+            if (
+                str(key) if isinstance(rows, dict) else getattr(row, "name", "default")
+            ) == name:
+                rows[key] = parse_record(row, options)
+                break
+        else:
+            raise ValueError(f"Unknown experiment {group}")
+    argv[:] = remaining
 
 
-if __name__ == "__main__":
-    main()
+def worker_child(command):
+    """Pass the parent's CLI settings through local and torchrun child processes."""
+    if not any(
+        str(word).startswith("scripts/") and str(word).endswith(".py")
+        for word in command
+    ):
+        return command
+    return [*command, *(arg for arg in sys.orig_argv if arg.startswith(PREFIX))]

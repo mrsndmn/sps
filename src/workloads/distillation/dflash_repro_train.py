@@ -1,6 +1,8 @@
 """Train a DFlash-b16 drafter from random weights on the prepared 100K corpus."""
 
 from contextlib import nullcontext
+from dataclasses import asdict
+import json
 from hashlib import sha256
 import os
 from pathlib import Path
@@ -23,28 +25,18 @@ from data import instruct_data
 from orchestration import mlspace_launch as launch
 from orchestration.named.publication import work_path
 from workloads.distillation import qwen4b_drafter_data as prepared, qwen4b_drafter_train as previous
-from experiments.dflash_repro_train import (
-    ROOT,
-    PROPOSALS,
-    WIDTH,
-    MAX_ANCHORS,
-    HEAD_CHUNK,
-    QUERY_BLOCK,
-    LR,
-    WARMUP,
-    GAMMA,
-    SEED,
-    PROBE_WARMUP,
-    PROBE_STEPS,
-    MILESTONES,
-    Experiment,
-    experiment_configs,
-    EXPERIMENT,
-)
+from experiments.dflash_repro_train import Experiment, experiment_configs
+EXPERIMENT, = experiment_configs
 
 
-def signature():
-    return EXPERIMENT.name
+def training_inputs(experiment):
+    settings = asdict(experiment)
+    for key in ("output_root", "eval_dir_pattern"):
+        settings.pop(key)
+    return json.loads(json.dumps(dict(
+        settings=settings, selection_sha256=instruct_data.file_hash(previous.selection_path()),
+        target_revision=reference.TARGET_REVISION, draft_revision=reference.DRAFT_REVISION,
+    )))
 
 
 def run_root():
@@ -57,29 +49,30 @@ def total_steps(row_count, exp=EXPERIMENT):
     return row_count // exp.global_batch * exp.epochs
 
 
-def epoch_order(indices, epoch):
+def epoch_order(indices, epoch, experiment=EXPERIMENT):
     order = list(indices)
-    random.Random(SEED + epoch).shuffle(order)
+    random.Random(experiment.seed + epoch).shuffle(order)
     return order
 
 
-def sample_anchors(mask, epoch, row_id):
-    eligible = [i for i in range(1, len(mask) - PROPOSALS)
-                if mask[i] and any(mask[i + 1 : i + WIDTH])]
+def sample_anchors(mask, epoch, row_id, experiment=EXPERIMENT):
+    eligible = [i for i in range(1, len(mask) - experiment.proposals)
+                if mask[i] and any(mask[i + 1 : i + experiment.width])]
     if not eligible:
         raise ValueError(f"No supervised DFlash anchors in row {row_id}")
-    sampler = random.Random(f"{SEED}:{epoch}:{row_id}")
-    return sorted(sampler.sample(eligible, min(MAX_ANCHORS, len(eligible))))
+    sampler = random.Random(f"{experiment.seed}:{epoch}:{row_id}")
+    return sorted(sampler.sample(eligible, min(experiment.max_anchors, len(eligible))))
 
 
-def block_visibility(starts, source_width, q, kv):
-    group = q // WIDTH
-    return (kv < starts[group]) | ((kv >= source_width) & ((kv - source_width) // WIDTH == group))
+def block_visibility(starts, source_width, q, kv, experiment=EXPERIMENT):
+    group = q // experiment.width
+    return (kv < starts[group]) | ((kv >= source_width) & ((kv - source_width) // experiment.width == group))
 
 
 class BlockLoss(nn.Module):
-    def __init__(self, draft, head):
+    def __init__(self, draft, head, experiment=EXPERIMENT):
         super().__init__()
+        self.experiment = experiment
         self.draft = draft
         # The target owns the head. Avoid including its frozen weights in DDP/checkpoints.
         self.head_weight = head.weight.detach()
@@ -89,7 +82,7 @@ class BlockLoss(nn.Module):
             noise_embedding=noise, target_hidden=context, position_ids=positions,
             attention_mask=mask, is_causal=False,
         )[0]
-        hidden = hidden.view(-1, WIDTH, hidden.size(-1))[:labels.size(0), 1:].reshape(-1, hidden.size(-1))
+        hidden = hidden.view(-1, self.experiment.width, hidden.size(-1))[:labels.size(0), 1:].reshape(-1, hidden.size(-1))
         labels, weights = labels.flatten(), weights.flatten()
 
         def loss_chunk(features, gold, scale):
@@ -97,20 +90,20 @@ class BlockLoss(nn.Module):
             return (F.cross_entropy(logits.float(), gold, reduction="none") * scale).sum()
 
         # Recompute head logits per chunk in backward to bound vocabulary activation memory.
-        parts = [checkpoint(loss_chunk, hidden[i : i + HEAD_CHUNK], labels[i : i + HEAD_CHUNK],
-                            weights[i : i + HEAD_CHUNK], use_reentrant=False, preserve_rng_state=False)
-                 for i in range(0, labels.numel(), HEAD_CHUNK)]
+        parts = [checkpoint(loss_chunk, hidden[i : i + self.experiment.head_chunk], labels[i : i + self.experiment.head_chunk],
+                            weights[i : i + self.experiment.head_chunk], use_reentrant=False, preserve_rng_state=False)
+                 for i in range(0, labels.numel(), self.experiment.head_chunk)]
         return torch.stack(parts).sum() / weights.sum()
 
 
-def build_draft(device, *, backend="sdpa"):
+def build_draft(device, *, backend="sdpa", experiment=EXPERIMENT):
     from transformers import AutoConfig
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 
     pinned = dict(revision=reference.DRAFT_REVISION, local_files_only=True)
     config = AutoConfig.from_pretrained(reference.DRAFT, **pinned)
-    if config.block_size != WIDTH or config.num_hidden_layers != 5 or config.attention_dropout:
+    if config.block_size != experiment.width or config.num_hidden_layers != 5 or config.attention_dropout:
         raise RuntimeError("Unexpected architecture in the pinned DFlash config")
     cls = get_class_from_dynamic_module(config.auto_map["AutoModel"], reference.DRAFT, **pinned)
     if backend == "flex":
@@ -125,7 +118,7 @@ def build_draft(device, *, backend="sdpa"):
         backend = "dflash_repro_flex"
     # The custom implementation is selected after model construction.
     config._attn_implementation = "sdpa"
-    torch.manual_seed(SEED)
+    torch.manual_seed(experiment.seed)
     model = cls(config).to(device)
     model.config._attn_implementation = backend
     if tuple(model.target_layer_ids) != previous.TARGET_LAYERS:
@@ -133,7 +126,7 @@ def build_draft(device, *, backend="sdpa"):
     return model
 
 
-def draft_inputs(target, draft, row, anchors, device, *, sparse=True):
+def draft_inputs(target, draft, row, anchors, device, *, sparse=True, experiment=EXPERIMENT):
     tokens = torch.tensor([row["input_ids"]], device=device)
     supervision = torch.tensor(row["loss_mask"], device=device, dtype=torch.bool)
     starts = torch.tensor(anchors, device=device)
@@ -142,13 +135,13 @@ def draft_inputs(target, draft, row, anchors, device, *, sparse=True):
         output = target.model(tokens, use_cache=False, output_hidden_states=True)
         context = reference.context_features(output, draft.target_layer_ids)
         del output
-        slots = torch.arange(WIDTH, device=device)
+        slots = torch.arange(experiment.width, device=device)
         label_positions = starts[:, None] + slots[1:]
         labels = tokens[0, label_positions]
-        weights = supervision[label_positions] * torch.exp(-(slots[1:].float() - 1) / GAMMA)
-        padding = (-len(anchors)) % (QUERY_BLOCK // WIDTH) if sparse else 0
+        weights = supervision[label_positions] * torch.exp(-(slots[1:].float() - 1) / experiment.gamma)
+        padding = (-len(anchors)) % (experiment.query_block // experiment.width) if sparse else 0
         padded_starts = torch.cat((starts, starts[:1].expand(padding)))
-        block = torch.full((len(padded_starts), WIDTH), draft.mask_token_id, device=device,
+        block = torch.full((len(padded_starts), experiment.width), draft.mask_token_id, device=device,
                            dtype=torch.long)
         block[:, 0] = tokens[0, padded_starts]
         noise = target.model.embed_tokens(block.flatten()[None])
@@ -157,12 +150,12 @@ def draft_inputs(target, draft, row, anchors, device, *, sparse=True):
     source_width = starts.new_tensor(len(source))
 
     def mask_mod(b, h, q, kv):
-        return block_visibility(padded_starts, source_width, q, kv)
+        return block_visibility(padded_starts, source_width, q, kv, experiment=experiment)
 
     q_size, kv_size = noise.size(1), positions.size(1)
     if sparse:
         mask = create_block_mask(mask_mod, None, None, q_size, kv_size, device=device,
-                                 BLOCK_SIZE=QUERY_BLOCK, _compile=True)
+                                 BLOCK_SIZE=experiment.query_block, _compile=True)
     else:
         q = torch.arange(q_size, device=device)[:, None]
         kv = torch.arange(kv_size, device=device)[None, :]
@@ -182,6 +175,7 @@ def save_checkpoint(folder, model, optimizer, schedule, step, design):
                         step=step, design=design), staging / "resume.pt")
         save_file({key: value.detach().to(device="cpu", dtype=torch.bfloat16).contiguous()
                    for key, value in weights.items()}, staging / "weights.safetensors")
+        launch.store_json(staging / "inputs.json", design)
         staging.rename(folder)
 
 
@@ -195,11 +189,13 @@ def load_checkpoint(folder, model, optimizer, schedule, design):
     return state["step"]
 
 
-def checkpoint_path(step):
-    return work_path(EXPERIMENT.output("train")) / f"step-{step:05d}"
+def checkpoint_path(step, experiment=None):
+    if experiment is None:
+        experiment = EXPERIMENT
+    return work_path(experiment.output("train")) / f"step-{step:05d}"
 
 
-def train(probe):
+def train(probe, experiment=EXPERIMENT):
     from transformers import get_cosine_schedule_with_warmup
 
     startup = time.monotonic()
@@ -207,26 +203,26 @@ def train(probe):
     torch.cuda.set_device(local)
     dist.init_process_group("nccl")
     rank, world = dist.get_rank(), dist.get_world_size()
-    if world != EXPERIMENT.num_gpus:
-        raise RuntimeError(f"Expected {EXPERIMENT.num_gpus} DDP ranks, got {world}")
+    if world != experiment.num_gpus:
+        raise RuntimeError(f"Expected {experiment.num_gpus} DDP ranks, got {world}")
     device = torch.device("cuda", local)
-    design = signature()
+    design = training_inputs(experiment)
     corpus = prepared.open_dataset()
     train_indices = previous.selection()["train"]
-    steps = total_steps(len(train_indices))
-    accumulation = EXPERIMENT.global_batch // world
-    per_epoch = len(train_indices) // EXPERIMENT.global_batch
+    steps = total_steps(len(train_indices), experiment)
+    accumulation = experiment.global_batch // world
+    per_epoch = len(train_indices) // experiment.global_batch
     target, _ = previous.load_target(device)
-    model = build_draft(device, backend="flex")
-    ddp = DistributedDataParallel(BlockLoss(model, target.lm_head), device_ids=[local],
+    model = build_draft(device, backend="flex", experiment=experiment)
+    ddp = DistributedDataParallel(BlockLoss(model, target.lm_head, experiment=experiment), device_ids=[local],
                                  broadcast_buffers=False, gradient_as_bucket_view=True)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, fused=True)
-    schedule = get_cosine_schedule_with_warmup(optimizer, int(steps * WARMUP), steps)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=experiment.lr, fused=True)
+    schedule = get_cosine_schedule_with_warmup(optimizer, int(steps * experiment.warmup), steps)
     start = 0
-    milestone_steps = (*MILESTONES, steps)
+    milestone_steps = (*experiment.milestones, steps)
     if not probe:
         for at in reversed(milestone_steps):
-            folder = checkpoint_path(at)
+            folder = checkpoint_path(at, experiment=experiment)
             if folder.is_dir():
                 start = load_checkpoint(folder, model, optimizer, schedule, design)
                 if start != at:
@@ -234,27 +230,27 @@ def train(probe):
                 break
     durations = []
     last_epoch, order = -1, None
-    stop = PROBE_STEPS if probe else steps
+    stop = experiment.probe_steps if probe else steps
     if probe:
         # One full step on the longest available examples, then the real epoch order.
         lengths = corpus["seq_len"]
-        stress = sorted(train_indices, key=lengths.__getitem__, reverse=True)[:EXPERIMENT.global_batch]
+        stress = sorted(train_indices, key=lengths.__getitem__, reverse=True)[:experiment.global_batch]
     for step in range(start, stop):
         epoch, within_epoch = divmod(step, per_epoch)
         if epoch != last_epoch:
-            order = epoch_order(train_indices, epoch)
+            order = epoch_order(train_indices, epoch, experiment=experiment)
             last_epoch = epoch
-        first = within_epoch * EXPERIMENT.global_batch
-        batch = stress if probe and step == 0 else order[first:first + EXPERIMENT.global_batch]
+        first = within_epoch * experiment.global_batch
+        batch = stress if probe and step == 0 else order[first:first + experiment.global_batch]
         began = time.monotonic()
         optimizer.zero_grad(set_to_none=True)
         loss_total = torch.zeros((), device=device)
         most_anchors = 0
         for micro, row_id in enumerate(batch[rank::world]):
             row = corpus[row_id]
-            anchors = sample_anchors(row["loss_mask"], epoch, row_id)
+            anchors = sample_anchors(row["loss_mask"], epoch, row_id, experiment=experiment)
             most_anchors = max(most_anchors, len(anchors))
-            args = draft_inputs(target, model, row, anchors, device)
+            args = draft_inputs(target, model, row, anchors, device, experiment=experiment)
             sync = ddp.no_sync() if micro + 1 < accumulation else nullcontext()
             with sync, torch.autocast("cuda", dtype=torch.bfloat16):
                 loss = ddp(*args)
@@ -271,17 +267,17 @@ def train(probe):
         if rank == 0 and (probe or (step + 1) % 50 == 0):
             print(f"step={step + 1} loss_rank0={loss_total.item()/accumulation:.5f} "
                   f"grad={norm.item():.4f} seconds={seconds:.2f} anchors={int(anchors_peak)}", flush=True)
-        if probe and step >= PROBE_WARMUP:
+        if probe and step >= experiment.probe_warmup:
             durations.append(seconds)
         if not probe and step + 1 in milestone_steps:
             if rank == 0:
-                save_checkpoint(checkpoint_path(step + 1), model, optimizer, schedule, step + 1, design)
+                save_checkpoint(checkpoint_path(step + 1, experiment=experiment), model, optimizer, schedule, step + 1, design)
             dist.barrier()
     peak = torch.tensor(torch.cuda.max_memory_allocated(device), device=device, dtype=torch.int64)
     dist.all_reduce(peak, op=dist.ReduceOp.MAX)
     if rank == 0:
         if probe:
-            launch.store_json(work_path(EXPERIMENT.output("probe")) / "prepared.json", dict(
+            launch.store_json(work_path(experiment.output("probe")) / "prepared.json", dict(
                 design=design, gpu=torch.cuda.get_device_name(device), world=world,
                 full_steps=steps, measured_steps=len(durations), wall_seconds=time.monotonic()-startup,
                 mean_step_seconds=mean(durations), median_step_seconds=median(durations),
@@ -289,7 +285,7 @@ def train(probe):
                 estimated_full_hours=mean(durations)*steps/3600,
             ))
         else:
-            launch.store_json(checkpoint_path(steps).parent / "trained.json", dict(
+            launch.store_json(checkpoint_path(steps, experiment=experiment).parent / "trained.json", dict(
                 design=design, steps=steps, rows=len(train_indices), checkpoints=milestone_steps,
             ))
     dist.barrier()

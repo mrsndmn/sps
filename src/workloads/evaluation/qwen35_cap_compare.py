@@ -1,4 +1,5 @@
 """Paired fresh thinking generations on the archived teacher-cap cohort."""
+from experiments.family_cli import worker_child
 from orchestration.named.publication import worker_output
 import argparse
 from collections import Counter
@@ -8,13 +9,18 @@ from pathlib import Path
 from experiments import teacher_cap_probe as teacher_config
 import subprocess
 
-from experiments.qwen35_cap_compare import OUTPUT_PARENT
+from experiments.qwen35_cap_compare import family_config as qwen35_cap_compare_settings
+OUTPUT_PARENT = qwen35_cap_compare_settings.OUTPUT_PARENT
 from experiments import instruct_config as c
 from data import instruct_data as data
 from workloads.serving import serving_runtime as runtime
 from workloads.evaluation import teacher_cap_probe as pilot
 from orchestration import mlspace_launch as launch
-from experiments.qwen35_cap_compare import BATCH, CAPS, RUNTIME_ENV, experiment_configs
+from experiments.qwen35_cap_compare import family_config as qwen35_cap_compare_settings
+from experiments.qwen35_cap_compare import experiment_configs
+BATCH = qwen35_cap_compare_settings.BATCH
+CAPS = qwen35_cap_compare_settings.CAPS
+RUNTIME_ENV = qwen35_cap_compare_settings.RUNTIME_ENV
 
 ROOT = pilot.ROOT.parent / 'qwen35-unloop-cap-compare'
 PROMPTS = ROOT / 'cohort.json'
@@ -74,8 +80,8 @@ def generate(arm):
                  max_model_len=max(map(len,prompts.values()))+CAPS[-1])
     for i in range(0, len(needed), BATCH):
         batch = needed[i:i+BATCH]
-        params = [SamplingParams(max_tokens=CAPS[-1], temperature=c.TEACHER_TEMPERATURE,
-                  top_k=c.TEACHER_TOP_K, top_p=c.TEACHER_TOP_P, seed=r['seed'],
+        params = [SamplingParams(max_tokens=CAPS[-1], temperature=c.family_config.TEACHER_TEMPERATURE,
+                  top_k=c.family_config.TEACHER_TOP_K, top_p=c.family_config.TEACHER_TOP_P, seed=r['seed'],
                   stop_token_ids=sorted(end_ids)) for r in batch]
         outputs = engine.generate([dict(prompt_token_ids=prompts[r['id']]) for r in batch], params)
         for r, response in zip(batch, outputs, strict=True):
@@ -106,7 +112,7 @@ def completed_answer(text, stop):
 def summarize(arm):
     from transformers import AutoTokenizer
     rows = json.loads(PROMPTS.read_bytes())
-    student = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
+    student = AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION)
     counts = Counter(r['domain'] for r in rows)
     records = []
     totals = {cap: Counter() for cap in CAPS}
@@ -118,7 +124,7 @@ def summarize(arm):
         fits = False
         if answer:
             try:
-                data.encode_example(student,r['messages']+[answer],'thinking',r['id'],c.CONTEXT)
+                data.encode_example(student,r['messages']+[answer],'thinking',r['id'],c.family_config.CONTEXT)
                 fits = True
             except ValueError as e:
                 if 'exceeds context' not in str(e):
@@ -147,6 +153,6 @@ def main():
     elif args.phase == 'generate':
         generate(args.arm)
     else:
-        subprocess.run([runtime.RUNTIME/'bin/python','scripts/evaluation/qwen35_cap_compare.py','generate',
-                        '--arm',args.arm],env=runtime.runtime_environment(),check=True)
+        subprocess.run(worker_child([runtime.RUNTIME/'bin/python','scripts/evaluation/qwen35_cap_compare.py','generate',
+                        '--arm',args.arm]),env=runtime.runtime_environment(),check=True)
         summarize(args.arm)

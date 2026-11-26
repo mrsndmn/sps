@@ -9,25 +9,21 @@ from pathlib import Path
 import shlex
 
 from orchestration import mlspace_launch as launch
-from experiments.qwen_adapter_run import (
-    SUITE,
-    SOURCE,
-    PARENT,
-    PARENT_SHA,
-    SIGNATURE,
-    WHEEL,
-    WHEEL_SHA,
-    DATA_SHA,
-    START,
-    END,
-    RANK,
-    ALPHA,
-    PRED_LR,
-    Arm,
-    COMMON,
-    SWEEPS,
-    arms as configured_arms,
-)
+from experiments.qwen_adapter_run import family_config as qwen_adapter_run_settings
+from experiments.qwen_adapter_run import Arm, COMMON, SWEEPS, arms as configured_arms
+SUITE = qwen_adapter_run_settings.SUITE
+SOURCE = qwen_adapter_run_settings.SOURCE
+PARENT = qwen_adapter_run_settings.PARENT
+PARENT_SHA = qwen_adapter_run_settings.PARENT_SHA
+SIGNATURE = qwen_adapter_run_settings.SIGNATURE
+WHEEL = qwen_adapter_run_settings.WHEEL
+WHEEL_SHA = qwen_adapter_run_settings.WHEEL_SHA
+DATA_SHA = qwen_adapter_run_settings.DATA_SHA
+START = qwen_adapter_run_settings.START
+END = qwen_adapter_run_settings.END
+RANK = qwen_adapter_run_settings.RANK
+ALPHA = qwen_adapter_run_settings.ALPHA
+PRED_LR = qwen_adapter_run_settings.PRED_LR
 
 
 SCOPE = os.environ.get('SPS_ADAPTER_SCOPE', 'attention')
@@ -96,24 +92,24 @@ def submit(phase, dry, name=None):
     commit = launch.git('rev-parse', 'HEAD')
     if not dry and phase == "eval" and not launch.pending(winner_output()):
         return
-    arms = experiment_configs if phase == 'train' else [winner()]
+    try:
+        arms = experiment_configs if phase == "train" else [winner()]
+    except (FileNotFoundError, ValueError) as error:
+        if not dry:
+            raise
+        print(json.dumps({"pending_input": str(error)}))
+        return
     if name is not None:
         arms = [arm for arm in arms if arm.name == name]
         if not arms:
             raise ValueError(f"No selected arm named {name}")
     if dry:
         for arm in arms:
-            print(json.dumps(payload(phase, arm, launch.STAGING_ROOT/commit)))
+            launch.print_preview(payload(phase, arm, launch.STAGING_ROOT/commit), directory(arm) if phase == "train" else winner_output(), launch.STAGING_ROOT / commit, phase)
         return
     if phase == "train":
         arms = [arm for arm in arms if launch.pending(directory(arm))]
         if not arms:
-            return
-    elif winner_output() == ROOT / "evaluations/winner":
-        arm = arms[0]
-        legacy = directory(arm) / "evaluated.json"
-        if legacy.is_file() and json.loads(legacy.read_text()).get("sha256") == validated_final(arm)["sha256"]:
-            print(f"Skip existing winner evaluation: {legacy}")
             return
     from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
     if digest(WHEEL) != WHEEL_SHA or digest(PARENT) != PARENT_SHA:
@@ -126,7 +122,7 @@ def submit(phase, dry, name=None):
     launch.reconcile_for_outputs(client, active, [directory(arm) if phase == "train" else winner_output() for arm in arms])
     for arm in arms:
         body = payload(phase, arm, staged)
-        identity = launch.output_identity(body['job_desc'], directory(arm) if phase == "train" else winner_output(), active)
+        identity = launch.output_identity(body['job_desc'], directory(arm) if phase == "train" else winner_output())
         if identity in active:
             job = active[identity]
             print(job, flush=True)

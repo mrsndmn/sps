@@ -71,24 +71,24 @@ def validate_pairs(values, report):
 
 
 def ordered_train(values):
-    return sorted(values, key=lambda r: prep.data.digest([c.SEED, r['source_id']]))
+    return sorted(values, key=lambda r: prep.data.digest([c.family_config.SEED, r['source_id']]))
 
 
 def make_plan(values):
-    steps = min(len(values['corpus']['train']) // c.GLOBAL_BATCH, c.MAX_STEPS)
-    transition = int(steps * c.STAGE_FRACTION)
+    steps = min(len(values['corpus']['train']) // c.family_config.GLOBAL_BATCH, c.family_config.MAX_STEPS)
+    transition = int(steps * c.family_config.STAGE_FRACTION)
     if not 0 < transition < steps:
         raise RuntimeError('Insufficient paired training data')
-    count = steps * c.GLOBAL_BATCH
+    count = steps * c.family_config.GLOBAL_BATCH
     used = {condition: ordered_train(values[condition]['train'])[:count] for condition in ('corpus', 'teacher')}
     if [r['source_id'] for r in used['corpus']] != [r['source_id'] for r in used['teacher']]:
         raise RuntimeError('Training order differs')
-    return dict(steps=steps, stage_steps=transition, global_batch=c.GLOBAL_BATCH,
+    return dict(steps=steps, stage_steps=transition, global_batch=c.family_config.GLOBAL_BATCH,
                 selected_examples=count, dropped_tail=len(values['corpus']['train'])-count,
                 order_sha256=prep.data.digest([r['source_id'] for r in used['corpus']]),
                 exposure={condition: dict(all=prep.summarize(rows),
-                    initial_phase=prep.summarize(rows[:transition*c.GLOBAL_BATCH]),
-                    full_phase=prep.summarize(rows[transition*c.GLOBAL_BATCH:]))
+                    initial_phase=prep.summarize(rows[:transition*c.family_config.GLOBAL_BATCH]),
+                    full_phase=prep.summarize(rows[transition*c.family_config.GLOBAL_BATCH:]))
                           for condition, rows in used.items()},
                 endpoint='final.pt', scope='Matched prompts/order/steps; token exposure not matched; own-condition validation NLL is monitoring only.')
 
@@ -148,7 +148,7 @@ def payload(exp, staged):
     body = launch.payload('train', exp.name, staged, 'd.tarasov', 'mrsndmn')
     body.update(instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus],
                 job_desc=f'sps-provenance-controls train {exp.name} #d.tarasov @mrsndmn')
-    body['env_variables']['SPS_EXPERIMENT_SUITE'] = c.SUITE
+    body['env_variables']['SPS_EXPERIMENT_SUITE'] = c.family_config.SUITE
     body['script'] = f'cd {shlex.quote(str(staged))} && ' + shlex.join([
         str(launch.PYTHON), 'scripts/provenance/provenance_train.py', '--worker', '--arm', exp.name])
     return body
@@ -176,7 +176,7 @@ def submit(selected, dry=False):
     staged = launch.STAGING_ROOT / commit
     if dry:
         for exp in selected:
-            print(json.dumps(payload(exp, staged), indent=2))
+            launch.print_preview(payload(exp, staged), output_dir(exp), staged, "train")
         return
     selected = [exp for exp in selected if launch.pending(output_dir(exp))]
     if not selected:
@@ -204,7 +204,7 @@ def submit(selected, dry=False):
                 raise RuntimeError('Stale completed control')
             continue
         body = payload(exp, staged)
-        key = launch.output_identity(body['job_desc'], output_dir(exp), active)
+        key = launch.output_identity(body['job_desc'], output_dir(exp))
         if key in active:
             verify_active_identity(exp, active[key], ident)
             job = dict(name=exp.name, job_name=active[key], reused=True)

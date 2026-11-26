@@ -17,19 +17,17 @@ from workloads.evaluation import report_mmlu_stem
 from orchestration import mlspace_launch as launch
 from workloads.instruction.instruct_generation import mmlu_messages
 from workloads.serving.vllm_sps_evaluate import select_examples
-from experiments.dflash_mask_ablation import (
-    TARGET,
-    TARGET_REVISION,
-    DRAFT,
-    DRAFT_REVISION,
-    OUTPUT_NAME,
-    ROOT,
-    PROMPTS,
-    MAX_NEW_TOKENS,
-    REPEATS,
-    Experiment,
-    experiment_configs,
-)
+from experiments.dflash_mask_ablation import family_config as dflash_mask_ablation_settings
+from experiments.dflash_mask_ablation import Experiment, experiment_configs
+TARGET = dflash_mask_ablation_settings.TARGET
+TARGET_REVISION = dflash_mask_ablation_settings.TARGET_REVISION
+DRAFT = dflash_mask_ablation_settings.DRAFT
+DRAFT_REVISION = dflash_mask_ablation_settings.DRAFT_REVISION
+OUTPUT_NAME = dflash_mask_ablation_settings.OUTPUT_NAME
+ROOT = dflash_mask_ablation_settings.ROOT
+PROMPTS = dflash_mask_ablation_settings.PROMPTS
+MAX_NEW_TOKENS = dflash_mask_ablation_settings.MAX_NEW_TOKENS
+REPEATS = dflash_mask_ablation_settings.REPEATS
 
 
 def signature():
@@ -238,9 +236,9 @@ def evaluate():
     stop_ids = target.generation_config.eos_token_id
     stop_ids = {stop_ids} if isinstance(stop_ids, int) else set(stop_ids)
     dataset = load_dataset(
-        data_config.MMLU_DATASET,
+        data_config.family_config.MMLU_DATASET,
         "all",
-        revision=data_config.MMLU_REVISION,
+        revision=data_config.family_config.MMLU_REVISION,
         split="test",
     )
     indices = select_examples(dataset)[: PROMPTS + 1]
@@ -294,7 +292,7 @@ def evaluate():
         "transformers_version": transformers.__version__,
         "target": [TARGET, TARGET_REVISION],
         "draft": [DRAFT, DRAFT_REVISION],
-        "dataset": [data_config.MMLU_DATASET, data_config.MMLU_REVISION],
+        "dataset": [data_config.family_config.MMLU_DATASET, data_config.family_config.MMLU_REVISION],
         "conditions": [asdict(exp) for exp in experiment_configs],
         "greedy_target": references,
         "samples": samples,
@@ -317,7 +315,7 @@ def submit(dry):
         [str(launch.PYTHON), "scripts/distillation/dflash_mask_ablation.py", "--worker"]
     )
     if dry:
-        print(json.dumps(body, indent=2))
+        launch.print_preview(body, result_path().parent, staged, "eval")
         return
 
     if not launch.pending(result_path().parent):
@@ -347,7 +345,7 @@ def submit(dry):
                     }
                 )
             launch.reconcile_for_outputs(client, active, [result_path().parent])
-            identity = launch.output_identity(body["job_desc"], result_path().parent, active)
+            identity = launch.output_identity(body["job_desc"], result_path().parent)
             if identity in active:
                 print(
                     json.dumps(

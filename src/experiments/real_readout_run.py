@@ -4,22 +4,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import vllm_sps_config as c
-from .family_arguments import configure, configure_runs, export_fields
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
-    ROOT: Path = c.ROOT.parent / "qwen3-instruct-real-readout-mtp"
-    PARENT: Path = c.PARENT.parents[1] / "qwen3_instruct_continued_ar_ce" / "final.pt"
+    ROOT: Path = c.family_config.ROOT.parent / "qwen3-instruct-real-readout-mtp"
+    PARENT: Path = c.family_config.PARENT.parents[1] / "qwen3_instruct_continued_ar_ce" / "final.pt"
     LEGACY_HORIZONS: int = 4
 
     @property
     def OUT(self) -> Path:
-        return self.ROOT / "runs/out" / ARM.name
+        return self.ROOT / "runs/out" / experiment_configs[0].name
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 experiment_configs = [
@@ -27,6 +25,3 @@ experiment_configs = [
         "qwen3_real_readout_mtp", "train", num_gpus=c.experiment_configs[0].num_gpus
     )
 ]
-experiment_configs = configure_runs(__name__, "experiment_configs", experiment_configs)
-
-ARM = experiment_configs[0]

@@ -43,6 +43,7 @@ def test_submission_lifecycle(tmp_path, monkeypatch):
     monkeypatch.setattr(mlspace_launch, "stage_repo", lambda *args: None)
     monkeypatch.setattr(pilot_launch, "destination", lambda *args: run)
     monkeypatch.setattr(pilot_launch.suite, "ARTIFACTS_ROOT", tmp_path)
+    monkeypatch.setattr(mlspace_launch, "ARTIFACTS_ROOT", tmp_path)
     args = SimpleNamespace(
         phase="prepare",
         dry=False,
@@ -130,19 +131,13 @@ def test_retry_recovers_partial_results_and_preserves_previous_receipt(tmp_path)
 
 
 def test_specialized_worker_round_trips_family_settings(tmp_path, monkeypatch):
-    import json
     from experiments import qwen4b_drafter_train as family
-    from experiments.family_cli import arguments, encode, parse
+    from experiments.family_cli import parse_record
 
-    values = arguments(["qwen4b_drafter_train"])
-    args = encode(values) + ["--qwen4b_drafter_train__lr", "0.001"]
-    overrides = parse(values, args)
-    monkeypatch.setenv("SPS_FAMILY_ARGUMENTS", json.dumps(overrides))
-    decoded = family.configure(family.FamilyConfig)
-    assert decoded.LR == 0.001
-    assert decoded.ROWS == family.family_config.ROWS
-    assert decoded.LENGTHS == family.family_config.LENGTHS
-    assert decoded.ROOT == family.family_config.ROOT
+    parsed = parse_record(family.family_config, [("lr", "0.001")])
+    assert parsed.LR == 0.001
+    assert parsed.ROWS == family.family_config.ROWS
+    assert parsed.ROOT == family.family_config.ROOT
 
 
 def test_native_and_named_submission_share_the_same_reservation(tmp_path, monkeypatch):
@@ -169,27 +164,24 @@ def test_native_and_named_submission_share_the_same_reservation(tmp_path, monkey
     assert len(submitted) == 1
     other = tmp_path / "second"
     identity = mlspace_launch.normalize(submitted[0]["job_desc"])
-    assert mlspace_launch.output_identity(body["job_desc"], output, {identity: job}) == identity
-    assert mlspace_launch.output_identity(body["job_desc"], other, {identity: job}) != identity
+    assert mlspace_launch.output_identity(body["job_desc"], output) == identity
+    assert mlspace_launch.output_identity(body["job_desc"], other) != identity
     assert json.loads((directory.reservation / "submission.json").read_text())["identity"] == identity
 
 
 def test_dflash_worker_uses_explicit_run_fields(monkeypatch):
-    import json
     from experiments import dflash_kd_train
-    from experiments.family_arguments import configure_runs
-    from experiments.family_cli import arguments, encode, parse
+    from experiments.family_cli import flags, read_worker_arguments
 
-    group = "dflash_kd_train"
-    exp = dflash_kd_train.EXPERIMENT
-    values = arguments([group], exp.name)
-    flags = encode(values)
-    flags.extend(["--dflash_kd_train__experiment_configs__0__epochs", "7"])
-    monkeypatch.setenv("SPS_FAMILY_ARGUMENTS", json.dumps(parse(values, flags)))
-    (selected,) = configure_runs(dflash_kd_train.__name__, "experiment_configs", [exp])
-    assert selected.epochs == 7
-    assert selected.global_batch == exp.global_batch
-    assert selected.output_root == exp.output_root
+    (exp,) = dflash_kd_train.experiment_configs
+    monkeypatch.setattr(dflash_kd_train, "experiment_configs", [exp])
+    group = f"dflash_kd_train.experiment_configs.{exp.name}"
+    argv = ["worker", *flags(group, exp), f"--cfg.{group}.epochs=7"]
+    read_worker_arguments(argv)
+    (selected,) = dflash_kd_train.experiment_configs
+    assert argv == ["worker"]
+    assert selected.epochs == 7 and selected.output_root == exp.output_root
+    assert selected.temperature == exp.temperature
 
 
 @pytest.mark.parametrize("family", ["ar-sps", "ar-sps-qwen3-1.7b-instruct"])
@@ -257,8 +249,8 @@ def test_native_and_named_commands_include_the_same_schedule_arguments(tmp_path,
     command = "echo --filter qwen3_instruct_staged_sps_ce"
     body = {"job_desc": "schedule", "script": command}
     preview = publication.published_command(command, output, tmp_path, schemas("sched_run", "train"))
-    publication.reserve_payload(body, output, tmp_path, phase="train", intent=tmp_path/"intent")
-    assert "--instruct_config__weight_decay" in body["script"]
+    body = mlspace_launch.prepare_payload(body, output, tmp_path, "train")
+    assert "--cfg.instruct_config.weight_decay" in body["script"]
     assert body["script"] == preview
 
 

@@ -49,7 +49,7 @@ def recorded_identity():
     report = json.loads((root()/'report.json').read_text())
     current = identity()
     # Revalidate the evidence without requiring the historical producer code.
-    if report['identity'] != recorded or current != dict(recorded, code=current['code']):
+    if report['identity'] != recorded or any(recorded.get(key) != value for key, value in current.items()):
         raise RuntimeError('Recorded precision inputs changed')
     return recorded
 

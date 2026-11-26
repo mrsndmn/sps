@@ -24,13 +24,14 @@ those same typed field definitions with `HfArgumentParser` and
 for fields consumed together. Keep job allocation fields in the launcher.
 Give evaluation exactly one GPU and keep probe and training allocations separate.
 
-Migrate the pilot first, then other families and the direct paper entry points
-for training, evaluation, generation and data preparation. Replace Hydra model
-instantiation with explicit construction from typed model arguments. Port
-paper recipes, output directory selection and logging defaults to Python.
-Remove the Hydra and YAML experiment configuration path once the replacement
-commands reproduce the existing effective settings. All worker configuration
-travels as CLI arguments, including when launched directly.
+The named and native commands use the same payload builder. Specialized workers
+receive family and run fields as named CLI options. The parser selects a run by
+its declared name. DFlash passes the parsed experiment object to the training
+function. The paper entry points accept typed CLI arguments directly.
+
+Consumers validate the training data, model revision, checkpoint and scoring
+settings they depend on. Record the Git commit with each submission for
+provenance. Changing the source does not invalidate an existing result.
 
 ## Idempotent submission
 

@@ -5,10 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .environment import COMMON_ROOT as COMMON
-from .family_arguments import configure, configure_runs, export_fields
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class FamilyConfig:
     SUITE: str = "ar-sps-qwen3-1.7b"
     PARENT_SHA: str = "6ee490f323051d482770bfe0cabc938060caf95f672c39d6d73e117dbf77c1ae"
@@ -38,8 +37,7 @@ class FamilyConfig:
         return self.SOURCE / "out/qwen3_staged_sps_ce/stage_endpoint.pt"
 
 
-family_config = configure(FamilyConfig)
-__getattr__ = export_fields(family_config)
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)
@@ -80,7 +78,7 @@ SWEEPS = {
 
 
 def arms(scope):
-    return configure_runs(__name__, "experiment_configs", list(SWEEPS[scope].arms))
+    return list(SWEEPS[scope].arms)
 
 
 experiment_configs = arms(os.environ.get("SPS_ADAPTER_SCOPE", "attention"))

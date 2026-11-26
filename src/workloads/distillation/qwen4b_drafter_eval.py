@@ -15,7 +15,11 @@ from workloads.evaluation import report_mmlu_stem
 from experiments import vllm_sps_config
 from workloads.distillation import qwen4b_drafter_train as training
 
-from experiments.qwen4b_drafter_eval import PROMPTS, REPEATS, LIMIT, WARMUP_TOKENS
+from experiments.qwen4b_drafter_eval import family_config as qwen4b_drafter_eval_settings
+PROMPTS = qwen4b_drafter_eval_settings.PROMPTS
+REPEATS = qwen4b_drafter_eval_settings.REPEATS
+LIMIT = qwen4b_drafter_eval_settings.LIMIT
+WARMUP_TOKENS = qwen4b_drafter_eval_settings.WARMUP_TOKENS
 
 
 def signature(dataset=training.DEFAULT_DATASET):
@@ -43,12 +47,13 @@ def ar_decode(target, ids, stops, limit):
 
 def validate_checkpoints(train_root, dataset=training.DEFAULT_DATASET):
     metadata = {}
-    design = training.signature(dataset)
+    data_sha256 = training.data_digest(dataset)
     rows = training.training_rows(dataset)
     for exp in training.experiment_configs:
         root = train_root / exp.name
         info = json.loads((root / "trained.json").read_text())
-        if (info['experiment'] != exp.name or info['dataset'] != dataset):
+        if (info['experiment'] != exp.name or info['dataset'] != dataset
+                or info.get('data_sha256') != data_sha256):
             raise RuntimeError(f"Unexpected checkpoint for {exp.name}")
         if info["rows"] != rows or info["steps"] != training.EPOCHS * rows // training.ACCUMULATION:
             raise RuntimeError(f"Incomplete checkpoint for {exp.name}")
@@ -144,7 +149,7 @@ def evaluate(train_root, result, training_dataset=training.DEFAULT_DATASET):
         for exp in training.experiment_configs
     ]
     dataset = load_dataset(
-        instruct_config.MMLU_DATASET, "all", revision=instruct_config.MMLU_REVISION, split="test",
+        instruct_config.family_config.MMLU_DATASET, "all", revision=instruct_config.family_config.MMLU_REVISION, split="test",
     )
     indices = reference.select_examples(dataset)[: PROMPTS + 1]
     if len(indices) != PROMPTS + 1:
@@ -194,7 +199,7 @@ def evaluate(train_root, result, training_dataset=training.DEFAULT_DATASET):
         design_signature=signature(training_dataset), gpu=torch.cuda.get_device_name(device),
         torch_version=torch.__version__, transformers_version=transformers.__version__,
         target=[reference.TARGET, reference.TARGET_REVISION],
-        dataset=[instruct_config.MMLU_DATASET, instruct_config.MMLU_REVISION],
+        dataset=[instruct_config.family_config.MMLU_DATASET, instruct_config.family_config.MMLU_REVISION],
         training_dataset=training_dataset, thinking=False, metadata=metadata,
         inputs=inputs, samples=samples, summary=summary,
     ))

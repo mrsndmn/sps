@@ -37,12 +37,12 @@ import sys
 from experiments import ar_sps_config as c
 from workloads.adaptation.ar_sps_run import calibrated_plan
 from orchestration import experiment_suite as e
-assert c.MODEL == sys.argv[1] and c.MICRO_BATCH == int(sys.argv[2])
-assert not c.DISTILLATION and c.LARGE_CE
-assert c.GLOBAL_BATCH % (4*c.MICRO_BATCH) == 0
+assert c.family_config.MODEL == sys.argv[1] and c.family_config.MICRO_BATCH == int(sys.argv[2])
+assert not c.family_config.DISTILLATION and c.family_config.LARGE_CE
+assert c.family_config.GLOBAL_BATCH % (4*c.family_config.MICRO_BATCH) == 0
 assert all(x.distillation_weight == 0 for x in e.collect_experiments())
 assert [(x.recipe, x.trainable) for x in e.collect_experiments()] == [('original_ar', False), ('staged_sps', True)]
-assert c.GPU_HOURS == c.PREPARE_HOURS*4+c.TRAIN_HOURS*4+c.EVAL_HOURS*2
+assert c.family_config.GPU_HOURS == c.family_config.PREPARE_HOURS*4+c.family_config.TRAIN_HOURS*4+c.family_config.EVAL_HOURS*2
 p = calibrated_plan({'smollm2_staged_sps': {'embedding': .1, 'full': .2}})
 assert p['steps'] == 4096 and p['stage_steps'] == 819 and p['text_tokens'] == 67108864
 try:
@@ -68,15 +68,15 @@ from pathlib import Path
 from experiments import ar_sps_config as c
 from workloads.adaptation.ar_sps_run import calibrated_plan
 from orchestration import experiment_suite as e
-assert c.DISTILLATION and not c.LARGE_CE
-assert (c.REFERENCE_SUITE,c.MODEL,c.MICRO_BATCH)==(sys.argv[1],sys.argv[2],int(sys.argv[3]))
-assert c.REFERENCE_CONTROLS == ('smollm2_staged_sps',)
-assert c.GPU_HOURS == c.PREPARE_HOURS*4+c.TRAIN_HOURS*4+c.EVAL_HOURS
+assert c.family_config.DISTILLATION and not c.family_config.LARGE_CE
+assert (c.family_config.REFERENCE_SUITE,c.family_config.MODEL,c.family_config.MICRO_BATCH)==(sys.argv[1],sys.argv[2],int(sys.argv[3]))
+assert c.family_config.REFERENCE_CONTROLS == ('smollm2_staged_sps',)
+assert c.family_config.GPU_HOURS == c.family_config.PREPARE_HOURS*4+c.family_config.TRAIN_HOURS*4+c.family_config.EVAL_HOURS
 assert len(e.collect_experiments())==1
 exp=e.collect_experiments()[0]
 assert exp.trainable and exp.recipe=='staged_sps' and exp.distillation_weight==.5
-e.COMMON_ROOT=Path(sys.argv[4]);p=e.COMMON_ROOT/c.REFERENCE_SUITE;p.mkdir()
-(p/'prepared.json').write_text(json.dumps(dict(design_signature=c.REFERENCE_SIGNATURE,steps=c.MAX_STEPS,stage_steps=int(c.MAX_STEPS*c.STAGE_FRACTION),text_tokens=c.MAX_STEPS*c.GLOBAL_BATCH*c.CONTEXT)))
+e.COMMON_ROOT=Path(sys.argv[4]);p=e.COMMON_ROOT/c.family_config.REFERENCE_SUITE;p.mkdir()
+(p/'prepared.json').write_text(json.dumps(dict(design_signature='archived',steps=c.family_config.MAX_STEPS,stage_steps=int(c.family_config.MAX_STEPS*c.family_config.STAGE_FRACTION),text_tokens=c.family_config.MAX_STEPS*c.family_config.GLOBAL_BATCH*c.family_config.CONTEXT)))
 assert calibrated_plan({'staged':{'embedding':.5,'full':1.5}})['steps']==4096
 try:
     calibrated_plan({'staged':{'embedding':100.,'full':100.}})
@@ -95,14 +95,14 @@ def test_qwen_paired_registry(suite):
 from experiments import ar_sps_config as c
 from workloads.adaptation.ar_sps_run import calibrated_plan
 from orchestration import experiment_suite as e
-assert c.QWEN and not c.DISTILLATION
-assert c.MODEL.startswith('Qwen/Qwen3-') and c.MODEL.endswith('-Base')
-assert c.MICRO_BATCH==c.EVAL_BATCH==1
+assert c.family_config.QWEN and not c.family_config.DISTILLATION
+assert c.family_config.MODEL.startswith('Qwen/Qwen3-') and c.family_config.MODEL.endswith('-Base')
+assert c.family_config.MICRO_BATCH==c.family_config.EVAL_BATCH==1
 arms=e.collect_experiments();assert len(arms)==3
-assert not arms[0].trainable and arms[0].name==c.REPORT_BASELINE
+assert not arms[0].trainable and arms[0].name==c.family_config.REPORT_BASELINE
 assert [(x.recipe,x.distillation_weight) for x in arms[1:]]==[('staged_sps',0),('staged_sps',.5)]
-assert c.ENDPOINT_COMPARISONS==((arms[1].name,arms[2].name),)
-assert c.GPU_HOURS==4*c.PREPARE_HOURS+8*c.TRAIN_HOURS+3*c.EVAL_HOURS
+assert c.family_config.ENDPOINT_COMPARISONS==((arms[1].name,arms[2].name),)
+assert c.family_config.GPU_HOURS==4*c.family_config.PREPARE_HOURS+8*c.family_config.TRAIN_HOURS+3*c.family_config.EVAL_HOURS
 probes={x.name:dict(embedding=.5,full=1.) for x in arms[1:]}
 p=calibrated_plan(probes);assert p['steps']==4096 and p['stage_steps']==819
 probes[arms[2].name]['full']=100.

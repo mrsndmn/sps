@@ -62,8 +62,6 @@ def test_sampling_stays_inside_response_and_contains_both_lengths():
 
 
 def test_payload_stages_one_gpu_per_worker(monkeypatch, tmp_path):
-    monkeypatch.setattr(training, "signature", lambda dataset: "f" * 64)
-    monkeypatch.setattr(jobs.evaluation, "signature", lambda dataset: "e" * 64)
     assert len(jobs.names("train")) == 4
     for dataset in training.DATASETS:
         for phase in ("probe", "train", "eval"):

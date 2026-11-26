@@ -1,6 +1,5 @@
 """Named plans for families with dedicated MLSpace submission protocols."""
 
-from experiments.protocols import schemas
 from experiments.family_arguments import settings
 from dataclasses import asdict, dataclass, is_dataclass
 from importlib import import_module
@@ -16,8 +15,6 @@ class Job:
     settings: dict
     submit_flag: str | None = None
     output_dir: Path | None = None
-
-    schemas: tuple[str, ...] = ()
 
     @property
     def script(self):
@@ -65,7 +62,6 @@ def job(
         settings,
         submit_flag,
         output_dir,
-        schemas(module.__name__.split(".")[-1], phase),
     )
 
 

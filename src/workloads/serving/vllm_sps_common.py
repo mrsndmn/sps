@@ -25,7 +25,7 @@ def file_hash(path):
 
 
 def training_schedule():
-    return {"training_steps": c.TRAIN_STEPS, "stage_steps": c.STAGE_STEPS, "global_batch": c.GLOBAL_BATCH}
+    return {"training_steps": c.family_config.TRAIN_STEPS, "stage_steps": c.family_config.STAGE_STEPS, "global_batch": c.family_config.GLOBAL_BATCH}
 
 
 def recorded_schedule(record):
@@ -33,14 +33,14 @@ def recorded_schedule(record):
 
 
 def trained():
-    marker = c.ROOT / "runs/out/qwen3_sps_mtp/trained.json"
+    marker = c.family_config.ROOT / "runs/out/qwen3_sps_mtp/trained.json"
     record = json.loads(marker.read_text())
     checkpoint = Path(record["checkpoint"])
     if (
-        record["steps"] != c.TRAIN_STEPS
+        record["steps"] != c.family_config.TRAIN_STEPS
         or recorded_schedule(record) != training_schedule()
-        or record["horizons"] != c.HORIZONS
-        or record["parent"] != str(c.PARENT)
+        or record["horizons"] != c.family_config.HORIZONS
+        or record["parent"] != str(c.family_config.PARENT)
         or checkpoint.name != "final.pt"
         or Path(record["export"]) != checkpoint.with_name("hf")
         or not record["checkpoint_sha256"]
@@ -58,20 +58,20 @@ def checked_checkpoint(record):
 
 def matches_training_input(state):
     return (
-        state["source"] == c.MODEL
-        and state["revision"] == c.REVISION
-        and state["parent"] == str(c.PARENT)
-        and state["horizons"] == c.HORIZONS
+        state["source"] == c.family_config.MODEL
+        and state["revision"] == c.family_config.REVISION
+        and state["parent"] == str(c.family_config.PARENT)
+        and state["horizons"] == c.family_config.HORIZONS
     )
 
 
 def probe_workload(num_gpus):
     return {
-        "horizons": c.HORIZONS,
-        "global_batch": c.GLOBAL_BATCH,
+        "horizons": c.family_config.HORIZONS,
+        "global_batch": c.family_config.GLOBAL_BATCH,
         "num_gpus": num_gpus,
-        "context": c.source.CONTEXT,
-        "backend": c.BACKEND,
+        "context": c.source.family_config.CONTEXT,
+        "backend": c.family_config.BACKEND,
     }
 
 
@@ -88,7 +88,7 @@ def probe_seconds(path, *, num_gpus=None, legacy_horizons=4):
         embedding, full = probe["embedding"], probe["full"]
     if any(not math.isfinite(value) or value <= 0 for value in (embedding, full)):
         raise RuntimeError(f"Invalid training probe timings: {path}")
-    return embedding * c.STAGE_STEPS + full * (c.TRAIN_STEPS - c.STAGE_STEPS)
+    return embedding * c.family_config.STAGE_STEPS + full * (c.family_config.TRAIN_STEPS - c.family_config.STAGE_STEPS)
 
 
 def recorded_evaluation_protocol(record):
@@ -100,7 +100,7 @@ def recorded_evaluation_protocol(record):
 
 
 def evaluation_record(exp, checkpoint_sha256):
-    root = c.ROOT / "runs/out" / exp.name
+    root = c.family_config.ROOT / "runs/out" / exp.name
     record = json.loads((root / "evaluated.json").read_text())
     manifest = json.loads((root / "manifest.json").read_text())
     if record["experiment"] != vars(exp) or manifest["experiment"] != vars(exp):
@@ -117,11 +117,11 @@ def evaluation_record(exp, checkpoint_sha256):
 
 
 def data(split):
-    root = c.SOURCE_ROOT / "runs/data"
+    root = c.family_config.SOURCE_ROOT / "runs/data"
     manifest = json.loads((root / "manifest.json").read_text())
     path = root / f"{split}.jsonl"
     if (
-        manifest['model'] != c.MODEL or manifest['revision'] != c.REVISION or file_hash(path) != manifest['sha256'][split]
+        manifest['model'] != c.family_config.MODEL or manifest['revision'] != c.family_config.REVISION or file_hash(path) != manifest['sha256'][split]
     ):
         raise RuntimeError("Instruction data provenance mismatch")
     records = [json.loads(line) for line in path.read_text().splitlines()]
@@ -130,21 +130,21 @@ def data(split):
     return records
 
 
-def load_model(device, backend=c.BACKEND):
+def load_model(device, backend=c.family_config.BACKEND):
     import torch
 
     from workloads.instruction.instruct_common import load_model as original
     from workloads.serving.vllm_sps_model import QwenSPSMTP
 
-    state = torch.load(c.PARENT, map_location="cpu", mmap=True, weights_only=False)
+    state = torch.load(c.family_config.PARENT, map_location="cpu", mmap=True, weights_only=False)
     if (
-        state['source'] != c.MODEL or state['revision'] != c.REVISION or state['step'] != c.PARENT_STEP
+        state['source'] != c.family_config.MODEL or state['revision'] != c.family_config.REVISION or state['step'] != c.family_config.PARENT_STEP
     ):
         raise RuntimeError("SPS parent provenance mismatch")
     model = original("staged_sps", "cpu")
     model.load_state_dict(state["model"])
     del state
-    return QwenSPSMTP(model, c.HORIZONS, backend=backend).to(device)
+    return QwenSPSMTP(model, c.family_config.HORIZONS, backend=backend).to(device)
 
 
 def export(model, destination):
@@ -168,7 +168,6 @@ def export(model, destination):
     config.update(
         architectures=["Qwen3SPSForCausalLM"],
         sps_horizons=model.horizons,
-        sps_parent_signature=c.PARENT_SIGNATURE,
     )
     path.write_text(json.dumps(config, indent=2))
     # A sharded HF checkpoint's index must include the additional parameter.
@@ -180,6 +179,6 @@ def export(model, destination):
             embeddings.numel() * embeddings.element_size()
         )
         index.write_text(json.dumps(value, indent=2))
-    AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION).save_pretrained(
+    AutoTokenizer.from_pretrained(c.family_config.MODEL, revision=c.family_config.REVISION).save_pretrained(
         destination
     )

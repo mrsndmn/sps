@@ -1,4 +1,5 @@
 """Shared MLSpace launcher for instruct reruns and continuations."""
+from experiments.family_cli import worker_child
 
 import argparse
 import json
@@ -121,7 +122,7 @@ class Rerun:
                 marker = self.sc.output_dir(args.variant, exp, workload) / (
                     "trained.json" if args.phase == "train" else "evaluated.json"
                 )
-                if marker.exists():
+                if not args.dry and marker.exists():
                     print("Skip completed:", name)
                     continue
                 body = self.payload(
@@ -133,14 +134,14 @@ class Rerun:
                     args.author_name,
                     args.telegram_nick,
                 )
-                identity = launch.output_identity(body["job_desc"], marker.parent, active)
+                identity = launch.output_identity(body["job_desc"], marker.parent)
                 if identity in active:
                     jobs.append(
                         {"name": name, "job_name": active[identity], "reused": True}
                     )
                     continue
                 if args.dry:
-                    print(json.dumps(body, indent=2))
+                    launch.print_preview(body, marker.parent, staged, args.phase)
                     continue
                 body["region"] = extra["region"]
                 self.reserve(args.variant, args.phase, name, workload)
@@ -149,6 +150,8 @@ class Rerun:
                 if job.get("job_name"):
                     active[identity] = job["job_name"]
                 print(json.dumps(job), flush=True)
+        if args.dry:
+            return
         print("__MLS_JOBS_JSON__")
         print(
             json.dumps({"phase": args.phase, "variant": args.variant, "jobs": jobs}),
@@ -196,7 +199,7 @@ class Rerun:
             ]
             if args.limit:
                 command += ["--limit", str(args.limit)]
-        process = subprocess.Popen(command, start_new_session=True)
+        process = subprocess.Popen(worker_child(command), start_new_session=True)
         try:
             code = process.wait(timeout=self.hours(args.phase, args.workload) * 3600)
             if code:
