@@ -136,7 +136,8 @@ def train(exp):
     else:
         if list(dest.glob('*.pt')):
             raise RuntimeError('Cannot resume checkpoints without an experiment identity')
-        write_json(identity, dict(design_signature=design_signature(), command=train_command(exp)))
+        write_json(identity, dict(design_signature=design_signature(), command=train_command(exp),
+                                  settings=exp.config(RUN_ROOT)))
     if (dest / 'trained.json').exists():
         return
     started = time.time()

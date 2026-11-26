@@ -98,9 +98,13 @@ def payload(phase, arm, staged):
     return body
 
 
-def submit(phase, dry):
+def submit(phase, dry, name=None):
     commit = launch.git('rev-parse', 'HEAD')
     arms = experiment_configs if phase == 'train' else [winner(commit)]
+    if name is not None:
+        arms = [arm for arm in arms if arm.name == name]
+        if not arms:
+            raise ValueError(f"No selected arm named {name}")
     if dry:
         for arm in arms:
             print(json.dumps(payload(phase, arm, launch.STAGING_ROOT/commit)))
@@ -145,12 +149,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('phase', choices=('train', 'eval'))
     parser.add_argument('--dry', action='store_true')
+    parser.add_argument('--filter', choices=[arm.name for arm in experiment_configs])
     args = parser.parse_args()
     launch.ARTIFACTS_ROOT, launch.RUN_ROOT = ROOT, ROOT/'runs'
     if args.dry:
-        return submit(args.phase, True)
+        return submit(args.phase, True, args.filter)
     with launch.submission_lock():
-        submit(args.phase, False)
+        submit(args.phase, False, args.filter)
 
 
 if __name__ == '__main__':

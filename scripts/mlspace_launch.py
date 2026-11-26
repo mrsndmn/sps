@@ -176,8 +176,9 @@ def payload(phase, name, staged, author, nick):
         n_workers=1, processes_per_worker=1)
 
 
-def main(default_phase='train'):
-    parser = argparse.ArgumentParser()
+def main(default_phase='train', *, named=None):
+    parser = argparse.ArgumentParser(epilog="Use --list [FAMILY] to browse named runs. "
+                                     "Select one with --experiment FAMILY/NAME.")
     parser.add_argument('--phase', choices=('prepare', 'train', 'eval'), default=default_phase)
     parser.add_argument('--author_name', default='d.tarasov')
     parser.add_argument('--telegram_nick', default='mrsndmn')
@@ -185,6 +186,7 @@ def main(default_phase='train'):
     parser.add_argument('--filter')
     parser.add_argument('--dry', action='store_true')
     args = parser.parse_args()
+    args.named = named
     if args.dry:
         return submit(args)
     with submission_lock():
@@ -198,7 +200,8 @@ def submit(args):
     commit = git('rev-parse', 'HEAD')
     candidates = [('data-and-probes', ARTIFACTS_ROOT / 'prepared.json')] if args.phase == 'prepare' else [
         (exp.name, output_dir(exp) / ('trained.json' if args.phase == 'train' else 'evaluated.json'))
-        for exp in collect_experiments(args.filter) if args.phase != 'train' or exp.trainable]
+        for exp in collect_experiments(args.filter) if (args.phase != 'train' or exp.trainable)
+        and (not getattr(args, 'named', None) or exp.name == args.named)]
     if not candidates:
         raise ValueError('No matching experiments')
     if not args.dry:
@@ -225,6 +228,19 @@ def submit(args):
         active_by_desc = {}
     jobs = []
     for name, marker in candidates:
+        if args.dry and getattr(args, 'named', None):
+            # A named dry run previews the worker even when a historical run
+            # has finished or its artifact tree is not mounted locally.
+            runs = collect_experiments() if args.phase == 'prepare' else [
+                run for run in collect_experiments() if run.name == name]
+            preview = payload(args.phase, name, staged, args.author_name, args.telegram_nick)
+            from experiments import SANITY_ROOT
+            from experiment_defs.registry import effective_settings
+            probe = args.phase == 'prepare'
+            settings = {run.name: effective_settings(SUITE, run, SANITY_ROOT if probe else RUN_ROOT, probe)
+                        for run in runs}
+            print(json.dumps(dict(payload=preview, settings=settings, marker=str(marker)), indent=2, default=str))
+            continue
         if marker.exists():
             if json.loads(marker.read_text()).get('design_signature') != design_signature():
                 raise RuntimeError(f'Stale completion marker at {marker}; use a new artifact root/run name')

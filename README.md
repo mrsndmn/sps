@@ -212,9 +212,30 @@ uv run pytest                 # fast CPU-safe tests
 uv run pytest -m cuda         # GPU tests (Triton kernels)
 ```
 
+## Named MLSpace experiments
+
+Browse families and their named runs from the repository root.
+
+```bash
+python run_train_jobs.py --list
+python run_train_jobs.py --list 1b
+python run_train_jobs.py --experiment 1b/s_standard_pilot_1b --dry
+python run_eval.py --experiment 1b/s_standard_pilot_1b --dry
+```
+
+Use the same selection without `--dry` to submit. Each catalog key contains the
+family and the historical run name. Existing workers keep their checkpoint paths
+and completion checks. A named dry run previews settings before those checks.
+For an evaluation that selects a winner after training, the preview shows the
+candidate payloads until the validation artifacts identify the winner.
+
+The pilot family in `experiment_defs/zero_window.py` shares training settings
+between its named variants. `experiment_defs/registry.py` collects the families
+served by the common worker. `experiment_defs/special_families.py` registers the
+families with dedicated submission protocols.
+
 ## MLSpace pilot artifacts
 
-`experiments.py` defines the pilot registry and all numerical settings.
 `python run_train_jobs.py --dry` and `python run_eval.py --dry` print plans without
 API calls, credentials or writes. Submission requires the read-only shared `mls`
 package in the existing environment. Run `python run_train_jobs.py --phase prepare`
@@ -223,7 +244,7 @@ missing pilot shards, tokenizes them, and measures both methods with four-GPU DD
 Inspect `prepared.json`, then `python run_train_jobs.py` submits training.
 `python run_eval.py` submits the downstream tasks after training succeeds.
 
-Pilot workers write directly to the shared NFS target in `experiments.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
+Pilot workers write directly to the shared NFS target in `experiment_defs/paths.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
 checkpoints and evaluation outputs, `sanity` holds throughput probes, `code` holds
 immutable committed snapshots, `hf` holds downloaded HF shards, and `submissions`
 holds full job-ID receipts. The existing project venv is reused; do not mutate its

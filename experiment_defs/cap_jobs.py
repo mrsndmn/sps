@@ -1,0 +1,91 @@
+"""Submit the existing cap-study evaluation workers with one GPU."""
+
+import argparse
+import json
+from pathlib import Path
+import shlex
+from unittest.mock import patch
+
+from scripts import mlspace_launch as launch
+from scripts import qwen35_cap_compare as compare
+from scripts import teacher_cap_probe as teacher
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("study", choices=("teacher", "compare"))
+    parser.add_argument("arm", nargs="?", choices=tuple(compare.experiment_configs))
+    parser.add_argument("--dry", action="store_true")
+    args = parser.parse_args()
+    if (args.study == "compare") != bool(args.arm):
+        parser.error("Select an arm only for the paired comparison")
+    if args.arm:
+        root = compare.ROOT
+        worker = ["scripts.qwen35_cap_compare", "worker", "--arm", args.arm]
+    else:
+        root = teacher.ROOT
+        worker = ["scripts.teacher_cap_probe"]
+    name = args.arm or "continuations"
+    commit = launch.git("rev-parse", "HEAD")
+    staged = launch.STAGING_ROOT / commit
+    body = launch.payload("eval", name, staged, "d.tarasov", "mrsndmn")
+    body.update(
+        job_desc=f"sps-{root.name} eval {name} #d.tarasov @mrsndmn",
+        script=f"cd {shlex.quote(str(staged))} && "
+        + shlex.join([str(launch.PYTHON), "-m", *worker]),
+    )
+    if args.dry:
+        print(json.dumps(body, indent=2))
+        return
+    from mls.manager.job.utils import (
+        get_in_progress_jobs,
+        training_job_api_from_profile,
+    )
+
+    with patch.object(launch, "ARTIFACTS_ROOT", root), launch.submission_lock():
+        if args.arm:
+            compare.prepare()
+            marker = compare.folder(args.arm) / "report.json"
+        else:
+            marker = (
+                root / teacher.common.file_hash(Path(teacher.__file__)) / "report.json"
+            )
+        if marker.is_file():
+            print(f"Completed {name}: {marker}")
+            return
+        client, options = training_job_api_from_profile("default")
+        launch.disable_submission_retries(client)
+        active = {
+            launch.normalize(j["job_desc"]): j["job_name"]
+            for j in get_in_progress_jobs(client_profile="default")
+        }
+        # Historical cap workers write report.json as their success marker.
+        # Check the API for receipts whose jobs are not in the active list.
+        for receipt in (root / "submissions").glob("*.json"):
+            row = json.loads(receipt.read_text())
+            if row["identity"] != launch.normalize(body["job_desc"]):
+                continue
+            state = str(client.get_job_status(row["job_name"]).get("status")).casefold()
+            if state not in {
+                "failed",
+                "cancelled",
+                "canceled",
+                "terminated",
+                "stopped",
+                "deleted",
+            }:
+                if state in {"completed", "succeeded"}:
+                    raise RuntimeError(f"Completed job missing {marker}")
+                active[row["identity"]] = row["job_name"]
+        launch.reconcile_intents(active)
+        identity = launch.normalize(body["job_desc"])
+        if identity in active:
+            print(active[identity])
+            return
+        launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
+        body["region"] = options["region"]
+        print(json.dumps(launch.submit_payload(client, body, "eval", name, commit)))
+
+
+if __name__ == "__main__":
+    main()
