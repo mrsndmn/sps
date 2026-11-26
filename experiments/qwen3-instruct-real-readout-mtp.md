@@ -44,6 +44,14 @@ thinking mode, strict prompt passes changed from 360 to 309 for A and 349 to
 and 265 to 271 for B. The thinking-mode rates of malformed reasoning boundaries
 rose from 4.25% to 12.57% for A and from 6.84% to 12.01% for B.
 
+Full zero-shot generative MMLU covered all 14,042 questions and 57 subjects.
+In thinking mode, A and B scored 59.42% and 60.38% (subject macro 61.44%
+and 62.63%). In non-thinking mode they scored 53.62% and 53.28% (macro
+55.42% and 55.04%). On the 3,018 STEM questions, thinking accuracy was
+64.81% and 66.34%, and both scored 54.37% in non-thinking mode.
+Unparseable answers counted as incorrect. Their thinking rates were
+13.83% and 12.36%, and non-thinking rates were 1.90% and 3.82%.
+
 ## Conclusions
 
 Measure both parents before MTP training and both final models with sequential
@@ -85,3 +93,4 @@ respectively. This comparison does not resolve a readout advantage.
 - 2026-11-26: Verified task coverage, sample extraction and raw/export hashes for all four HumanEval+ runs and packaged the samples for external scoring.
 - 2026-11-26: Verified all eight parent and final IFEval answer sets against the pinned prompts, reproduced per-answer scores, and compared paired changes.
 - 2026-11-26: Scored all four HumanEval files on the external VM and verified returned solutions and task IDs against the submitted files.
+- 2026-11-26: Verified four full-MMLU checkpoint manifests, answer hashes and per-question scores against the pinned test split.
