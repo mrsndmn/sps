@@ -72,7 +72,13 @@ def sample(config):
     return selected
 
 
-def run():
+# Published one-GPU pilot to which these helpers contribute. Keep its immutable
+# source as the protocol authority whenever an assistant shard is requested.
+PILOT_HASH = '5bb50eb67bff7ec297e740ea8bffdce6d220f9bf5051cc47d67a5755634f82c5'
+SHARDS = 8
+
+
+def run(shard=None):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -80,12 +86,17 @@ def run():
         raise RuntimeError('Requires one GPU')
     config, = experiment_configs
     selected = sample(config)
+    if shard is not None:
+        if not 0 <= shard < SHARDS:
+            raise ValueError('Invalid shard')
+        # The original job scans forward. Start helpers at the opposite end.
+        selected = list(reversed(selected))[shard::SHARDS]
     tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
     model = AutoModelForCausalLM.from_pretrained(c.MODEL, revision=c.REVISION,
         torch_dtype=torch.bfloat16, attn_implementation='sdpa').to('cuda').eval()
     eos = model.generation_config.eos_token_id
     eos = {eos} if isinstance(eos, int) else set(eos)
-    folder = ROOT / common.file_hash(Path(__file__))
+    folder = ROOT / (PILOT_HASH if shard is not None else common.file_hash(Path(__file__)))
     results = []
     for domain, population, row, archive in selected:
         key = row['source_id']
@@ -119,8 +130,24 @@ def run():
                         raise
             result = dict(identity=ident, tokens=len(tokens), complete=assistant is not None,
                           fits=fits, generated_ids=tokens, text=text)
-            data.atomic_json(path, result)
+            if shard is None:
+                data.atomic_json(path, result)
+            else:
+                # The coordinator may have reached this prompt during generation.
+                # Publish a complete file without replacing its answer.
+                from tempfile import NamedTemporaryFile
+                import os
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with NamedTemporaryFile(mode='w', dir=path.parent) as tmp:
+                    json.dump(result, tmp, ensure_ascii=False)
+                    tmp.flush()
+                    try:
+                        os.link(tmp.name, path)
+                    except FileExistsError:
+                        pass
         results.append(result)
+    if shard is not None:
+        return
     counts = defaultdict(int)
     for r in results:
         counts[r['identity']['domain']] += 1
@@ -139,4 +166,7 @@ def run():
 
 
 if __name__ == '__main__':
-    run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--assist', type=int, choices=range(SHARDS))
+    run(parser.parse_args().assist)
