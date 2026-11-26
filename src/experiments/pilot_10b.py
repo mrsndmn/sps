@@ -1,6 +1,7 @@
 """Longer training at the same scale as the pilot."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from experiments.environment import COMMON_ROOT
 from experiments.pilot import Model, Pilot, Training
@@ -8,6 +9,7 @@ from experiments.pilot import Model, Pilot, Training
 
 @dataclass(frozen=True, kw_only=True)
 class Pilot10B(Pilot):
+    prepare_output_dir: Path = COMMON_ROOT / "10b/prepared"
     training: Training = Training(
         max_tokens=10_003_415_040,
         warmup_tokens=100_000_000,

@@ -1,6 +1,7 @@
 """Token-matched S-scale pilot runs."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from experiments.environment import COMMON_ROOT
 from experiments.pilot import Model, Pilot, Training
@@ -8,6 +9,7 @@ from experiments.pilot import Model, Pilot, Training
 
 @dataclass(frozen=True, kw_only=True)
 class Pilot1B(Pilot):
+    prepare_output_dir: Path = COMMON_ROOT / "prepared"
     training: Training = Training(
         max_tokens=1_000_341_504,
         warmup_tokens=10_000_000,

@@ -37,7 +37,7 @@ def test_named_preview_overrides_ambient_suite(entry, gpus):
     if gpus == 1:
         commands = plan["settings"][name]["worker_commands"]
         assert all(
-            cmd[cmd.index("--checkpoint")+1] == "final" and cmd[cmd.index("--num_fewshot")+1] == "0" for cmd in commands
+            ("--checkpoint_path" in cmd or "--checkpoint" in cmd) and cmd[cmd.index("--num_fewshot")+1] == "0" for cmd in commands
         )
         assert any(cmd[cmd.index("--tasks")+1] == "piqa" for cmd in commands)
 

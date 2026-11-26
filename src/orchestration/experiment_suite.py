@@ -175,10 +175,12 @@ def pilot_cli(exp, root, *, probe=False):
     return cli_args(exp.arguments(root, probe=probe))
 
 
-def eval_command(exp, task, *, result=None):
+def eval_command(exp, task, *, result=None, checkpoint=None):
     return [
         str(PYTHON), "scripts/evaluate.py", *pilot_cli(exp, RUN_ROOT),
-        "--out_dir", str(exp.output_dir), "--checkpoint", "final", "--tasks", task,
+        "--out_dir", str(exp.output_dir),
+        *(["--checkpoint_path", str(checkpoint)] if checkpoint else ["--checkpoint", "final"]),
+        "--tasks", task,
         "--eval_batch_size", "6", "--num_fewshot", "0",
         *(["--output_path", str(result)] if result else []),
     ]

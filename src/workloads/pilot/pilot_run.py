@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 import statistics
-from orchestration.pilot_launch import destination, prepare_report
+from orchestration.pilot_launch import destination, prepare_report, validate_forecast
 import math
 import subprocess
 import time
@@ -127,9 +127,7 @@ def prepare(work):
 
 def train(exp, dest):
     prepared = json.loads(prepare_report().read_text())
-    prediction = prepared['estimates'][exp.name]
-    if prediction['token_budget'] != exp.training.max_tokens or prediction['projected_training_hours'] > MAX_HOURS:
-        raise RuntimeError('Run preparation again for the current experiment budget')
+    prediction = validate_forecast(exp, prepared)
     write_json(dest / 'run-config.json', dict(settings=exp.config(RUN_ROOT)))
     started = time.time()
     run_logged(train_command(exp, dest=dest), dest / 'train.log', timeout=MAX_HOURS * 3600)
@@ -143,9 +141,11 @@ def train(exp, dest):
 def evaluate(exp, dest):
     trained = json.loads((exp.output_dir / 'trained.json').read_text())
     checkpoint = Path(trained['checkpoint'])
+    if not checkpoint.is_file():
+        raise FileNotFoundError(checkpoint)
     for task in TASKS:
         result = dest / checkpoint.stem / f'{task}.json'
-        run_logged(eval_command(exp, task, result=result), dest / f'eval-{task}.log', timeout=6 * 3600)
+        run_logged(eval_command(exp, task, result=result, checkpoint=checkpoint), dest / f'eval-{task}.log', timeout=6 * 3600)
         if not result.is_file():
             raise RuntimeError(f'Missing task result {result}')
     write_json(dest / 'evaluated.json', dict(tasks=TASKS, checkpoint=str(checkpoint)))

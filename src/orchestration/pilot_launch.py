@@ -10,7 +10,12 @@ from orchestration import experiment_suite as suite
 
 def destination(phase, run=None):
     if phase == "prepare":
-        output = suite.ARTIFACTS_ROOT / "prepared"
+        from experiments import pilot_1b, pilot_10b
+
+        family = pilot_10b if suite.SUITE == "10b" else pilot_1b
+        output = family.experiment_configs[0].prepare_output_dir
+        if any(exp.prepare_output_dir != output for exp in family.experiment_configs):
+            raise ValueError("Family preparation requires a shared prepare_output_dir")
     elif phase == "train":
         output = run.output_dir
     else:
@@ -20,7 +25,27 @@ def destination(phase, run=None):
 
 def prepare_report():
     path = destination("prepare").output / "prepared.json"
-    return path if path.exists() else suite.ARTIFACTS_ROOT / "prepared.json"
+    if path.is_file() or path.parent != suite.ARTIFACTS_ROOT / "prepared":
+        return path
+    historic = suite.ARTIFACTS_ROOT / "prepared.json"
+    if historic.is_file():
+        forecasts = json.loads(historic.read_text()).get("estimates", {})
+        if all(run.name in forecasts for run in suite.collect_experiments()):
+            return historic
+    return path
+
+
+def validate_forecast(run, report):
+    forecast = report.get("estimates", {}).get(run.name)
+    if (
+        not forecast
+        or forecast["token_budget"] != run.training.max_tokens
+        or forecast["projected_training_hours"] > suite.MAX_HOURS
+    ):
+        raise RuntimeError(
+            f"Select a new prepare_output_dir and run preparation for {run.name}"
+        )
+    return forecast
 
 
 TERMINAL_FAILURES = {
@@ -75,7 +100,7 @@ def submit(args):
             staged,
             args.author_name,
             args.telegram_nick,
-            training_gpus=max(e.num_gpus for e in runs)
+            training_gpus=max(e.num_gpus for e in suite.collect_experiments())
             if run is None
             else run.num_gpus,
         )
@@ -147,11 +172,19 @@ def submit(args):
         if job:
             jobs.append(dict(name=name, job_name=job, reused=True))
             continue
-        if phase == "train" and not prepare_report().is_file():
-            raise RuntimeError("Complete --phase prepare first")
-        if phase == "eval" and not (run.output_dir / "trained.json").is_file():
-            print(f"Skip evaluation without trained checkpoint: {name}")
-            continue
+        if phase == "train":
+            report = prepare_report()
+            if not report.is_file():
+                raise RuntimeError("Complete --phase prepare first")
+            validate_forecast(run, json.loads(report.read_text()))
+        if phase == "eval":
+            marker = run.output_dir / "trained.json"
+            if not marker.is_file():
+                print(f"Skip evaluation without trained checkpoint: {name}")
+                continue
+            checkpoint = Path(json.loads(marker.read_text())["checkpoint"])
+            if not checkpoint.is_file():
+                raise FileNotFoundError(checkpoint)
         launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
         body["region"] = extra["region"]
         if not directory.reserve():

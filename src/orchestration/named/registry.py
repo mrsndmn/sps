@@ -57,15 +57,27 @@ def effective_settings(family, run, root, phase):
             train_command,
         )
 
+        from orchestration.pilot_launch import destination
+        import json
+        from pathlib import Path
+
+        work = destination(phase, run).work
         probe = phase == "prepare"
-        result = run.config(root, probe=probe)
+        data_root = work if probe else root
+        result = run.config(data_root, probe=probe)
         result["data_source"] = dict(
             repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES
         )
         if phase == "eval":
-            result["worker_commands"] = [eval_command(run, task) for task in TASKS]
+            marker = run.output_dir / "trained.json"
+            checkpoint = Path(json.loads(marker.read_text())["checkpoint"]) if marker.is_file() else None
+            # The filename is only known after training has published the checkpoint.
+            stem = checkpoint.stem if checkpoint else "<checkpoint>"
+            result["worker_commands"] = [eval_command(run, task, checkpoint=checkpoint,
+                result=work / stem / f"{task}.json") for task in TASKS]
         else:
-            result["worker_commands"] = [train_command(run, probe=probe)]
+            dest = work / "out" / run.name if probe else work
+            result["worker_commands"] = [train_command(run, probe=probe, data_root=data_root, dest=dest)]
         return result
     if family in CONFIGURATIONS:
         common = settings(CONFIGURATIONS[family](family))

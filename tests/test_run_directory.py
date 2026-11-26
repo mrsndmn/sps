@@ -74,3 +74,29 @@ def test_worker_cli_round_trip(tmp_path):
         for group in expected:
             for key, value in expected[group].items():
                 assert cfg[group][key] == value
+
+
+def test_named_evaluation_uses_recorded_checkpoint_and_reserved_output(
+    tmp_path, monkeypatch
+):
+    import json
+    from dataclasses import replace
+    from orchestration.named.registry import effective_settings
+
+    run = replace(
+        pilot_launch.suite.collect_experiments()[0],
+        output_dir=tmp_path / "train",
+        eval_output_dir=tmp_path / "eval",
+    )
+    monkeypatch.setattr(pilot_launch.suite, "COMMON_ROOT", tmp_path)
+    run.output_dir.mkdir()
+    checkpoint = run.output_dir / "recorded_final.pt"
+    checkpoint.touch()
+    (run.output_dir / "trained.json").write_text(
+        json.dumps({"checkpoint": str(checkpoint)})
+    )
+    commands = effective_settings("1b", run, tmp_path, "eval")["worker_commands"]
+    for cmd in commands:
+        assert cmd[cmd.index("--checkpoint_path") + 1] == str(checkpoint)
+        result = Path(cmd[cmd.index("--output_path") + 1])
+        assert result.is_relative_to(pilot_launch.destination("eval", run).work)
