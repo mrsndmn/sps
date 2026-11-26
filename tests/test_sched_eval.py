@@ -1,4 +1,5 @@
 """Selected checkpoint/workload execution and immutable resume provenance."""
+import importlib.metadata
 import contextlib
 import hashlib
 import json
@@ -25,7 +26,7 @@ def test_worker_uses_selected_checkpoint_and_only_selected_workload(tmp_path,mon
         fingerprints[path.name]=hashlib.sha256(path.read_bytes()).hexdigest()
     monkeypatch.setitem(sys.modules,'lm_eval.tasks.ifeval',package)
     monkeypatch.setitem(sys.modules,'langdetect',SimpleNamespace(DetectorFactory=SimpleNamespace(seed=None)))
-    monkeypatch.setattr(r.importlib.metadata,'version',lambda name:'version')
+    monkeypatch.setattr(importlib.metadata,'version',lambda name:'version')
     (source/'eval/manifest.json').write_text(json.dumps(dict(design_signature=r.c.SOURCE_SIGNATURE,
         ifeval_code=fingerprints,lm_eval_version='version')))
     monkeypatch.setattr(sc.e,'SANITY_ROOT',sanity)

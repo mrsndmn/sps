@@ -1,9 +1,9 @@
 """Source checkpoint gates, epoch ordering and isolated continuation artifacts."""
-import hashlib
 import json
 import os
 from pathlib import Path
 from scripts import extend_config as c
+from scripts.design_compatibility import rerun_signature
 os.environ.setdefault('SPS_EXPERIMENT_SUITE', c.SOURCE_SUITE)
 import experiments as e
 
@@ -11,9 +11,7 @@ import experiments as e
 def signature():
     if e.SUITE != c.SOURCE_SUITE or e.design_signature() != c.SOURCE_SIGNATURE:
         raise RuntimeError('Pinned instruct source changed')
-    files=sorted(Path(__file__).parent.glob('extend_*.py'))
-    return hashlib.sha256(json.dumps(dict(source=c.SOURCE_SIGNATURE,
-        files={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}),sort_keys=True).encode()).hexdigest()
+    return rerun_signature("extend", c.SOURCE_SIGNATURE, Path(__file__).parent)
 
 
 def source_plan():

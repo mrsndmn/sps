@@ -171,8 +171,10 @@ also resolve to the grouped sources.
 | `analysis/`, `figures/`, `tables/`, `benchmark/` | Analysis, plots, table exports and performance measurements for the original paper. |
 
 The top level holds the direct commands, shared launcher, registry and shared
-protocol sources. Start the Qwen3 vLLM pilot from `scripts/serving/vllm_sps_run.py`
-and the draft-length sweep from `scripts/serving/draft_sweep.py`.
+protocol sources. Use `scripts/generate.py` for quick local checkpoint smoke tests.
+For the Qwen3 vLLM pilot, use `scripts/serving/vllm_sps_run.py` for probing and
+training and `scripts/serving/serving_benchmark.py` for evaluation in the isolated
+runtime. Start the draft-length sweep from `scripts/serving/draft_sweep.py`.
 
 SPS-MTP training and its native-readout control use checkpoint metadata and
 SHA-256 checksums instead of a hash of the training scripts. Existing checkpoints

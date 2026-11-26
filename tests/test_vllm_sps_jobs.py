@@ -5,19 +5,17 @@ from pathlib import Path
 
 import pytest
 from scripts.vllm_sps_evaluate import engine_arguments, select_examples
-from scripts.vllm_sps_run import payload
 
 from scripts import vllm_sps_config as c
+from scripts.serving import serving_benchmark, vllm_sps_run
 from scripts.serving import vllm_sps_common as common
-from scripts.serving import vllm_sps_run as launcher
 
 
 def test_eval_jobs_are_single_gpu_and_ordinary_sps_shares_speculative_checkpoint():
     exports = "/immutable/final/hf"
     for exp in c.collect_experiments("eval"):
-        body = payload("eval", exp, Path("/staged"), "author", "nick")
+        body = serving_benchmark.payload(exp, Path("/staged"), "eval")
         assert body["instance_type"] == "a100.1gpu"
-        assert body["env_variables"]["VLLM_USE_V2_MODEL_RUNNER"] == "0"
         args = engine_arguments(exp, exports, "eagle-immutable-revision")
         assert args["max_num_seqs"] == args["tensor_parallel_size"] == 1
         assert not args["enable_prefix_caching"]
@@ -27,6 +25,14 @@ def test_eval_jobs_are_single_gpu_and_ordinary_sps_shares_speculative_checkpoint
             assert "speculative_config" not in args
         if exp.arm == "eagle3":
             assert args["speculative_config"]["revision"] == "eagle-immutable-revision"
+
+
+@pytest.mark.parametrize("phase", ["probe", "train"])
+def test_training_jobs_use_the_training_worker_and_allocation(phase):
+    exp, = c.collect_experiments(phase)
+    body = vllm_sps_run.payload(phase, exp, Path("/staged"), "author", "nick")
+    assert body["instance_type"] == vllm_sps_run.launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus]
+    assert f"scripts.serving.vllm_sps_run --worker --phase {phase}" in body["script"]
 
 
 def test_stem_selection_is_repeatable_and_covers_subjects():
@@ -75,32 +81,6 @@ def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, lega
     checkpoint.write_bytes(b"other model")
     with pytest.raises(RuntimeError, match="checkpoint changed"):
         common.checked_checkpoint(common.trained())
-
-
-def test_direct_evaluation_reuses_only_its_live_protocol(tmp_path, monkeypatch):
-    monkeypatch.setattr(c, "ROOT", tmp_path)
-    monkeypatch.setattr(common, "trained", lambda: {"checkpoint_sha256": "checkpoint"})
-    exp = c.collect_experiments("eval")[0]
-    root = tmp_path / "runs/out" / exp.name
-    root.mkdir(parents=True)
-    record = {"experiment": vars(exp), "checkpoint_sha256": "checkpoint"}
-    manifest = dict(record, vllm_source=str(tmp_path / "vllm-code" / c.VLLM_COMMIT))
-    live = launcher.evaluator.protocol_signature()
-    for protocol in ({"design_signature": "archived"},
-                     {"evaluation_protocol": live}, {"evaluation_protocol": "stale"}):
-        (root / "evaluated.json").write_text(json.dumps(dict(record, **protocol)))
-        (root / "manifest.json").write_text(json.dumps(dict(manifest, **protocol)))
-        if "design_signature" in protocol:
-            assert not launcher.check_evaluation(exp, dry=True)
-        if protocol.get("evaluation_protocol") == live:
-            assert launcher.check_evaluation(exp, dry=False)
-        else:
-            with pytest.raises(RuntimeError, match="another protocol"):
-                launcher.check_evaluation(exp, dry=False)
-    (root / "evaluated.json").write_text(json.dumps(dict(record, design_signature="different")))
-    (root / "manifest.json").write_text(json.dumps(dict(manifest, design_signature="archived")))
-    with pytest.raises(RuntimeError, match="different protocols"):
-        launcher.check_evaluation(exp, dry=True)
 
 
 @pytest.mark.parametrize("config, field, changed", [
