@@ -12,4 +12,22 @@ class Probe:
 
 experiment_configs = [Probe()]
 
-SHARDS = 8
+
+@dataclass(kw_only=True)
+class FamilyConfig:
+    OUTPUT_NAME: str = (
+        "5bb50eb67bff7ec297e740ea8bffdce6d220f9bf5051cc47d67a5755634f82c5"
+    )
+    SHARDS: int = 8
+    EVAL_HOURS: int = 20
+
+
+family_config = FamilyConfig()
+
+
+def launches(family):
+    from .launch import Launch
+
+    yield Launch(
+        "continuations", "eval", "scripts/evaluation/cap_jobs.py", ("teacher",)
+    )

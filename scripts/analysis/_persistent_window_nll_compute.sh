@@ -59,7 +59,7 @@ if [[ -f "${out_dir}/${round}/shard_${shard}/metadata.json" ]]; then
 fi
 
 echo "=== task ${task} (ORDER=${ORDER:-asc} eff=${eff}): model_ord=${model_ord} (${scale} ${kind}) ${round} shard=${shard}/${NUM_SHARDS} bs=${batch_size} -> ${out_dir} ==="
-uv run python -m scripts.analysis.persistent_window_nll_analysis \
+uv run python scripts/analysis/persistent_window_nll_analysis.py \
   --spec "${kind}:${label}:${ckpt}" \
   --warp-specialize "${warp}" \
   --output-format binary \

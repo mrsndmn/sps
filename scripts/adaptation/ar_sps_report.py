@@ -1,111 +1,14 @@
-"""Strict observed retention with paired, per-task bootstrap uncertainty."""
-import json
-import numpy as np
-from scripts import experiment_suite as e
-from scripts import ar_sps_config as c
+"""Run ar sps report."""
+
+from pathlib import Path
+import sys
 
 
-def paired_interval(left, right):
-    if len(left) != len(right) or not len(left):
-        raise ValueError('Paired measurements must be nonempty and equal length')
-    delta = np.asarray(right, dtype=float)-np.asarray(left, dtype=float)
-    rng = np.random.default_rng(c.SEED)
-    means = [rng.choice(delta, len(delta), replace=True).mean() for _ in range(c.BOOTSTRAP_REPS)]
-    alpha = (1-c.CONFIDENCE)/2
-    return [float(v) for v in np.quantile(means, [alpha, 1-alpha])]
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+    from experiments.family_cli import read_worker_arguments
 
+    read_worker_arguments(sys.argv)
+    from workloads.adaptation.ar_sps_report import main
 
-def samples(result, task, metric):
-    values = result['samples'][task]
-    key = metric.split(',')[0]
-    paired = {}
-    for row in values:
-        identity = str(row['doc_id'])
-        if identity in paired:
-            raise ValueError('Duplicate document result')
-        paired[identity] = (row.get('doc_hash'), float(row[key]))
-    return paired
-
-
-def compare(baseline, candidate, *, matched_exposure=False, baseline_signature=None):
-    if not (baseline/'complete.json').exists() or not (candidate/'complete.json').exists():
-        raise RuntimeError('Evaluation incomplete; no retention verdict')
-    for path, signature in ((baseline, baseline_signature or e.design_signature()),
-                            (candidate, e.design_signature())):
-        if json.loads((path/'complete.json').read_text())['design_signature'] != signature:
-            raise RuntimeError('Stale evaluation')
-    row = dict(baseline=str(baseline), variant=str(candidate), tasks={})
-    passed = True
-    for task, metric in c.PRIMARY_METRICS.items():
-        left = json.loads((baseline/f'{task}.json').read_text())
-        right = json.loads((candidate/f'{task}.json').read_text())
-        a, b = samples(left, task, metric), samples(right, task, metric)
-        if a.keys() != b.keys() or any(a[k][0] != b[k][0] for k in a):
-            raise RuntimeError('Evaluation documents do not match')
-        ids = sorted(a)
-        source_score = float(left['results'][task][metric])
-        score = float(right['results'][task][metric])
-        passed &= score >= source_score
-        row['tasks'][task] = dict(source=source_score, score=score, delta=score-source_score,
-                                  paired_ci=paired_interval([a[k][1] for k in ids], [b[k][1] for k in ids]))
-    a = json.loads((baseline/'heldout.json').read_text())
-    b = json.loads((candidate/'heldout.json').read_text())
-    if matched_exposure and a['step'] != b['step']:
-        raise RuntimeError('Unequal exposure in endpoint control comparison')
-    row.update(baseline_step=a['step'], candidate_step=b['step'],
-               baseline_text_tokens=a['step']*c.GLOBAL_BATCH*c.CONTEXT,
-               candidate_text_tokens=b['step']*c.GLOBAL_BATCH*c.CONTEXT,
-               matched_exposure=a['step'] == b['step'],
-               checkpoint_selection='validation' if candidate.name in {'best', 'embedding_best'} else 'fixed_endpoint')
-    passed &= b['nll'] <= a['nll']+c.NLL_ATOL
-    row.update(source_nll=a['nll'], nll=b['nll'], nll_ci=paired_interval(a['per_sequence'], b['per_sequence']),
-               observed_retention=bool(passed), interpretation='Point-estimate criterion; one seed; CIs are per-task, not simultaneous proof')
-    return row
-
-
-def build_report():
-    if c.DISTILLATION:
-        return distillation_report()
-    baseline = e.RUN_ROOT/'out'/c.REPORT_BASELINE/'eval/source'
-    reports = []
-    for exp in e.collect_experiments():
-        for marker in sorted((e.output_dir(exp)/'eval').glob('*/complete.json')):
-            reports.append(compare(baseline, marker.parent))
-    controls = []
-    for label in ('stage_endpoint', 'final'):
-        for control_name, candidate_name in c.ENDPOINT_COMPARISONS:
-            staged = e.RUN_ROOT/'out'/candidate_name/'eval'
-            control = e.RUN_ROOT/'out'/control_name/'eval'/label
-            if (staged/label/'complete.json').exists() and (control/'complete.json').exists():
-                controls.append(compare(control, staged/label, matched_exposure=True))
-    return dict(against_original=reports, matched_endpoint_controls=controls,
-                selection_note='Validation-selected best checkpoints may have unequal exposure; use endpoint controls for warmup claims.')
-
-
-def distillation_report():
-    # Only these pinned CE artifacts are allowed as external references.
-    from scripts.ar_sps_data import rows
-    rows('test')  # require the verified reference-data manifest
-    root = e.COMMON_ROOT/c.REFERENCE_SUITE/'runs/out'
-    baseline = root/'smollm2_original_ar/eval/source'
-    reports, controls = [], []
-    for exp in e.collect_experiments():
-        evaluation = e.output_dir(exp)/'eval'
-        for marker in sorted(evaluation.glob('*/complete.json')):
-            reports.append(compare(baseline, marker.parent, baseline_signature=c.REFERENCE_SIGNATURE))
-        for label in ('stage_endpoint', 'final'):
-            for arm in c.REFERENCE_CONTROLS:
-                control = root/arm/'eval'/label
-                if (evaluation/label/'complete.json').exists():
-                    controls.append(compare(control, evaluation/label, matched_exposure=True,
-                                            baseline_signature=c.REFERENCE_SIGNATURE))
-    return dict(against_original=reports, matched_endpoint_controls=controls,
-                selection_note='KD vs pinned CE controls uses identical text and endpoint exposure; best is validation-selected.')
-
-
-def main():
-    print(json.dumps(build_report(), indent=2))
-
-
-if __name__ == '__main__':
     main()

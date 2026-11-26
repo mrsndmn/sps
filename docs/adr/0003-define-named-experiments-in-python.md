@@ -1,0 +1,100 @@
+---
+status: accepted
+date: 2026-11-26
+---
+
+# Define named experiments in Python
+
+Use one Python module per experiment family. Keep a typed schema for each
+workload with its model, data, training, evaluation and resource fields
+discoverable together. Group reusable fields in dataclasses. Define a family
+base as a frozen, keyword-only dataclass with the family's defaults. List
+instances in `experiment_configs`, giving each a stable name and spelling out
+only the fields that vary. Use dataclass inheritance to share defaults. Changes
+to one instance must leave the others independent. Keep numeric settings in
+code.
+
+DFlash groups implement `experiment_configs()` as a class method that returns
+fresh instances. The catalog stores the group class and calls the method during
+selection. `DFlashConfig` defines the shared fields and phase routing. Group
+files contain their defaults and named runs.
+
+## Selection by name
+
+Use the exact key `FAMILY/NAME` and a phase. The family registry maps each
+family ID to its Python definitions. Each family derives its available runs
+and phases from its experiment configs. Listing a family must work before
+data preparation or training and without loading a model or an MLSpace client.
+
+Pass selectors such as checkpoint step, dataset and evaluation workload as
+native CLI options. A phase and its options identify one submission. A family
+can expose a collective operation. Shared preparation has one name,
+`data-and-probes`, and a paired evaluation submits one job for all conditions. A winner evaluation selects a trained arm when the
+launcher resolves its inputs.
+
+The catalog forwards the selection to the native launcher. That launcher
+resolves the destination and builds the worker arguments once. Use these values
+for the preview and for submission. Adding an experiment instance to an existing
+family must require a change only to its experiment definitions.
+
+## Worker interface
+
+The launcher selects a family, run and phase, resolves the dataclass defaults
+and builds an argv list from the fields consumed by that worker. The dry run
+shows the effective arguments, resources and worker command. The worker parses
+those same typed field definitions with `HfArgumentParser` and
+`parse_args_into_dataclasses(look_for_args_file=False)`. Use distinct CLI names
+for fields consumed together. Keep job allocation fields in the launcher.
+Give evaluation exactly one GPU and keep probe and training allocations separate.
+
+The named and native commands use the same payload builder. Specialized workers
+receive family and run fields as named CLI options. The parser selects a run by
+its declared name. DFlash probe and training parse the selected training dataclass directly from CLI
+flags. Evaluation has its own argument schema with the checkpoint, output,
+dataset and decoding settings. It checks training provenance against the
+checkpoint before loading weights. The paper entry points accept typed CLI arguments directly.
+
+Consumers validate the training data, model revision, checkpoint and scoring
+settings they depend on. Record the Git commit with each submission for
+provenance. Changing the source does not invalidate an existing result.
+
+## Idempotent submission
+
+Each independently submitted run or phase declares its final absolute
+`output_dir` in its Python config. This path is its submission identity. To
+request another result, choose a new path. Existing output directories are
+skipped on existence alone, including after changes to code or arguments.
+
+Keep a shared `in_progress/` tree on the same artifact filesystem. Mirror the
+final path relative to the artifacts root so equal basenames under different
+parents have independent reservations. For each submission:
+
+1. Skip if the final directory exists or its corresponding reservation exists.
+2. Atomically create the reservation directory before calling MLSpace. If
+   another launcher wins the mkdir, skip. Recheck the final path after acquiring
+   the reservation to cover a concurrent completion. Dry runs only inspect.
+3. Record the full MLSpace job name in the reservation once available. Write
+   intermediate results under the reservation. On success, atomically rename
+   its result subdirectory to the final path, then release the reservation.
+4. Release the reservation after a confirmed submission rejection, failure or
+   cancellation, preserving any partial results separately. After an ambiguous
+   submission or a launcher crash, keep the reservation until reconciliation.
+   Use the recorded job name or the scaffold's active-job lookup by normalized
+   description to identify the job. An unresolved reservation continues to
+   block submission.
+
+For new DFlash runs, `output_dir` is the per-run root. Each phase publishes its
+own directory under it: `probe/`, `train/` or `eval/step-<step>/`. The two
+published baseline configs explicitly retain their archive layouts.
+
+DFlash publishes its checkpoint directory upon training completion. Both final and
+milestone evaluations require the published training result and the requested weights.
+
+## Migration checks
+
+Compare old and new effective settings and worker inputs for each migrated
+phase. Round-trip launcher argv through the actual worker parser, covering
+optional values, booleans and lists. Map existing results and active jobs to
+their configured destinations before enabling the new submission path. Exercise
+existing outputs, concurrent reservations, successful publication, confirmed
+failures and ambiguous submission outcomes with a fake MLSpace client.

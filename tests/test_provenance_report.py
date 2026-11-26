@@ -1,6 +1,6 @@
 import json
 import pytest
-from scripts import provenance_report as r
+from workloads.provenance import provenance_report as r
 
 
 def test_paired_interaction_zero_and_known_effect():

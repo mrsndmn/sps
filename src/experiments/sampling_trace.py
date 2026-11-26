@@ -2,14 +2,19 @@
 
 from dataclasses import dataclass
 
-ARMS = ("sps", "sps_four_slots", "sps_mtp")
 
-NATIVE_ARMS = (
-    "native-fp32-one",
-    "native-fp32-four",
-    "native-bf16-one",
-    "native-bf16-four",
-)
+@dataclass(kw_only=True)
+class FamilyConfig:
+    ARMS: tuple[str, ...] = ("sps", "sps_four_slots", "sps_mtp")
+    NATIVE_ARMS: tuple[str, ...] = (
+        "native-fp32-one",
+        "native-fp32-four",
+        "native-bf16-one",
+        "native-bf16-four",
+    )
+
+
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)

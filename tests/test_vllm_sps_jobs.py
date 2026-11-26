@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
-from scripts.vllm_sps_evaluate import engine_arguments, select_examples
+from workloads.serving.vllm_sps_evaluate import engine_arguments, select_examples
 
-from scripts import vllm_sps_config as c
-from scripts.serving import serving_benchmark, vllm_sps_run
-from scripts.serving import vllm_sps_common as common
+from experiments import vllm_sps_config as c
+from workloads.serving import serving_benchmark, vllm_sps_run
+from workloads.serving import vllm_sps_common as common
 
 
 def test_eval_jobs_are_single_gpu_and_ordinary_sps_shares_speculative_checkpoint():
@@ -20,7 +20,7 @@ def test_eval_jobs_are_single_gpu_and_ordinary_sps_shares_speculative_checkpoint
         assert args["max_num_seqs"] == args["tensor_parallel_size"] == 1
         assert not args["enable_prefix_caching"]
         assert not args["async_scheduling"]
-        assert args["model"] == (exports if exp.arm.startswith("sps") else c.MODEL)
+        assert args["model"] == (exports if exp.arm.startswith("sps") else c.family_config.MODEL)
         if exp.arm == "sps":
             assert "speculative_config" not in args
         if exp.arm == "eagle3":
@@ -32,7 +32,7 @@ def test_training_jobs_use_the_training_worker_and_allocation(phase):
     exp, = c.collect_experiments(phase)
     body = vllm_sps_run.payload(phase, exp, Path("/staged"), "author", "nick")
     assert body["instance_type"] == vllm_sps_run.launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus]
-    assert f"scripts.serving.vllm_sps_run --worker --phase {phase}" in body["script"]
+    assert f"scripts/serving/vllm_sps_run.py --worker --phase {phase}" in body["script"]
 
 
 def test_stem_selection_is_repeatable_and_covers_subjects():
@@ -43,7 +43,7 @@ def test_stem_selection_is_repeatable_and_covers_subjects():
     ]
     indices = select_examples(rows)
     assert indices == select_examples(rows)
-    assert len(indices) == len(set(indices)) == c.EVAL_COUNT
+    assert len(indices) == len(set(indices)) == c.family_config.EVAL_COUNT
     assert {rows[i]["subject"] for i in indices} == {"abstract_algebra", "astronomy"}
 
 
@@ -55,7 +55,7 @@ def test_unpinned_eagle_is_rejected():
 
 @pytest.mark.parametrize("legacy", [False, True])
 def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, legacy):
-    monkeypatch.setattr(c, "ROOT", tmp_path)
+    monkeypatch.setattr(c.family_config, "ROOT", tmp_path)
     folder = tmp_path / "runs/out/qwen3_sps_mtp"
     folder.mkdir(parents=True)
     checkpoint = folder / "final.pt"
@@ -64,9 +64,9 @@ def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, lega
         "checkpoint": str(checkpoint),
         "export": str(folder / "hf"),
         "checkpoint_sha256": common.file_hash(checkpoint),
-        "parent": str(c.PARENT),
-        "steps": c.TRAIN_STEPS,
-        "horizons": c.HORIZONS,
+        "parent": str(c.family_config.PARENT),
+        "steps": c.family_config.TRAIN_STEPS,
+        "horizons": c.family_config.HORIZONS,
     }
     if legacy:
         marker["design_signature"] = "historical code hash"
@@ -75,7 +75,7 @@ def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, lega
     (folder / "trained.json").write_text(json.dumps(marker))
     assert common.checked_checkpoint(common.trained()) == checkpoint
     with monkeypatch.context() as different_schedule:
-        different_schedule.setattr(c, "GLOBAL_BATCH", 8)
+        different_schedule.setattr(c.family_config, "GLOBAL_BATCH", 8)
         with pytest.raises(RuntimeError, match="configured run"):
             common.trained()
     checkpoint.write_bytes(b"other model")
@@ -91,9 +91,9 @@ def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, lega
 def test_legacy_probe_matches_its_measured_workload(tmp_path, monkeypatch, config, field, changed):
     probe = tmp_path / "probe.json"
     probe.write_text(json.dumps({"seconds": [1, 2], "projected_hours": 0}))
-    assert common.probe_seconds(probe) == c.STAGE_STEPS + 2 * (c.TRAIN_STEPS - c.STAGE_STEPS)
+    assert common.probe_seconds(probe, num_gpus=4) == c.family_config.STAGE_STEPS + 2 * (c.family_config.TRAIN_STEPS - c.family_config.STAGE_STEPS)
     with pytest.raises(RuntimeError, match="another workload"):
         common.probe_seconds(probe, num_gpus=1)
-    monkeypatch.setattr(config, field, changed)
+    monkeypatch.setattr(config.family_config, field, changed)
     with pytest.raises(RuntimeError, match="another workload"):
-        common.probe_seconds(probe)
+        common.probe_seconds(probe, num_gpus=4)

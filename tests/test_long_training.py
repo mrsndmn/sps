@@ -3,18 +3,18 @@ import pytest
 
 pytest.importorskip('torch')
 
-from scripts import pilot_run
-from scripts.experiment_suite import TRAIN_TOKENS
+from workloads.pilot import pilot_run
+from experiments.pilot import zero_window_longer_training
 
 
 def test_old_corpus_cannot_be_cycled_to_claim_a_tenfold_data_budget(monkeypatch):
-    monkeypatch.setattr(pilot_run, 'TRAIN_TOKENS', TRAIN_TOKENS * 10)
+    monkeypatch.setattr(pilot_run, 'collect_experiments', zero_window_longer_training)
     with pytest.raises(RuntimeError, match='Insufficient unique training data'):
         pilot_run.validate_training_coverage(dict(tokens=dict(train=2231741898)))
 
 
 def test_larger_corpus_supplies_full_budget_on_every_rank(monkeypatch):
-    monkeypatch.setattr(pilot_run, 'TRAIN_TOKENS', TRAIN_TOKENS * 10)
+    monkeypatch.setattr(pilot_run, 'collect_experiments', zero_window_longer_training)
     coverage = pilot_run.validate_training_coverage(dict(tokens=dict(train=11500000000)))
     for row in coverage.values():
         assert len(row['available_per_rank']) == 4

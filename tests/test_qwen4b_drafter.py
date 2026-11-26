@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-from scripts import qwen4b_drafter as jobs, qwen4b_drafter_data as prepared
-from scripts import qwen4b_drafter_train as training
+from workloads.distillation import qwen4b_drafter as jobs, qwen4b_drafter_data as prepared
+from workloads.distillation import qwen4b_drafter_train as training
 
 
 def test_blocks_share_prefix_features_without_crossing_anchors():
@@ -62,8 +62,6 @@ def test_sampling_stays_inside_response_and_contains_both_lengths():
 
 
 def test_payload_stages_one_gpu_per_worker(monkeypatch, tmp_path):
-    monkeypatch.setattr(training, "signature", lambda dataset: "f" * 64)
-    monkeypatch.setattr(jobs.evaluation, "signature", lambda dataset: "e" * 64)
     assert len(jobs.names("train")) == 4
     for dataset in training.DATASETS:
         for phase in ("probe", "train", "eval"):
@@ -115,16 +113,15 @@ def test_prepared_arrow_loader_handles_newer_hf_list_metadata(monkeypatch, tmp_p
     with pa.ipc.new_stream(tmp_path / "data.arrow", table.schema) as writer:
         writer.write_table(table)
     (tmp_path / "state.json").write_text('{"_data_files":[{"filename":"data.arrow"}]}')
-    monkeypatch.setattr(prepared, "SOURCE_ROWS", 1)
 
     def snapshot(repo, **kwargs):
-        assert repo == prepared.REPO
-        assert kwargs["revision"] == prepared.REVISION and kwargs["local_files_only"]
+        assert repo == "test/corpus"
+        assert kwargs["revision"] == "custom-revision" and kwargs["local_files_only"]
         assert kwargs["cache_dir"] == prepared.HF_HOME / "hub"
         return tmp_path
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot)
-    rows = prepared.open_dataset()
+    rows = prepared.open_dataset("test/corpus", "custom-revision", 1)
     assert rows[0] == {key: values[0] for key, values in fields.items()}
 
 

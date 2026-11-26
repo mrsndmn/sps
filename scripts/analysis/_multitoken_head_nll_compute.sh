@@ -38,7 +38,7 @@ IFS=$'\t' read -r scale variant warp batch_size spec <<<"${line}"
 
 echo "=== task ${task}: ${scale} ${variant} (warp=${warp} bs=${batch_size}) -> ${OUTPUT_ROOT} ==="
 echo "    spec: ${spec}"
-uv run python -m scripts.analysis.multitoken_head_nll \
+uv run python scripts/analysis/multitoken_head_nll.py \
   --scale "${scale}" \
   --variant "${variant}" \
   --spec "${spec}" \

@@ -233,7 +233,7 @@ def _warn(message: str) -> None:
     print(f"WARNING: {message}")
 
 
-# Default W&B project for every script that reads runs. Matches `conf/logging/default.yaml`,
+# Default W&B project for every script that reads runs. Matches `experiments.worker_args.LoggingArgs`,
 # so a clone that trains with the shipped recipes finds its own runs with no flags. The entity
 # is never defaulted -- it is always the user's own ($WANDB_ENTITY or --entity).
 DEFAULT_WANDB_PROJECT = os.environ.get("WANDB_PROJECT", "sps")

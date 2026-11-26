@@ -10,4 +10,5 @@ class RuntimeSetup:
     hours: int
 
 
-experiment_configs = [RuntimeSetup("vllm-sps-main-py312-cu130", num_gpus=1, hours=2)]
+RUNTIME_SETUP = RuntimeSetup("vllm-sps-main-py312-cu130", num_gpus=1, hours=2)
+experiment_configs = [RUNTIME_SETUP]

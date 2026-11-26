@@ -13,12 +13,16 @@ import pytest
 @pytest.mark.parametrize('workload',['quality','ifeval-nonthinking','ifeval-thinking','mmlu-nonthinking','mmlu-thinking'])
 def test_worker_uses_selected_checkpoint_and_only_selected_workload(tmp_path,monkeypatch,variant,workload):
     import torch
-    from scripts import sched_eval as r, instruct_config as c, instruct_common, instruct_data, instruct_evaluate
+    from workloads.instruction import sched_eval as r
+    from experiments import instruct_config as c
+    from workloads.instruction import instruct_common
+    from data import instruct_data
+    from workloads.instruction import instruct_evaluate
     sc=r.sc
     exp=SimpleNamespace(name='example',recipe='staged_sps')
     source=tmp_path/'source';(source/'eval').mkdir(parents=True)
     sanity=tmp_path/'sanity';sanity.mkdir()
-    (sanity/'generation-protocol.json').write_text(json.dumps(dict(design_signature=r.c.SOURCE_SIGNATURE,generation=c.GENERATION)))
+    (sanity/'generation-protocol.json').write_text(json.dumps(dict(design_signature='archived',generation=c.family_config.GENERATION)))
     package=types.ModuleType('lm_eval.tasks.ifeval');fingerprints={}
     for name in ('utils','instructions','instructions_registry','instructions_util'):
         path=tmp_path/(name+'.py');path.write_text('# scorer')
@@ -27,7 +31,7 @@ def test_worker_uses_selected_checkpoint_and_only_selected_workload(tmp_path,mon
     monkeypatch.setitem(sys.modules,'lm_eval.tasks.ifeval',package)
     monkeypatch.setitem(sys.modules,'langdetect',SimpleNamespace(DetectorFactory=SimpleNamespace(seed=None)))
     monkeypatch.setattr(importlib.metadata,'version',lambda name:'version')
-    (source/'eval/manifest.json').write_text(json.dumps(dict(design_signature=r.c.SOURCE_SIGNATURE,
+    (source/'eval/manifest.json').write_text(json.dumps(dict(design_signature='archived',
         ifeval_code=fingerprints,lm_eval_version='version')))
     monkeypatch.setattr(sc.e,'SANITY_ROOT',sanity)
     monkeypatch.setattr(sc.e,'output_dir',lambda exp:source)
@@ -54,8 +58,8 @@ def test_worker_uses_selected_checkpoint_and_only_selected_workload(tmp_path,mon
     monkeypatch.setattr(instruct_evaluate,'ensure_ifeval_resources',lambda:None)
     calls=[]
     def generate(model,tok,rows,task,mode,settings,root,sig,seed,*args):
-        calls.append((task,mode));assert root==dest/'eval' and sig=='current' and seed==c.SEED
-        assert settings==c.GENERATION[mode];return {'count':len(rows)}
+        calls.append((task,mode));assert root==dest/'eval' and sig=='current' and seed==c.family_config.SEED
+        assert settings==c.family_config.GENERATION[mode];return {'count':len(rows)}
     monkeypatch.setattr(instruct_evaluate,'evaluate_generation',generate)
     monkeypatch.setattr(instruct_evaluate,'likelihood',lambda *args:calls.append(('quality',None)))
     monkeypatch.setattr(instruct_data,'rows',lambda split:[{'test':1}])
@@ -65,19 +69,20 @@ def test_worker_uses_selected_checkpoint_and_only_selected_workload(tmp_path,mon
     assert calls==[('quality',None) if workload=='quality' else tuple(workload.split('-',1))]
     assert (dest/'evaluated.json').exists() and not (source/'evaluated.json').exists()
     if workload!='quality':
-        expected=c.IFEVAL_REVISION if workload.startswith('ifeval') else c.MMLU_REVISION
+        expected=c.family_config.IFEVAL_REVISION if workload.startswith('ifeval') else c.family_config.MMLU_REVISION
         assert dataset_calls[0][1]['revision']==expected
     checkpoint['mtime_ns']=200
     with pytest.raises(RuntimeError,match='resume provenance'):r.evaluate(variant,exp,workload)
 
 def test_checkpoint_gate_selects_best_and_rejects_wrong_step(tmp_path,monkeypatch):
     import torch
-    from scripts import sched_common as sc, sched_config as c
-    from scripts import instruct_config as source
+    from workloads.instruction import sched_common as sc
+    from experiments import sched_config as c
+    from experiments import instruct_config as source
     exp=SimpleNamespace(name='example');plan={'steps':512,'stage_steps':102}
     monkeypatch.setattr(sc.e,'output_dir',lambda exp:tmp_path)
     monkeypatch.setattr(sc,'source_plan',lambda:plan)
-    state=dict(design_signature=c.SOURCE_SIGNATURE,source=source.MODEL,revision=source.REVISION,
+    state=dict(design_signature='archived',source=source.family_config.MODEL,revision=source.family_config.REVISION,
                step=384,stage=False,plan=plan)
     torch.save(state,tmp_path/'best.pt')
     assert sc.checkpoint_path('step384',exp)==tmp_path/'best.pt'
@@ -86,10 +91,9 @@ def test_checkpoint_gate_selects_best_and_rejects_wrong_step(tmp_path,monkeypatc
     with pytest.raises(RuntimeError,match='provenance'):sc.validate_checkpoint('step384',exp)
 
 
-
 def test_optimizer_and_model_resume_follow_same_lr_trajectory(tmp_path,monkeypatch):
     import torch
-    from scripts import sched_train as r
+    from workloads.instruction import sched_train as r
     exp=SimpleNamespace(name='tiny',recipe='continued_ar')
     plan={'steps':8,'stage_steps':2}
     monkeypatch.setattr(r,'ACTIVE_EXPERIMENT',exp,raising=False)

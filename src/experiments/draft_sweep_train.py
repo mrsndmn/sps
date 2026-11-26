@@ -1,11 +1,23 @@
 """Executable definitions for draft sweep train."""
 
+from dataclasses import dataclass
+from pathlib import Path
+
 from . import vllm_sps_config as c
+from .launch import named_run
 
-ROOT = c.ROOT.parent / "vllm-sps-draft-sweep"
 
-LEGACY_HORIZONS = 9
+@dataclass(kw_only=True)
+class FamilyConfig:
+    ROOT: Path = c.family_config.ROOT.parent / "vllm-sps-draft-sweep"
+    LEGACY_HORIZONS: int = 9
 
-HORIZONS = LEGACY_HORIZONS
+    @property
+    def HORIZONS(self) -> int:
+        return self.LEGACY_HORIZONS
 
-EXPERIMENT = c.experiment_configs[0]
+
+family_config = FamilyConfig()
+
+
+EXPERIMENT = named_run(c.experiment_configs, c.SPS_MTP.name)

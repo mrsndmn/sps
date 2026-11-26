@@ -1,7 +1,8 @@
 import copy
+import sys
 from pathlib import Path
 import pytest
-from scripts import sampling_audit as a
+from workloads.serving import sampling_audit as a
 
 
 def test_probability_oracle_and_deterministic_support():
@@ -27,14 +28,14 @@ def test_cache_comparison_detects_tokens_stop_and_pairing():
 def test_payload_is_single_gpu_staged_and_separate():
     body=a.payload(a.experiment_configs[0],Path('/staged/commit'))
     assert body['instance_type']==a.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
-    assert 'scripts.sampling_audit --worker' in body['script']
+    assert 'scripts/serving/sampling_audit.py --worker' in body['script']
     assert '/staged/commit' in body['script']
-    assert a.ROOT != a.source.ROOT and a.ROOT != a.graphs.ROOT
+    assert a.ROOT != a.source.family_config.ROOT and a.ROOT != a.graphs.ROOT
 
 
-def test_completed_audit_checks_identity_before_skipping(tmp_path,monkeypatch):
+def test_completed_audit_skips_after_code_changes(tmp_path,monkeypatch):
     monkeypatch.setattr(a,'ROOT',tmp_path)
-    monkeypatch.setattr(a,'input_identity',lambda: {'design_signature':'new'})
-    a.launch.store_json(a.output_dir()/'evaluated.json',dict(identity={'design_signature':'old'},passed=True))
-    with pytest.raises(RuntimeError,match='Stale'):
-        a.submit()
+    monkeypatch.setattr(a,'input_identity',lambda: pytest.fail('existing output should skip before preflight'))
+    a.launch.store_json(a.output_dir(a.REFERENCE_JOB)/'evaluated.json',dict(identity={'design_signature':'old'},passed=True))
+    monkeypatch.setattr(sys, "argv", ["scripts/serving/sampling_audit.py"])
+    a.main()

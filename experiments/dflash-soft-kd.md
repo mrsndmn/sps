@@ -4,7 +4,7 @@ Soft Qwen targets can lengthen the accepted prefix of a DFlash drafter relative 
 
 ## Setup
 
-`scripts.dflash_kd_train.train`
+`workloads.distillation.dflash_kd_train.train`
 
 ## Results
 

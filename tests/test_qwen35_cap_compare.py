@@ -1,4 +1,4 @@
-from scripts.qwen35_cap_compare import completed_answer
+from workloads.evaluation.qwen35_cap_compare import completed_answer
 
 
 def test_completion_requires_final_answer_and_stop():

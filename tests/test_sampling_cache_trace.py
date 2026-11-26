@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from scripts import sampling_cache_trace as c
+from workloads.serving import sampling_cache_trace as c
 
 
 def test_row_histories_follows_metadata_not_physical_order():
@@ -70,5 +70,5 @@ def test_observer_rejects_missing_history_and_async(tmp_path):
 def test_allocation_is_one_gpu_and_outputs_are_isolated():
     body = c.payload(c.job_configs[0], Path('/staged'))
     assert body['instance_type'] == c.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
-    assert 'scripts.sampling_cache_trace --worker' in body['script']
+    assert 'scripts/serving/sampling_cache_trace.py --worker' in body['script']
     assert c.ROOT not in (c.precision.ROOT, c.audit.ROOT, c.trace.ROOT)

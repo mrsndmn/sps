@@ -1,6 +1,7 @@
 """Executable definitions for provenance train."""
 
 from dataclasses import dataclass
+
 from . import instruct_config as c
 
 
@@ -10,7 +11,7 @@ class Experiment:
     recipe: str
     condition: str
     num_gpus: int = 4
-    hours: int = c.TRAIN_HOURS
+    hours: int = c.family_config.TRAIN_HOURS
     trainable: bool = True
     distillation_weight: float = 0.0
 

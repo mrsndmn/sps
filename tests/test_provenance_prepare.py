@@ -1,7 +1,7 @@
 import copy
 from pathlib import Path
 import pytest
-from scripts import provenance_prepare as p
+from workloads.provenance import provenance_prepare as p
 
 
 def row(mode, i):
@@ -49,7 +49,7 @@ def test_rejection_floor_prevents_biased_tiny_dataset():
 def test_preparation_gpu_allocation_and_budget_summary():
     body=p.payload(p.experiment_configs[0],Path('/staged/commit'))
     assert body['instance_type']==p.launch.INSTANCE_TYPES_BY_NUM_GPUS[4]
-    assert 'scripts.provenance_prepare --worker' in body['script']
+    assert 'scripts/provenance/provenance_prepare.py --worker' in body['script']
     result=p.summarize([row('thinking',0),row('nonthinking',1)])
     assert result['thinking']['supervised_tokens']==2
     assert result['nonthinking']['examples']==1

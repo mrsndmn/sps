@@ -12,14 +12,16 @@ exactly. Missing (scale, method) accuracies are skipped with a warning.
 
 from __future__ import annotations
 
-import plotting.mpl_cache  # noqa: F401  (pin MPLCONFIGDIR off NFS before matplotlib)
-
 import argparse
 import csv
 import os
 import sys
 from pathlib import Path
 
+# Prefer this checkout over an editable installation from another worktree.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+
+import plotting.mpl_cache  # noqa: F401  (pin MPLCONFIGDIR off NFS before matplotlib)
 import matplotlib
 
 matplotlib.use("Agg")
@@ -40,10 +42,6 @@ import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-# ``export_main_results_table`` lives in scripts/tables (not an installed package); ``plotting.*``
-# is importable via the installed ``src`` package.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tables"))
-
 from plotting.wandb_runs import DEFAULT_WANDB_PROJECT  # noqa: E402
 from plotting.style import (  # noqa: E402
     COLORBLIND_METHOD_COLORS,
@@ -54,7 +52,7 @@ from plotting.style import (  # noqa: E402
     enable_latex,
     sc,
 )
-from export_main_results_table import collect_table_rows  # noqa: E402
+from plotting.export_main_results_table import collect_table_rows  # noqa: E402
 
 
 DEFAULT_SCALES = ("xs", "s", "m", "l", "xl")

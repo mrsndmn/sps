@@ -5,7 +5,7 @@ The validation and downstream quality improvement observed in the pilot persists
 with a larger training-token budget and a larger set of unique training documents.
 
 ## Setup
-Training function: `scripts.pilot_run.train`; the longer comparison is defined by
+Training function: `workloads.pilot.pilot_run.train`; the longer comparison is defined by
 the selected `experiment_configs` registry in `src/experiments/pilot.py`.
 
 ## Results

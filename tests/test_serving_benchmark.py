@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts import serving_benchmark as bench
+from workloads.serving import serving_benchmark as bench
 
 
 def test_all_serving_jobs_are_single_gpu_and_use_separate_child_interpreters():
@@ -56,7 +56,7 @@ def test_runtime_rejects_mutated_python_or_compiled_extensions(tmp_path, monkeyp
         )
     (info / "direct_url.json").write_text(json.dumps({"url": bench.runtime.WHEEL}))
     manifest = {
-        "design_signature": bench.runtime.signature(),
+        **bench.runtime.identity(),
         "site_packages": str(site),
         "overlay_sha256": hashes,
     }
@@ -76,11 +76,11 @@ def test_runtime_rejects_mutated_python_or_compiled_extensions(tmp_path, monkeyp
 
 def test_oracle_rejects_mismatched_checkpoints_and_empty_results(tmp_path, monkeypatch):
     path = tmp_path / "reference.json"
-    monkeypatch.setattr(bench, "reference_path", lambda: path)
+    monkeypatch.setattr(bench, "reference_path", lambda name: path)
     monkeypatch.setattr(bench, "protocol_signature", lambda: "protocol")
     samples = [
         {"prompt_token_ids": [1], "expected_token_ids": [2]}
-        for _ in range(bench.c.AUDIT_COUNT)
+        for _ in range(bench.c.family_config.AUDIT_COUNT)
     ]
     data = {
         "checkpoint_sha256": "checkpoint",
@@ -98,7 +98,7 @@ def test_oracle_rejects_mismatched_checkpoints_and_empty_results(tmp_path, monke
 
 
 def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch):
-    from scripts import vllm_sps_evaluate
+    from workloads.serving import vllm_sps_evaluate
 
     AutoTokenizer = SimpleNamespace()
     monkeypatch.setitem(
@@ -146,7 +146,7 @@ def test_evaluator_uses_cached_training_oracle_and_restores_binding(monkeypatch)
 def test_completed_results_cannot_be_reused_after_protocol_changes(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(bench.c, "ROOT", tmp_path)
+    monkeypatch.setattr(bench.c.family_config, "ROOT", tmp_path)
     monkeypatch.setattr(bench, "protocol_signature", lambda: "current")
     monkeypatch.setattr(bench.evaluator, "protocol_signature", lambda: "current")
     monkeypatch.setattr(bench, "trained", lambda: {"checkpoint_sha256": "current"})
@@ -187,15 +187,47 @@ def test_completed_results_cannot_be_reused_after_protocol_changes(
 
 
 def test_serving_protocol_tracks_generation_configuration(monkeypatch):
-    from scripts.serving import draft_sweep, serving_graphs
+    from workloads.serving import draft_sweep, serving_graphs
 
     protocols = (bench.protocol_signature, serving_graphs.protocol_signature,
                  draft_sweep.protocol_signature)
     before = [protocol() for protocol in protocols]
-    original = bench.evaluator.source_hash
-    monkeypatch.setattr(
-        bench.evaluator,
-        "source_hash",
-        lambda path: "changed" if Path(path).name == "instruct_config.py" else original(path),
-    )
+    monkeypatch.setitem(bench.evaluator.c.family_config.GENERATION, "new-mode", {"temperature": 0.5})
     assert all(protocol() != old for protocol, old in zip(protocols, before, strict=True))
+
+
+def test_audit_replicate_children_and_evidence_use_own_directory(monkeypatch, tmp_path):
+    import sys
+    from dataclasses import replace
+    from experiments import serving_benchmark as config
+    from orchestration.named.registry import family_runs
+    from workloads.serving import serving_graphs as graphs
+
+    original = bench.selected("audit")[0]
+    second = replace(original, name=original.name + "-second")
+    rows = [original, second]
+    for module in (config, bench):
+        monkeypatch.setattr(module, "experiment_configs", rows)
+    assert (second.name, "audit") not in family_runs("vllm-sps-draft-sweep")
+    monkeypatch.setattr(bench.c.family_config, "ROOT", tmp_path)
+    monkeypatch.setattr(bench, "verify_runtime", lambda: {"site_packages": "site"})
+    monkeypatch.setattr(bench, "trained", lambda: {"checkpoint_sha256": "trained"})
+    monkeypatch.setattr(bench.runtime, "runtime_environment", dict)
+    children = []
+    monkeypatch.setattr(bench, "child", lambda argv, env, hours: children.append(argv[1:]))
+    bench.worker(second)
+    assert len(children) == 3
+    assert bench.root_for(second).is_dir() and not bench.root_for(original).exists()
+    seen = []
+    monkeypatch.setattr(bench, "make_reference", lambda name: seen.append(name))
+    monkeypatch.setattr(bench, "audit_arm", lambda arm, name: seen.append(name))
+    for argv in children:
+        monkeypatch.setattr(sys, "argv", argv)
+        bench.main()
+    assert seen == [second.name] * 3
+    assert bench.reference_path(second.name).parent == bench.root_for(second)
+    monkeypatch.setattr(graphs, "ROOT", tmp_path)
+    evidence = []
+    monkeypatch.setattr(graphs, "with_graph_engine", lambda fn, arm, path: evidence.append(path))
+    graphs.audit_arm("sps", second.name)
+    assert evidence == [bench.root_for(second) / "graphs-sps.json"]

@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 import pytest
-from scripts import base50_config as c
+from workloads.adaptation import base50_config as c
 
 
 def test_schedule_and_resume():
@@ -26,17 +26,16 @@ def test_schedule_and_resume():
 
 def test_isolation_and_dry_payload(tmp_path):
     env={**os.environ,'SPS_EXPERIMENT_SUITE':c.SOURCE_SUITE}
-    code='''from scripts import experiment_suite as e
-from scripts import base50_config as c
-old_root=str(e.ARTIFACTS_ROOT); old_sig=e.design_signature()
+    code='''from orchestration import experiment_suite as e
+from workloads.adaptation import base50_config as c
+old_root=str(e.ARTIFACTS_ROOT)
 e, source=c.configure()
-from scripts.base50_run import plan, payload
+from workloads.adaptation.base50_run import plan, payload
 from pathlib import Path
 assert str(e.ARTIFACTS_ROOT)!=old_root
-assert e.design_signature()!=old_sig
 assert c.configure()[0] is e
-assert source.MAX_DATA_ROWS==1600000
-assert source.MODEL=="Qwen/Qwen3-1.7B-Base"
+assert source.family_config.MAX_DATA_ROWS==1600000
+assert source.family_config.MODEL=="Qwen/Qwen3-1.7B-Base"
 assert plan()["steps"]==50000 and plan()["stage_steps"]==819
 exps=e.collect_experiments()
 assert len(exps)==1 and exps[0].distillation_weight==0
@@ -46,11 +45,11 @@ assert payload(exps[0],Path("/tmp/staged"))["instance_type"]==e.INSTANCE_TYPES_B
     # Exercise the real CLI parser without consulting completed production runs.
     cli = '''from pathlib import Path
 import sys
-from scripts import base50_run as runner
+from workloads.adaptation import base50_run as runner
 runner.e.RUN_ROOT = Path(sys.argv.pop(1)) / 'runs'
 runner.main()
 '''
     result=subprocess.run([sys.executable,'-c',cli,str(tmp_path),'--dry'],env=env,check=True,capture_output=True,text=True)
-    data=json.loads(result.stdout)
-    assert 'scripts.base50_run --worker' in data['script']
+    data=json.loads(result.stdout)["payload"]
+    assert 'scripts/adaptation/base50_run.py --worker' in data['script']
     assert 'qwen3-base-1.7b-ce-50k' in data['job_desc']

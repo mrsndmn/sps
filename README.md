@@ -21,7 +21,7 @@ The project uses [uv](https://docs.astral.sh/uv/). From the repo root:
 uv sync
 ```
 
-This installs the pinned dependencies (PyTorch 2.9, Hydra, a Triton FlashAttention build,
+This installs the pinned dependencies (PyTorch 2.9, Transformers, a Triton FlashAttention build,
 and the EleutherAI `lm-evaluation-harness`). Prefix commands with `uv run` to use the
 environment (e.g. `uv run python scripts/train.py ...`). A CUDA GPU with Triton is required
 to run the fused attention kernels; CPU fallbacks exist for the tests.
@@ -34,13 +34,13 @@ tokenized with the GPT-2 tokenizer and packed across document boundaries:
 ```bash
 # writes train/val memmap bins under <DATA_ROOT>/data
 # (downloads FineWeb-Edu to <DATA_ROOT>/.hf_cache on first run)
-uv run python src/data/prepare.py system.data_root=<DATA_ROOT>
+uv run python src/data/prepare.py --data_root <DATA_ROOT>
 ```
 
 ## Training
 
-Training is configured with [Hydra](https://hydra.cc/). Experiment recipes live under
-`conf/experiment/` and follow the naming convention
+Training uses typed CLI arguments. Paper recipes live in
+`src/experiments/paper.py` and follow the naming convention
 `{scale}_{family}[_w{window}]_{tokens}b`, where:
 
 - **scale** ∈ `{xs, s, m, l, xl}` (53M / 131M / 379M / 831M / 1.678B parameters),
@@ -48,39 +48,39 @@ Training is configured with [Hydra](https://hydra.cc/). Experiment recipes live 
 - **window** is the sliding `<predict>`-window size `w` (e.g. `w64`; the paper uses `w=64`),
 - **tokens** is the pre-decay training budget (`10b` / `20b`).
 
-> **Every `train.py` / `evaluate.py` command needs `system.data_root=<DATA_ROOT>`** — the same
-> directory you used for data prep. It has no default (Hydra errors if it is missing); the
+> **Every `train.py` / `evaluate.py` command needs `--data_root <DATA_ROOT>`** — the same
+> directory you used for data prep. It is required; the
 > examples show it on the first command of each block, so append it to the variants too.
 
 ```bash
 # STANDARD baseline (xs, 20B tokens)
-uv run python scripts/train.py +experiment=xs_full_attention_20b system.data_root=<DATA_ROOT>
+uv run python scripts/train.py --recipe xs_full_attention_20b --data_root <DATA_ROOT>
 
 # SPS (s, w=64, 20B tokens)
-uv run python scripts/train.py +experiment=s_sps_w64_20b
+uv run python scripts/train.py --recipe s_sps_w64_20b
 
 # 2X MEMORY ablation is SPS with a full window (w=4096)
-uv run python scripts/train.py +experiment=s_sps_w4096_20b
+uv run python scripts/train.py --recipe s_sps_w4096_20b
 
 # DELAYED STATE and REVERSE SPS baselines
-uv run python scripts/train.py +experiment=s_delayed_state_w64_20b
-uv run python scripts/train.py +experiment=s_reverse_sps_w64_20b
+uv run python scripts/train.py --recipe s_delayed_state_w64_20b
+uv run python scripts/train.py --recipe s_reverse_sps_w64_20b
 ```
 
 The available model families are `standard`, `sps`, `reverse_sps`, and `delayed_state`
-(`conf/model/`). See `conf/README.md` for the full config surface. For distributed data
+(`--architecture`). Run `python scripts/train.py --help` for all fields. For distributed data
 parallel:
 
 ```bash
-torchrun --standalone --nproc_per_node=4 scripts/train.py +experiment=xs_full_attention_20b system.data_root=<DATA_ROOT>
+torchrun --standalone --nproc_per_node=4 scripts/train.py --recipe xs_full_attention_20b --data_root <DATA_ROOT>
 ```
 
 ### Runtime and logging overrides
 
 - **Weights & Biases** logging is on by default and writes to your default W&B entity. Turn it
-  off with `logging.wandb_log=false`, or point it somewhere specific with
-  `logging.wandb_entity=<entity> logging.wandb_project=<project>`.
-- **Device / compile** — add `system.device=cpu` or `system.compile=false` to any command to
+  off with `--wandb_log false`, or point it somewhere specific with
+  `--wandb_entity <entity> --wandb_project <project>`.
+- **Device / compile** — add `--device cpu` or `--compile false` to any command to
   run on CPU or skip `torch.compile`.
 
 ## Evaluation
@@ -90,7 +90,7 @@ loss, out-of-distribution corpus NLL (WikiText, C4, Pile-Books3, GovReport — s
 `lm_eval_tasks/`), and zero-shot accuracy on ARC-Easy, HellaSwag, PIQA, SciQ, and LAMBADA:
 
 ```bash
-uv run python scripts/evaluate.py +experiment=s_sps_w64_20b +checkpoint=final system.data_root=<DATA_ROOT>
+uv run python scripts/evaluate.py --recipe s_sps_w64_20b --checkpoint final --tasks piqa --data_root <DATA_ROOT>
 ```
 
 ## Reproducing the paper's figures and tables
@@ -131,8 +131,8 @@ There are two kinds of input:
 
 - **W&B history.** The validation-history, accuracy-gain, window-ablation, seed-variance and
   loss-vs-compute figures read your own runs. They take `--entity` / `--project` and default to
-  `$WANDB_ENTITY` and the project in `conf/logging/default.yaml`, so runs trained with the
-  shipped recipes (each sets `wandb_run_name: ${experiment.name}`) resolve with no flags.
+  `$WANDB_ENTITY` and the project in `src/experiments/worker_args.py`, so runs trained with the
+  shipped recipes resolve with no flags.
   `plot_loss_vs_compute.py` caches its pull to JSON, so re-renders need no network.
 - **Local analysis outputs.** The Δ-NLL, gradient-ratio and multi-token-probe figures read
   `../sps-artifacts/outputs/…` trees written by the corresponding `scripts/analysis/run_*.sh` sweeps, which
@@ -148,19 +148,20 @@ function and records results and conclusions. The implementation defines the run
 
 | Where to look | What lives there |
 | --- | --- |
-| `src/experiments/` | Typed experiment definitions and numeric settings. |
-| `conf/`, `scripts/train.py`, `scripts/evaluate.py` | Hydra recipes and entry points for direct training and evaluation. |
+| `src/experiments/paper.py`, `scripts/train.py`, `scripts/evaluate.py` | Typed recipes and entry points for direct training and evaluation. |
 | `src/`, `lm_eval_tasks/` | Model implementations, data preparation, training utilities, and evaluation tasks. |
-| `run_train_jobs.py`, `run_eval.py` | Shared MLSpace launchers. Look up the suite's worker in `scripts/suite_registry.py` and its experiment definitions under `src/experiments/`. |
-| `scripts/` | Also contains independently launched experiment families. For example, `scripts/readout/real_readout_run.py` defines training and `scripts/readout/real_readout_mmlu.py` evaluates its checkpoints. |
+| `scripts/run_train_jobs.py`, `scripts/run_eval.py` | Shared MLSpace launchers. Use `--list` for the family catalog and `--list FAMILY` for run names. |
+| `src/experiments/` | Typed experiment definitions and numeric settings. |
+| `scripts/` | Family-specific command-line entry points. For example, `scripts/readout/real_readout_run.py` starts training and `scripts/readout/real_readout_mmlu.py` evaluates its checkpoints. |
 | `tests/` | Experiment, worker and orchestration tests. Model tests also live under `src/modeling/tests/`. |
 | `docs/paper/`, `figures/` | Manuscript sources and supporting material in the former, figures for the original SPS paper in the latter. |
 
 ### Script families
 
-Choose a directory by the experiment you are working on. The existing
-`python -m scripts.<module>` commands in experiment notes and job receipts
-also resolve to the grouped sources.
+Run programs by file path from the repository root. The shared launchers
+live in `scripts/`, with worker entry points grouped by experiment family.
+`src/orchestration/` builds requests and `src/workloads/` implements workers.
+Previously submitted jobs use the script paths in their own committed snapshots.
 
 | Directory under `scripts/` | Contents |
 | --- | --- |
@@ -171,11 +172,10 @@ also resolve to the grouped sources.
 | `serving/` | Qwen3 SPS-MTP training and vLLM evaluation, draft-length sweep, runtime setup, graph benchmarks and sampling diagnostics. |
 | `analysis/`, `figures/`, `tables/`, `benchmark/` | Analysis, plots, table exports and performance measurements for the original paper. |
 
-The top level holds the direct commands, shared launcher, registry and shared
-protocol sources. Use `scripts/generate.py` for quick local checkpoint smoke tests.
-For the Qwen3 vLLM pilot, use `scripts/serving/vllm_sps_run.py` for probing and
-training and `scripts/serving/serving_benchmark.py` for evaluation in the isolated
-runtime. Start the draft-length sweep from `scripts/serving/draft_sweep.py`.
+Browse the Qwen3 vLLM probe and training runs with
+`python scripts/run_train_jobs.py --list vllm-sps-qwen3`. For evaluation in the isolated
+runtime use `python scripts/run_eval.py --list vllm-sps-benchmark`. The draft-length sweep
+is in the `vllm-sps-draft-sweep` family. Use `scripts/generate.py` for local checkpoint smoke tests.
 
 SPS-MTP training and its native-readout control use checkpoint metadata and
 SHA-256 checksums instead of a hash of the training scripts. Existing checkpoints
@@ -186,7 +186,7 @@ scripts, which check agreement with the recorded audit protocol.
 
 ### Following an experiment into storage
 
-`src/experiments/environment.py` points to the shared `sps-artifacts/` directory beside
+`experiments.environment.COMMON_ROOT` points to the shared `sps-artifacts/` directory beside
 this checkout. Most experiment families have their own directory there. The
 original `1b` pilot uses the root itself. Shared infrastructure includes `code/`
 for staged worker snapshots and `hf/` for the Hugging Face cache.
@@ -202,8 +202,7 @@ Its artifact directory is `qwen3-instruct-real-readout-mtp/` under the shared ro
 - `submissions/` under a launcher’s artifact directory holds its job receipts.
 
 Analysis, benchmark and table scripts use the shared NFS directory
-`../sps-artifacts/outputs/` directly. Hydra also stores its dated run metadata
-there, including sweeps under `multirun/`. On another machine set `SPS_OUTPUT_ROOT` to an absolute directory before
+`../sps-artifacts/outputs/` directly. On another machine set `SPS_OUTPUT_ROOT` to an absolute directory before
 running these commands. Per-script input and output flags still take precedence.
 `run/` also contains local orchestration state, including job observations.
 The worker's output paths identify the shared results used downstream.
@@ -215,33 +214,64 @@ uv run pytest                 # fast CPU-safe tests
 uv run pytest -m cuda         # GPU tests (Triton kernels)
 ```
 
+## Named MLSpace experiments
+
+Browse families and their named runs from the repository root.
+
+```bash
+python scripts/run_train_jobs.py --list
+python scripts/run_train_jobs.py --list 1b
+python scripts/run_train_jobs.py --experiment 1b/data-and-probes --phase prepare --dry
+python scripts/run_train_jobs.py --experiment 1b/s_standard_pilot_1b --dry
+python scripts/run_eval.py --experiment 1b/s_standard_pilot_1b --dry
+```
+
+Select a run by its full `FAMILY/NAME` key. Listing a family prints each name
+and supported phase. Use `--phase` to select a phase explicitly. For example,
+to evaluate a published DFlash checkpoint:
+
+```bash
+python scripts/run_eval.py --experiment dflash-reproduction/qwen3-4b-dflash-b16-scratch --step 5000 --dry
+```
+
+Remove `--dry` to submit. The native launcher resolves the output directory and
+builds the worker command shown in the preview. An existing result or an active
+reservation under `in_progress/` skips the submission. DFlash evaluation
+requires a published training result. A winner evaluation can report a pending
+training input during preview.
+
+Add related runs to the family's `experiment_configs` in `src/experiments/`.
+For DFlash, add an instance to the list returned by
+`HardDFlash.experiment_configs()` or `SoftKD.experiment_configs()`. Set the
+run's name and output directory, then override the settings that vary.
+Preview the soft-KD temperature comparison with
+`python scripts/run_train_jobs.py --experiment dflash-soft-kd/higher-temperature --dry`.
+The registry in `src/orchestration/named/registry.py` holds one entry per family.
+
 ## MLSpace pilot artifacts
 
-`src/experiments/pilot.py` defines the pilot registry and numerical settings.
-`python run_train_jobs.py --dry` and `python run_eval.py --dry` print plans without
+`python scripts/run_train_jobs.py --dry` and `python scripts/run_eval.py --dry` print plans without
 API calls, credentials or writes. Submission requires the read-only shared `mls`
-package in the existing environment. Run `python run_train_jobs.py --phase prepare`
+package in the existing environment. Run `python scripts/run_train_jobs.py --phase prepare`
 first: this reuses pinned FineWeb-Edu cache files where present, downloads only
 missing pilot shards, tokenizes them, and measures both methods with four-GPU DDP.
-Inspect `prepared.json`, then `python run_train_jobs.py` submits training.
-`python run_eval.py` submits the downstream tasks after training succeeds.
+Inspect `prepared.json`, then `python scripts/run_train_jobs.py` submits training.
+`python scripts/run_eval.py` submits the downstream tasks after training succeeds.
 
-Pilot workers write directly to the shared NFS target in `src/experiments/environment.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
-checkpoints and evaluation outputs, `sanity` holds throughput probes, `code` holds
-immutable committed snapshots, `hf` holds downloaded HF shards, and `submissions`
-holds full job-ID receipts. The existing project venv is reused; do not mutate its
-dependencies while jobs are running. Local metrics are always saved as JSONL.
-
-Preparation and downstream evaluation have separate timeouts from the main
-training limit. Queue time is not included in runtime estimates. A failed job has
-no success marker and can be resubmitted; successful and active jobs are skipped.
+Each pilot config declares its final training and evaluation directories. The
+launcher skips any existing destination. Before sending a job, it reserves the
+path under the shared `in_progress/` tree. The worker writes partial results
+there and publishes the final directory by rename. Failed attempts are
+preserved under `failed/`. Use a new destination to rerun a completed phase.
+A pending submission with an unknown outcome keeps its reservation until
+MLSpace confirms its status. Shared input memmaps remain under `runs/data`.
 
 ### Longer training
 
 The longer comparison uses `SPS_EXPERIMENT_SUITE=10b` with the same launchers:
-`SPS_EXPERIMENT_SUITE=10b python run_train_jobs.py --phase prepare`, followed by
-`SPS_EXPERIMENT_SUITE=10b python run_train_jobs.py` and, after completion,
-`SPS_EXPERIMENT_SUITE=10b python run_eval.py`. Its artifacts and submission receipts
+`SPS_EXPERIMENT_SUITE=10b python scripts/run_train_jobs.py --phase prepare`, followed by
+`SPS_EXPERIMENT_SUITE=10b python scripts/run_train_jobs.py` and, after completion,
+`SPS_EXPERIMENT_SUITE=10b python scripts/run_eval.py`. Its artifacts and submission receipts
 are isolated from the default pilot; the cache and staged code are shared.
 
 ## Citation

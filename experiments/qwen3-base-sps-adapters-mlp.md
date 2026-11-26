@@ -2,7 +2,7 @@
 Adding MLP projections to attention DoRA may improve source-quality retention at matched data exposure.
 
 # Setup
-Training function: `scripts.qwen_adapter_worker.train`.
+Training function: `workloads.adaptation.qwen_adapter_worker.train`.
 
 # Results
 Pending.

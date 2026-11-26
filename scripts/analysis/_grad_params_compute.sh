@@ -65,7 +65,7 @@ if [[ -f "${out_dir}/${round}/shard_${shard}/metadata.json" ]]; then
 fi
 
 echo "=== task ${task} (ORDER=${ORDER:-asc} eff=${eff}): model_ord=${model_ord} (${kind} ${label}) ${round} shard=${shard}/${NUM_SHARDS} -> ${out_dir} ==="
-uv run python -m scripts.analysis.gradient_analysis_params \
+uv run python scripts/analysis/gradient_analysis_params.py \
   --spec "${kind}:${label}:${ckpt}" \
   --warp-specialize "${warp}" \
   --batched-gradient-mode per_row_position \

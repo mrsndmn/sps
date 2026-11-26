@@ -4,7 +4,7 @@ Two-stage zero-window SPS adaptation transfers to pretrained Qwen3, and frozen-s
 
 # Setup
 
-`scripts.ar_sps_train.main` with the Qwen registries in `src/experiments/ar_sps_config.py`. Each suite prepares one native-tokenizer corpus shared by fresh staged CE and KD students, and includes its original AR baseline. Native Qwen3 layers retain Q/K normalization and configured attention dimensions. Only full-attention Qwen3 configurations are supported. Numeric design, pinned model revisions and budgets live in code.
+`workloads.adaptation.ar_sps_train.main` with the Qwen registries in `src/experiments/ar_sps_config.py`. Each suite prepares one native-tokenizer corpus shared by fresh staged CE and KD students, and includes its original AR baseline. Native Qwen3 layers retain Q/K normalization and configured attention dimensions. Only full-attention Qwen3 configurations are supported. Numeric design, pinned model revisions and budgets live in code.
 
 # Results
 

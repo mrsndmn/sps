@@ -1,0 +1,226 @@
+"""Shared MLSpace launcher for instruct reruns and continuations."""
+from experiments.launch import matching_runs
+from experiments.family_cli import worker_child
+
+import argparse
+import json
+import os
+import shlex
+import signal
+import subprocess
+import time
+from importlib import import_module
+from pathlib import Path
+
+from orchestration import mlspace_launch as launch
+
+
+class Rerun:
+    def __init__(self, family, common, config, train_variant, *, continuation=False):
+        self.family = family
+        self.sc = common
+        self.c = config
+        self.train_variant = train_variant
+        self.continuation = continuation
+        self.script = f"scripts/instruction/{family}_run.py"
+
+    def experiments(self, pattern=None):
+        return matching_runs((x for x in self.sc.e.collect_experiments() if x.trainable), pattern)
+
+    def payload(self, variant, phase, exp, workload, staged, author, nick):
+        body = launch.payload(phase, exp.name, staged, author, nick, training_gpus=exp.num_gpus)
+        command = [
+            str(self.sc.e.PYTHON),
+            self.script,
+            "--worker",
+            "--variant",
+            variant,
+            "--phase",
+            phase,
+            "--filter",
+            exp.name,
+        ]
+        if workload:
+            command += ["--workload", workload]
+        body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(command)
+        step = f" step{variant}" if self.continuation else ""
+        body["job_desc"] = (
+            f"sps-{self.c.ROOT_NAMES[variant]} {phase} {self.sc.arm_name(exp, workload)}{step} #{author} @{nick}"
+        )
+        return body
+
+    def hours(self, phase, workload):
+        return (
+            self.c.TRAIN_HOURS if phase == "train" else self.c.WORKLOAD_HOURS[workload]
+        )
+
+    def reserve(self, variant, phase, name, workload, exp):
+        path = self.sc.root(variant) / "budget.json"
+        ledger = json.loads(path.read_text()) if path.exists() else {"attempts": []}
+        cost = self.hours(phase, workload) * (exp.num_gpus if phase == "train" else launch.EVAL_NUM_GPUS)
+        if (
+            sum(x["gpu_hours"] for x in ledger["attempts"]) + cost
+            > self.c.BUDGETS[variant]
+        ):
+            raise RuntimeError("Rerun GPU-hour reservation cap exceeded")
+        ledger["attempts"].append(
+            {"phase": phase, "name": name, "gpu_hours": cost, "time": time.time()}
+        )
+        launch.store_json(path, ledger)
+
+    def submit(self, args):
+        exps = self.experiments(args.filter)
+        if not exps:
+            raise ValueError("No matching trainable experiments")
+        commit = launch.git("rev-parse", "HEAD")
+        staged = self.sc.e.STAGING_ROOT / commit
+        workloads = (
+            [None]
+            if args.phase == "train"
+            else ([args.workload] if args.workload else self.c.WORKLOADS)
+        )
+        if not args.dry:
+            pending = {(exp.name, workload) for exp in exps for workload in workloads
+                       if launch.pending(self.sc.output_dir(args.variant, exp, workload), args.profile)}
+            exps = [exp for exp in exps if any((exp.name, workload) in pending for workload in workloads)]
+            if not exps:
+                return
+            self.sc.source_plan()
+            if self.continuation:
+                for exp in exps:
+                    self.sc.validate_checkpoint(
+                        args.variant, exp, source=args.phase == "train"
+                    )
+            elif args.phase == "eval":
+                for exp in exps:
+                    self.sc.validate_checkpoint(args.variant, exp)
+        batch = launch.SubmissionBatch(commit, args.profile)
+        jobs = []
+        for exp in exps:
+            for workload in workloads:
+                if not args.dry and (exp.name, workload) not in pending:
+                    continue
+                name = self.sc.arm_name(exp, workload)
+                if self.continuation and workload:
+                    name += f"--step{args.variant}"
+                marker = self.sc.output_dir(args.variant, exp, workload) / (
+                    "trained.json" if args.phase == "train" else "evaluated.json"
+                )
+                if not args.dry and marker.exists():
+                    print("Skip completed:", name)
+                    continue
+                body = self.payload(
+                    args.variant,
+                    args.phase,
+                    exp,
+                    workload,
+                    staged,
+                    args.author_name,
+                    args.telegram_nick,
+                )
+                if args.dry:
+                    launch.print_preview(body, marker.parent, staged, args.phase)
+                    continue
+                job = batch.submit(body, args.phase, name, marker.parent,
+                    before_send=lambda: self.reserve(args.variant, args.phase, name, workload, exp))
+                jobs.append(job)
+                print(json.dumps(job), flush=True)
+        if args.dry:
+            return
+        print("__MLS_JOBS_JSON__")
+        print(
+            json.dumps({"phase": args.phase, "variant": args.variant, "jobs": jobs}),
+            flush=True,
+        )
+
+    def worker(self, args):
+        exps = [x for x in self.experiments() if x.name == args.filter]
+        if len(exps) != 1:
+            raise ValueError("Select exactly one experiment")
+        exp = exps[0]
+        if args.phase == "eval" and not args.workload:
+            raise ValueError("Select one eval workload")
+        if args.internal:
+            if args.phase != "eval":
+                raise ValueError("Training uses torchrun")
+            evaluator = import_module(f"workloads.instruction.{self.family}_eval")
+            return evaluator.evaluate(args.variant, exp, args.workload, args.limit)
+        self.sc.source_plan()
+        if args.phase == "train":
+            command = [
+                str(self.sc.e.PYTHON),
+                "-m",
+                "torch.distributed.run",
+                "--standalone",
+                f"--nproc_per_node={exp.num_gpus}",
+                f"scripts/instruction/{self.family}_train.py",
+                "--filter",
+                exp.name,
+            ]
+        else:
+            command = [
+                str(self.sc.e.PYTHON),
+                self.script,
+                "--worker",
+                "--internal",
+                "--variant",
+                args.variant,
+                "--phase",
+                "eval",
+                "--filter",
+                exp.name,
+                "--workload",
+                args.workload,
+            ]
+            if args.limit:
+                command += ["--limit", str(args.limit)]
+        process = subprocess.Popen(worker_child(command), start_new_session=True)
+        try:
+            code = process.wait(timeout=self.hours(args.phase, args.workload) * 3600)
+            if code:
+                raise RuntimeError(f"Rerun worker exited {code}")
+        except BaseException:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            raise
+
+    def main(self):
+        parser = argparse.ArgumentParser()
+        variant_options = (
+            {"default": self.train_variant} if self.continuation else {"required": True}
+        )
+        parser.add_argument(
+            "--variant", choices=tuple(self.c.ROOT_NAMES), **variant_options
+        )
+        parser.add_argument("--phase", choices=("train", "eval"), required=True)
+        parser.add_argument("--workload", choices=self.c.WORKLOADS)
+        parser.add_argument("--filter")
+        parser.add_argument("--worker", action="store_true")
+        parser.add_argument("--internal", action="store_true")
+        parser.add_argument("--limit", type=int)
+        parser.add_argument("--dry", action="store_true")
+        parser.add_argument("--profile", default="default")
+        parser.add_argument("--author_name", default="d.tarasov")
+        parser.add_argument("--telegram_nick", default="mrsndmn")
+        args = parser.parse_args()
+        if args.phase == "train" and (
+            args.variant != self.train_variant or args.workload or args.limit
+        ):
+            parser.error(
+                f"Training requires variant {self.train_variant}, without eval workload or limit"
+            )
+        if args.limit is not None and args.limit < 1:
+            parser.error("Positive limit required")
+        if args.worker:
+            return self.worker(args)
+        if args.internal or args.limit:
+            parser.error("--internal/--limit require --worker")
+        launch.ARTIFACTS_ROOT = self.sc.root(args.variant)
+        launch.RUN_ROOT = launch.ARTIFACTS_ROOT / "runs"
+        if args.dry:
+            return self.submit(args)
+        with launch.submission_lock():
+            return self.submit(args)

@@ -1,6 +1,7 @@
 """Executable definitions for sampling backbone precision."""
 
 from dataclasses import dataclass
+
 from . import sampling_precision as precision
 
 

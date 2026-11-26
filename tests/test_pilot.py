@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 import shlex
 import subprocess
@@ -7,18 +8,19 @@ import os
 
 import pytest
 
-from scripts import experiment_suite as config
-from scripts import mlspace_launch, pilot_run
+from orchestration import experiment_suite as config
+from orchestration import mlspace_launch
+from workloads.pilot import pilot_run
 
 
 def test_long_suite_is_tenfold_and_preserves_pilot_paths():
     script = '''
 import json
-from scripts import experiment_suite as e
-from scripts.mlspace_launch import payload
+from orchestration import experiment_suite as e
+from orchestration.mlspace_launch import payload
 print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),cache=str(e.HF_HOME),
  names=[x.name for x in e.collect_experiments()],budget=e.TRAIN_TOKENS,
- args=e.overrides(e.collect_experiments()[0]),
+ args=e.collect_experiments()[0].arguments(e.RUN_ROOT),
  payload=payload('train',e.collect_experiments()[0].name,e.STAGING_ROOT,'a','b'))))
 '''
     results = {}
@@ -32,16 +34,16 @@ print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),cache=str(e.HF_HOME),
     assert set(short['names']).isdisjoint(long['names'])
     assert long['payload']['env_variables']['SPS_EXPERIMENT_SUITE'] == '10b'
     assert long['payload']['job_desc'] != short['payload']['job_desc']
-    a, b = (dict(x.split('=',1) for x in r['args']) for r in (short,long))
-    assert b['+experiment'] == a['+experiment']
-    for key in ('scheduler.warmup_tokens','scheduler.lr_decay_tokens'):
+    a, b = (r['args'] for r in (short,long))
+    assert b['architecture'] == a['architecture']
+    for key in ('warmup_tokens','lr_decay_tokens'):
         assert int(b[key]) == int(a[key]) * 10
 
 
 def test_runtime_forecast_uses_completed_reference_as_floor(tmp_path, monkeypatch):
     monkeypatch.setattr(pilot_run, 'COMMON_ROOT', tmp_path)
     monkeypatch.setattr(pilot_run, 'SANITY_ROOT', tmp_path / 'probe')
-    exp = config.ExperimentConfig('new', 's_full_attention_20b', reference_name='old')
+    exp = replace(config.collect_experiments()[0], name='new', reference_name='old')
     probe = tmp_path / 'probe/out/new'
     probe.mkdir(parents=True)
     (probe/'metrics.jsonl').write_text('\n'.join(json.dumps(dict(event='train',step_seconds=2)) for _ in range(8)))
@@ -58,14 +60,15 @@ def test_pair_has_matched_budget_and_distinct_methods():
     standard, sps = config.collect_experiments()
     assert 'full_attention' in standard.recipe and 'sps_w0' in sps.recipe
     def args(exp):
-        return dict(s.split('=', 1) for s in config.overrides(exp) if '=' in s)
+        return exp.arguments(config.RUN_ROOT)
     a, b = args(standard), args(sps)
-    for key in ('training.max_tokens', 'training.global_batch_size', 'system.data_root',
-                'scheduler.warmup_tokens', 'scheduler.lr_decay_tokens'):
+    for key in ('max_tokens', 'global_batch_size', 'data_root',
+                'warmup_tokens', 'lr_decay_tokens'):
         assert a[key] == b[key]
-    assert int(a['training.max_tokens']) % config.TOKENS_PER_STEP == 0
+    assert int(a['max_tokens']) % config.TOKENS_PER_STEP == 0
     assert all(e.num_gpus == 4 for e in (standard, sps))
-    assert len(config.collect_experiments('sps_w0')) == 1
+    assert config.collect_experiments(sps.name) == [sps]
+    assert not config.collect_experiments('sps_w0')
 
 
 def test_dry_plans_have_no_api_or_filesystem_side_effects(tmp_path, monkeypatch, capsys):
@@ -85,8 +88,8 @@ def test_eval_invokes_exactly_one_task_per_process():
     exp = config.collect_experiments()[0]
     for task in config.TASKS:
         cmd = config.eval_command(exp, task)
-        assert [x for x in cmd if x.startswith('+tasks=')] == ['+tasks=' + task]
-        assert '+checkpoint=final' in cmd
+        assert cmd[cmd.index('--tasks') + 1] == task
+        assert cmd[cmd.index('--checkpoint') + 1] == 'final'
 
 
 def test_estimator_excludes_startup_and_rejects_incomplete_probe(tmp_path, monkeypatch):
@@ -119,7 +122,15 @@ def test_staging_uses_committed_snapshot(tmp_path, monkeypatch):
     git('remote', 'add', 'origin', 'https://user:credential@example.com/project')
     monkeypatch.setattr(mlspace_launch, 'STAGING_ROOT', tmp_path / 'stages')
     commit = git('rev-parse', 'HEAD')
+    # An independent family can publish the same committed checkout first.
+    rename = Path.rename
+    def publish_concurrently(snapshot, target):
+        import shutil
+        shutil.copytree(snapshot, target)
+        return rename(snapshot, target)
+    monkeypatch.setattr(Path, 'rename', publish_concurrently)
     staged = mlspace_launch.stage_repo(repo, commit)
+    assert list(staged.parent.iterdir()) == [staged]
     (repo / 'tracked').write_text('changed')
     assert (staged / 'tracked').read_text() == 'original'
     assert 'credential' not in (staged / '.git/config').read_text()
@@ -132,22 +143,6 @@ def test_payload_quotes_staging_path():
     assert shlex.quote('/tmp/path with spaces') in body['script']
     assert '--filter ' + shlex.quote('sps example') in body['script']
     assert '\n' not in body['script']
-
-
-def test_design_signature_tracks_inherited_configs(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, 'REPO_ROOT', tmp_path)
-    for name in ('scripts/train.py', 'scripts/evaluate.py', 'conf/model/sps.yaml',
-                 'conf/optimizer/adamw.yaml', 'scripts/experiment_suite.py', 'scripts/suite_registry.py',
-                 'src/experiments/environment.py', 'src/experiments/pilot.py', 'src/experiments/types.py', 'src/experiments/suite.py'):
-        p = tmp_path / name
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text('initial')
-    before = config.design_signature()
-    (tmp_path / 'conf/model/sps.yaml').write_text('changed model dimensions')
-    assert config.design_signature() != before
-    before = config.design_signature()
-    (tmp_path / 'conf/optimizer/adamw.yaml').write_text('changed optimizer')
-    assert config.design_signature() != before
 
 
 def test_submission_lock_prevents_concurrent_entry_and_releases(tmp_path, monkeypatch):
@@ -192,19 +187,12 @@ def test_receipt_blocks_duplicate_when_list_api_lags(tmp_path, monkeypatch, pend
         mlspace_launch.reconcile_receipts(client, {})
 
 
-def test_changed_design_cannot_resume_partial_checkpoint(tmp_path, monkeypatch):
-    monkeypatch.setattr(pilot_run, 'ARTIFACTS_ROOT', tmp_path)
-    monkeypatch.setattr(pilot_run, 'output_dir', lambda e: tmp_path / e.name)
-    exp = config.collect_experiments()[0]
-    dest = tmp_path / exp.name
-    dest.mkdir()
-    (tmp_path / 'prepared.json').write_text(json.dumps(dict(
-        design_signature=config.design_signature(), estimates={exp.name: dict(
-            token_budget=config.TRAIN_TOKENS, projected_training_hours=1)})))
-    (dest / 'run-config.json').write_text(json.dumps(dict(design_signature='old')))
-    (dest / 'ckpt.pt').touch()
-    with pytest.raises(RuntimeError, match='Partial checkpoints'):
-        pilot_run.train(exp)
+def test_existing_output_skips_even_if_empty(tmp_path):
+    from orchestration.run_directory import RunDirectory
+    directory = RunDirectory(tmp_path, tmp_path / "result")
+    directory.output.mkdir()
+    assert not directory.reserve()
+    assert not directory.reservation.exists()
 
 
 def test_lost_submission_response_blocks_retry_until_reconciled(tmp_path, monkeypatch):
@@ -271,8 +259,8 @@ def test_all_evaluation_payloads_use_one_gpu_without_changing_training(suite):
     import subprocess,json,os
     code="""
 import json
-from scripts import experiment_suite as e
-from scripts.mlspace_launch import payload
+from orchestration import experiment_suite as e
+from orchestration.mlspace_launch import payload
 x=e.collect_experiments()[0]
 print(json.dumps({phase:payload(phase,x.name,e.STAGING_ROOT,'a','b')['instance_type'] for phase in ['prepare','train','eval']}))
 """
@@ -308,31 +296,13 @@ def test_staging_uses_linked_worktree_commit(tmp_path, monkeypatch):
     assert not (staged / ".git" / "worktrees").exists()
 
 
-def test_routing_refactor_preserves_known_pilot_design():
-    from scripts.design_compatibility import canonical_signature
-    migrated = '4780e1816b74ecdf53e3e98bc439c1e5f775274129ebcc5df958a0f56f49169a'
-    parent = '344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f'
-    assert canonical_signature(migrated) == parent
-
-
-def test_parallel_marker_rejects_unfreeze_worker():
-    script = '''
-from scripts import experiment_suite as e
-before = e.design_signature()
-e.WORKER_MODULES[e.SUITE] = e.WORKER_MODULES['mtp-unfreeze']
-assert e.design_signature() != before
-'''
-    env = dict(os.environ, SPS_EXPERIMENT_SUITE='mtp-parallel')
-    subprocess.run([sys.executable, '-c', script], env=env, check=True)
-
-
-def test_launcher_rejects_marker_after_worker_change(tmp_path, monkeypatch, capsys):
-    marker = tmp_path / 'prepared.json'
-    marker.write_text(json.dumps({'design_signature': config.design_signature()}))
+def test_existing_pilot_outputs_skip_before_api(monkeypatch, tmp_path, capsys):
+    from orchestration import pilot_launch
+    from orchestration.run_directory import RunDirectory
+    directory = RunDirectory(tmp_path, tmp_path / "results")
+    directory.output.mkdir()
+    monkeypatch.setattr(pilot_launch, 'destination', lambda *args: directory)
     monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
-    monkeypatch.setattr(sys, 'argv', ['launcher', '--dry', '--phase', 'prepare'])
+    monkeypatch.setattr(sys, 'argv', ['launcher'])
     assert mlspace_launch.main() == 0
-    assert 'Skip completed: data-and-probes' in capsys.readouterr().out
-    monkeypatch.setitem(config.WORKER_MODULES, '1b', 'scripts.mtp_run')
-    with pytest.raises(RuntimeError, match='Stale completion marker'):
-        mlspace_launch.main()
+    assert 'Skip existing output' in capsys.readouterr().out

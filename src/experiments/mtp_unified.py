@@ -1,12 +1,20 @@
 """Fixed-checkpoint self-speculation benchmark definitions."""
 
+from dataclasses import dataclass
+
 from .types import ExperimentConfig
 
-UNIFIED_PROMPTS = 64
-UNIFIED_PROMPT_TOKENS = 128
-UNIFIED_NEW_TOKENS = 128
-UNIFIED_WARMUP_PASSES = 2
-UNIFIED_TIMEOUT = 4 * 3600
+
+@dataclass(kw_only=True)
+class FamilyConfig:
+    UNIFIED_PROMPTS: int = 64
+    UNIFIED_PROMPT_TOKENS: int = 128
+    UNIFIED_NEW_TOKENS: int = 128
+    UNIFIED_WARMUP_PASSES: int = 2
+    UNIFIED_TIMEOUT: int = 4 * 3600
+
+
+family_config = FamilyConfig()
 experiment_configs = [
     ExperimentConfig(
         f"mtp_n{n}_self",

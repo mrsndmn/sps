@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from scripts import qwen_adapter_run as cfg
+from workloads.adaptation import qwen_adapter_run as cfg
 
 
 def test_attention_mlp_scope():
     command = """from pathlib import Path
-from scripts import qwen_adapter_run as cfg
+from workloads.adaptation import qwen_adapter_run as cfg
 arm, = cfg.experiment_configs
 assert arm.dora and not arm.rs and arm.lr == 1e-4
 assert set(cfg.TARGETS) == {'q_proj','k_proj','v_proj','o_proj','gate_proj','up_proj','down_proj'}
@@ -75,7 +75,7 @@ def test_adapter_roundtrip(scope, index, select_scope):
     import torch
     from transformers import Qwen3Config, Qwen3ForCausalLM
     from modeling.models.sps.pretrained import PretrainedSPS
-    from scripts.qwen_adapter_worker import attach
+    from workloads.adaptation.qwen_adapter_worker import attach
     import copy
     config = Qwen3Config(vocab_size=64, hidden_size=32, intermediate_size=64,
         num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2, head_dim=8)
@@ -92,3 +92,34 @@ def test_adapter_roundtrip(scope, index, select_scope):
     other.load_state_dict({name: p for name, p in model.named_parameters() if p.requires_grad}, strict=False)
     torch.testing.assert_close(model(ids).logits, other(ids).logits)
     assert not torch.equal(before, other(ids).logits)
+
+
+def test_archived_winner_uses_the_checkpoint_cohort(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "ROOT", tmp_path)
+    for i, arm in enumerate(cfg.experiment_configs):
+        folder = cfg.directory(arm)
+        folder.mkdir(parents=True)
+        weights = folder / "final.pt"
+        weights.write_bytes(arm.name.encode())
+        (folder / "trained.json").write_text(json.dumps(dict(
+            arm=arm.name, step=cfg.END, commit="archived", val_nll=i,
+            sha256=cfg.digest(weights))))
+    assert cfg.winner() == cfg.experiment_configs[0]
+    marker = folder / "trained.json"
+    row = json.loads(marker.read_text())
+    row["commit"] = "another cohort"
+    marker.write_text(json.dumps(row))
+    with pytest.raises(ValueError):
+        cfg.winner()
+
+
+def test_worker_uses_parsed_arm_learning_rate():
+    code = """
+from experiments.family_cli import read_worker_arguments
+from experiments.qwen_adapter_run import experiment_configs
+name = experiment_configs[0].name
+read_worker_arguments([f"--cfg.qwen_adapter_run.experiment_configs.{name}.lr=0.12345"])
+from workloads.adaptation.qwen_adapter_run import experiment_configs as worker_rows
+assert next(arm.lr for arm in worker_rows if arm.name == name) == 0.12345
+"""
+    subprocess.run([sys.executable, "-c", code], check=True)

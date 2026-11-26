@@ -40,8 +40,8 @@ def test_rejection_rolls_back_all_groups_and_reuses_verified_work(accepted):
 @pytest.mark.parametrize('budget',[0,1,2,3,7])
 @pytest.mark.parametrize('horizons',[2,3,4])
 def test_unified_greedy_matches_same_checkpoint_p1(budget,horizons):
-    from scripts.mtp_unified_evaluate import generate
-    from scripts.mtp_evaluate import probabilities
+    from workloads.speculative.mtp_unified_evaluate import generate
+    from workloads.speculative.mtp_evaluate import probabilities
     m=SPSMTP(tiny().reference,horizons,backend='sdpa').eval();prefix=torch.tensor([1,2])
     ids,result,engine,_,_=generate(m,prefix,budget,'greedy',1337)
     history=prefix;want=[]
@@ -58,18 +58,18 @@ def test_unified_suite_is_evaluation_only_and_uses_continuation_markers(tmp_path
     for n in (2,3,4):
         marker=tmp_path/f'mtp-unfreeze/runs/out/s_sps_mtp_n{n}_unfreeze_ce_50m/trained.json'
         marker.parent.mkdir(parents=True);marker.write_text('{}')
-    isolated=f"from scripts import experiment_suite as e;from pathlib import Path;import runpy,sys;e.COMMON_ROOT=Path({str(tmp_path)!r});e.ARTIFACTS_ROOT=e.COMMON_ROOT/'mtp-unified';e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs';sys.argv=['run_eval.py','--dry'];runpy.run_path('run_eval.py',run_name='__main__')"
+    isolated=f"from orchestration import experiment_suite as e;from pathlib import Path;import runpy,sys;e.COMMON_ROOT=Path({str(tmp_path)!r});e.ARTIFACTS_ROOT=e.COMMON_ROOT/'mtp-unified';e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs';sys.argv=['scripts/run_eval.py','--dry'];runpy.run_path('scripts/run_eval.py',run_name='__main__')"
     r=subprocess.run(['python','-c',isolated],env={**os.environ,'SPS_EXPERIMENT_SUITE':'mtp-unified'},capture_output=True,text=True)
     assert r.returncode==0,r.stderr
-    assert r.stdout.count('scripts.mtp_unified_evaluate')==3
+    assert r.stdout.count('scripts/speculative/mtp_unified_evaluate.py')==3
     assert 'a100.1gpu' in r.stdout
-    r=subprocess.run(['python','run_train_jobs.py','--phase','train','--dry'],env={**os.environ,'SPS_EXPERIMENT_SUITE':'mtp-unified'},capture_output=True,text=True)
+    r=subprocess.run(['python','scripts/run_train_jobs.py','--phase','train','--dry'],env={**os.environ,'SPS_EXPERIMENT_SUITE':'mtp-unified'},capture_output=True,text=True)
     assert r.returncode!=0 and 'evaluation-only' in r.stderr
 
 
 def test_sampling_anchor_and_residual_match_self_target(monkeypatch):
     from types import SimpleNamespace
-    import scripts.mtp_unified_evaluate as ev
+    import workloads.speculative.mtp_unified_evaluate as ev
     target=torch.tensor([[.75,.25,0.,0.,0.],[.2,.8,0.,0.,0.]])
     config=SimpleNamespace(eos_token_id=2,pad_token_id=3,predict_token_id=4)
     class Engine:
@@ -91,7 +91,7 @@ def test_sampling_anchor_and_residual_match_self_target(monkeypatch):
 @pytest.mark.skipif(not torch.cuda.is_available(),reason='CUDA fused attention/native comparison')
 def test_fused_cuda_matches_full_horizons_and_native_p1():
     from modeling.models.sps import SPSModel,SPSConfig
-    from scripts.mtp_evaluate import probabilities
+    from workloads.speculative.mtp_evaluate import probabilities
     from modeling.models.sps.parallel_verify import ParallelPrefixVerifier
     ref=SPSModel(SPSConfig(vocab_size=39,block_size=32,n_layer=2,n_head=2,
         hidden_size=128,intermediate_size=192,eos_token_id=36,pad_token_id=37,

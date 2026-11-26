@@ -7,12 +7,13 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from scripts import sched_common as sc, sched_config as c
+from workloads.instruction import sched_common as sc
+from experiments import sched_config as c
 
 
 def run(*args):
-    return subprocess.run([sys.executable,'-c','import tempfile; from pathlib import Path; from scripts import sched_run as r; t=tempfile.TemporaryDirectory(); r.sc.e.COMMON_ROOT=Path(t.name); r.main()',*args],capture_output=True,text=True,
-        env=dict(os.environ,SPS_EXPERIMENT_SUITE=c.SOURCE_SUITE))
+    return subprocess.run([sys.executable,'-c','import tempfile; from pathlib import Path; from workloads.instruction import sched_run as r; t=tempfile.TemporaryDirectory(); r.sc.e.COMMON_ROOT=Path(t.name); r.main()',*args],capture_output=True,text=True,
+        env=dict(os.environ,SPS_EXPERIMENT_SUITE=c.family_config.SOURCE_SUITE))
 
 
 @pytest.mark.parametrize('variant,phase,count,gpus', [('step384','eval',20,1),('cosine','train',4,4),('cosine','eval',20,1)])
@@ -20,10 +21,10 @@ def test_dry_jobs_are_isolated_and_have_required_gpu_count(variant,phase,count,g
     p=run('--variant',variant,'--phase',phase,'--dry')
     assert p.returncode==0,p.stderr
     assert p.stdout.count(f'"instance_type": "a100.{gpus}gpu"')==count
-    assert p.stdout.count('scripts.sched_run --worker')==count
+    assert p.stdout.count('scripts/instruction/sched_run.py --worker')==count
     assert 'qwen3_instruct_original_ar' not in p.stdout
     if phase=='eval':
-        for workload in c.WORKLOADS:
+        for workload in c.family_config.WORKLOADS:
             assert p.stdout.count('--workload '+workload)==4
 
 
@@ -33,32 +34,6 @@ def test_mode_filter_and_invalid_worker_routes():
     assert run('--variant','step384','--phase','train','--dry').returncode!=0
     assert run('--variant','cosine','--phase','train','--limit','1','--dry').returncode!=0
     assert run('--variant','step384','--phase','eval','--worker','--filter','qwen3_instruct_staged_sps_ce').returncode!=0
-
-
-def test_legacy_signature_and_old_eval_routes_unchanged():
-    p=subprocess.run([sys.executable,'-c','from scripts import sched_common as s; assert s.e.design_signature()==s.c.SOURCE_SIGNATURE; s.signature()'],
-        env=dict(os.environ,SPS_EXPERIMENT_SUITE=c.SOURCE_SUITE),capture_output=True,text=True)
-    assert p.returncode==0,p.stderr
-
-
-@pytest.mark.parametrize(
-    "family, archived",
-    [
-        ("sched", "7408b3ccf0455895e306d0d5272e2fad41d3e70ae8c6fbb5612210d6d18347ae"),
-        ("extend", "4c2035c32194d92c51ef749eac238607bec051698f475288a1b699565f0e36d7"),
-    ],
-)
-def test_shared_rerun_code_matches_archived_design_and_tracks_changes(tmp_path, family, archived):
-    from scripts.design_compatibility import rerun_signature
-
-    folder = Path(sc.__file__).parent
-    assert rerun_signature(family, c.SOURCE_SIGNATURE, folder) == archived
-    for source in [*folder.glob(f"{family}_*.py"), folder / "rerun_jobs.py", folder / "rerun_eval.py",
-                   folder.parents[1] / "src/experiments" / f"{family}_config.py"]:
-        (tmp_path / source.name).write_bytes(source.read_bytes())
-    migrated = rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path)
-    (tmp_path / "rerun_eval.py").write_text("changed")
-    assert rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path) != migrated
 
 
 @pytest.mark.parametrize('total',[102,410,512])
@@ -72,13 +47,13 @@ def test_warmup_cosine_endpoints_and_monotonicity(total):
 
 
 def test_sps_stage_reset_and_ar_single_schedule():
-    from scripts import instruct_config as source
+    from experiments import instruct_config as source
     plan=dict(steps=512,stage_steps=102)
-    assert sc.learning_rate('staged_sps',30,plan)==source.EMBED_LR
+    assert sc.learning_rate('staged_sps',30,plan)==source.family_config.EMBED_LR
     assert sc.learning_rate('staged_sps',101,plan)==0
-    assert sc.learning_rate('staged_sps',102,plan)==pytest.approx(source.FULL_LR/123)
-    assert sc.learning_rate('staged_sps',224,plan)==source.FULL_LR
-    assert sc.learning_rate('continued_ar',153,plan)==source.FULL_LR
+    assert sc.learning_rate('staged_sps',102,plan)==pytest.approx(source.family_config.FULL_LR/123)
+    assert sc.learning_rate('staged_sps',224,plan)==source.family_config.FULL_LR
+    assert sc.learning_rate('continued_ar',153,plan)==source.family_config.FULL_LR
     # Restoring from a checkpoint never re-starts the warmup.
     for recipe in ('staged_sps','continued_ar'):
         full=[sc.learning_rate(recipe,i,plan) for i in range(512)]
@@ -86,15 +61,32 @@ def test_sps_stage_reset_and_ar_single_schedule():
             assert full[cursor:]==[sc.learning_rate(recipe,i,plan) for i in range(cursor,512)]
 
 
-def test_terminal_marker_skips_and_stale_marker_fails(tmp_path,monkeypatch,capsys):
-    from scripts import mlspace_launch as launch, sched_run as r
+def test_schedule_skips_existing_output(tmp_path,monkeypatch,capsys):
+    from orchestration import mlspace_launch as launch
+    from workloads.instruction import sched_run as r
     exp=SimpleNamespace(name='example',trainable=True)
-    monkeypatch.setattr(sc.e,'collect_experiments',lambda _: [exp])
+    monkeypatch.setattr(sc.e,'collect_experiments',lambda: [exp])
     monkeypatch.setattr(sc,'output_dir',lambda *args:tmp_path)
     monkeypatch.setattr(sc,'signature',lambda:'current')
     monkeypatch.setattr(launch,'git',lambda *args:'commit')
     marker=tmp_path/'evaluated.json';marker.write_text(json.dumps({'design_signature':'current'}))
-    args=SimpleNamespace(filter=None,phase='eval',variant='step384',workload='ifeval-thinking',dry=True)
-    r.submit(args);assert 'Skip completed' in capsys.readouterr().out
+    args=SimpleNamespace(filter=None,phase='eval',variant='step384',workload='ifeval-thinking',dry=False,profile="default")
+    r.submit(args);assert 'Skip existing output' in capsys.readouterr().out
     marker.write_text(json.dumps({'design_signature':'old'}))
-    with pytest.raises(RuntimeError,match='Stale'):r.submit(args)
+    r.submit(args)
+    assert 'Skip existing output' in capsys.readouterr().out
+
+
+def test_rerun_allocation_matches_selected_row_and_budget(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from experiments.instruct_config import experiment_configs
+    from workloads.instruction.sched_run import _runner
+
+    exp = replace(next(row for row in experiment_configs if row.trainable), num_gpus=8)
+    monkeypatch.setattr(_runner.sc, "root", lambda variant: tmp_path)
+    for phase, workload, gpus in (("train", None, 8), ("eval", "quality", 1)):
+        payload = _runner.payload("cosine", phase, exp, workload, tmp_path, "author", "nick")
+        assert payload["instance_type"] == f"a100.{gpus}gpu"
+        _runner.reserve("cosine", phase, exp.name, workload, exp)
+        last = json.loads((tmp_path / "budget.json").read_text())["attempts"][-1]
+        assert last["gpu_hours"] == gpus * _runner.hours(phase, workload)

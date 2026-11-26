@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import serving_runtime as runtime
+from workloads.serving import serving_runtime as runtime
 
 
 def test_runtime_job_uses_one_gpu_and_preserves_project_interpreter():
@@ -15,7 +15,7 @@ def test_runtime_job_uses_one_gpu_and_preserves_project_interpreter():
     assert str(runtime.launch.PYTHON) in payload["script"]
     assert "--worker" in payload["script"]
     assert runtime.RUNTIME.parent == runtime.ENV_ROOT
-    assert runtime.c.VLLM_BASE in runtime.WHEEL
+    assert runtime.c.family_config.VLLM_BASE in runtime.WHEEL
 
 
 def test_runtime_rejects_overwriting_existing_environment(tmp_path, monkeypatch):

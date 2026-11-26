@@ -1,9 +1,9 @@
 """Offline checks for native chat scoring and SPS cache generation."""
 import pytest
 import torch
-from scripts.instruct_generation import (split_response, parse_answer, document_seed,
+from workloads.instruction.instruct_generation import (split_response, parse_answer, document_seed,
                                           generate, sample, mmlu_messages)
-from scripts.instruct_evaluate import aggregate, validate_saved, digest
+from workloads.instruction.instruct_evaluate import aggregate, validate_saved, digest
 
 
 class Tokenizer:

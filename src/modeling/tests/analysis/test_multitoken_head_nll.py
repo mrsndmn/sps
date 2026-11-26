@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from modeling.models.full_attention_model import Model, ModelConfig
-from scripts.analysis import multitoken_head_nll as M
+from analysis import multitoken_head_nll as M
 
 
 def test_masking():

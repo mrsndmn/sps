@@ -31,3 +31,7 @@
 **EAGLE-3 control** — Speculative decoding that pairs a compatible EAGLE-3 proposer with the AR Qwen control. Its speed baseline is ordinary decoding with the AR Qwen control.
 
 **Matched-verifier speedup** — The ratio of ordinary decoding time to speculative decoding time for the same verifier on a matched workload. Each verifier has its own baseline, and results include absolute latency, throughput and quality.
+
+## Experiment definitions
+
+**Named experiment** — A run or collective operation selected by an exact `FAMILY/NAME` key. A family defines its available phases. A phase can take options such as a checkpoint step or an evaluation workload.

@@ -1,22 +1,35 @@
 import json
+import shlex
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-from scripts import draft_sweep as sweep
+from workloads.serving import draft_sweep as sweep
+
+
+def test_worker_entry_point_runs_from_staged_directory():
+    staged = Path(__file__).resolve().parents[1]
+    body = sweep.payload("train", sweep.TRAINER, staged)
+    _, command = body["script"].split(" && ", 1)
+    _, *worker_args = shlex.split(command)
+    subprocess.run([sys.executable, *worker_args, "--help"], cwd=staged, check=True,
+                   stdout=subprocess.DEVNULL)
 
 
 def test_sweep_has_matched_one_gpu_evaluations(monkeypatch):
-    monkeypatch.setattr(sweep.c, "HORIZONS", sweep.HORIZONS)
+    monkeypatch.setattr(sweep.c.family_config, "HORIZONS", sweep.HORIZONS)
     arms = {(exp.arm, exp.mode, exp.draft_tokens) for exp in sweep.experiment_configs}
     assert len(arms) == len(sweep.experiment_configs) == 12
-    for mode in sweep.c.GENERATION:
+    for mode in sweep.c.family_config.GENERATION:
         assert ("ar", mode, 0) in arms
         assert ("sps", mode, 0) in arms
         for draft in (4, 8):
             for arm in ("sps_mtp", "eagle3"):
                 assert (arm, mode, draft) in arms
     for exp in sweep.experiment_configs:
-        args = sweep.engine_arguments(exp, "/test/hf", sweep.c.EAGLE_REVISION)
+        args = sweep.engine_arguments(exp, "/test/hf", sweep.c.family_config.EAGLE_REVISION)
         assert args["max_num_seqs"] == 1
         assert (args.get("speculative_config") or {}).get(
             "num_speculative_tokens", 0
@@ -108,7 +121,7 @@ def test_snapshot_excludes_warmup(tmp_path, monkeypatch, arm):
     vllm = SimpleNamespace(LLM=Engine)
     monkeypatch.setitem(sys.modules, "vllm", vllm)
     monkeypatch.setattr(sweep.bench, "root_for", lambda _: tmp_path)
-    untimed = sweep.c.WARMUP_REQUESTS
+    untimed = sweep.c.family_config.WARMUP_REQUESTS
 
     def run_graph(*_):
         llm = vllm.LLM()
@@ -128,8 +141,8 @@ def test_embedding_phase_enables_decoder_checkpoint_recomputation():
     from transformers import Qwen3Config, Qwen3ForCausalLM
 
     from modeling.models.sps.pretrained import PretrainedSPS
-    from scripts import draft_sweep_train, vllm_sps_train
-    from scripts.vllm_sps_model import QwenSPSMTP, horizon_targets
+    from workloads.serving import draft_sweep_train, vllm_sps_train
+    from workloads.serving.vllm_sps_model import QwenSPSMTP, horizon_targets
 
     config = Qwen3Config(
         vocab_size=32,

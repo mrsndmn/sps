@@ -3,7 +3,7 @@
 #
 # Supersedes submit_generation_timing_correctness_test_gpu.sh and
 # submit_generation_timing_fast_test_gpu.sh. The benchmark hyperparameters come from a
-# cluster-independent config (conf/benchmark/<BENCHMARK>.yaml); everything cluster- or
+# cluster-independent config (src/experiments/speed.py); everything cluster- or
 # hardware-specific is passed as an environment variable here -- nothing is hardcoded.
 #
 # Reproduce the main-table speed columns on any cluster:
@@ -14,7 +14,7 @@
 #   PARTITION=<gpu-partition> ACCOUNT=<slurm-account> GRES=<gres-type> \
 #   bash scripts/benchmark/run.sh
 #
-# BENCHMARK selects conf/benchmark/<BENCHMARK>.yaml and defaults to 'speed' (the only
+# BENCHMARK selects src/experiments/speed.py and defaults to 'speed' (the only
 # shipped config). Add DRY_RUN=1 to print the resolved plan + validate checkpoints first.
 set -euo pipefail
 
@@ -25,7 +25,7 @@ SHARED_OUTPUTS="$(python3 "$ROOT_DIR/src/plotting/output_paths.py")"
 OUT_ROOT="${OUT_ROOT:?Set OUT_ROOT to your checkpoint root (contains <run_name>/<ckpt>)}"
 
 # ---- Optional (cluster-specific) ----
-BENCHMARK="${BENCHMARK:-speed}"        # selects conf/benchmark/<BENCHMARK>.yaml; only 'speed' ships
+BENCHMARK="${BENCHMARK:-speed}"        # selects src/experiments/speed.py; only 'speed' ships
 CKPT_NAME="${CKPT_NAME:-ckpt_tokens_20000145408_final.pt}"
 VAL_BIN="${VAL_BIN:-}"                 # exported to the driver as BENCH_VAL_BIN
 SCALES="${SCALES:-}"                   # blank => use the scales from the config

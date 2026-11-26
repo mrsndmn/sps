@@ -1,41 +1,39 @@
 """Executable definitions for qwen4b drafter train."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
+
 from .environment import COMMON_ROOT
-from .vllm_sps_config import SOURCE_ROOT
+from .vllm_sps_config import family_config as vllm_sps_settings
+SOURCE_ROOT = vllm_sps_settings.SOURCE_ROOT
 
-ROOT = COMMON_ROOT / "qwen4b-drafter"
 
-DATA = SOURCE_ROOT / "runs" / "data"
+@dataclass(kw_only=True)
+class FamilyConfig:
+    ROOT: Path = COMMON_ROOT / "qwen4b-drafter"
+    DATA: Path = SOURCE_ROOT / "runs" / "data"
+    SELECTION_FILE: Path = COMMON_ROOT / "qwen4b-drafter/data/dflash-100k/87586fa22c84f2b2.json"
+    LENGTHS: tuple[int, ...] = (4, 8)
+    TARGET_LAYERS: tuple[int, ...] = (1, 9, 17, 25, 33)
+    CONTEXT: int = 3072
+    DEFAULT_DATASET: str = "smoltalk"
+    PREPARED_DATASET: str = "dflash-100k"
+    ROWS: dict[str, int] = field(default_factory=lambda: {"train": 3072, "val": 64})
+    ANCHORS: int = 16
+    EPOCHS: int = 3
+    ACCUMULATION: int = 8
+    LR: float = 6e-4
+    WARMUP: float = 0.04
+    GAMMA: float = 4.0
+    SEED: int = 1337
+    PROBE_STEPS: int = 3
 
-LENGTHS = (4, 8)
+    @property
+    def DATASETS(self) -> tuple[str, ...]:
+        return (self.DEFAULT_DATASET, self.PREPARED_DATASET)
 
-TARGET_LAYERS = (1, 9, 17, 25, 33)
 
-CONTEXT = 3072
-
-DEFAULT_DATASET = "smoltalk"
-
-PREPARED_DATASET = "dflash-100k"
-DATASETS = (DEFAULT_DATASET, PREPARED_DATASET)
-
-ROWS = {"train": 3072, "val": 64}
-
-ANCHORS = 16
-
-EPOCHS = 3
-
-ACCUMULATION = 8
-
-LR = 6e-4
-
-WARMUP = 0.04
-
-GAMMA = 4.0
-
-SEED = 1337
-
-PROBE_STEPS = 3
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)

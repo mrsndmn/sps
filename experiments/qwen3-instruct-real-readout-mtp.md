@@ -6,8 +6,8 @@ on next-token quality, instruction following and absolute decoding throughput.
 
 ## Setup
 
-Training function for arm A is `scripts.real_readout_train.main`. Arm B reuses
-the completed `scripts.serving.vllm_sps_train.main` run.
+Training function for arm A is `workloads.readout.real_readout_train.main`. Arm B reuses
+the completed `workloads.serving.vllm_sps_train.main` run.
 
 ## Results
 

@@ -1,15 +1,31 @@
-"""Executable definitions for dflash kd train."""
+"""DFlash soft-target distillation runs."""
 
-from dataclasses import replace
+from dataclasses import dataclass
+
+from .dflash_repro import DFlashConfig
 from .environment import COMMON_ROOT
-from . import dflash_repro_train as hard
 
-ROOT = COMMON_ROOT / "dflash-kd"
 
-TEMPERATURE = 1.0
+@dataclass(frozen=True, kw_only=True)
+class SoftKD(DFlashConfig):
+    script = "scripts/distillation/dflash_kd.py"
+    train_gpus: int = 8
+    temperature: float = 1.0
 
-experiment_configs = [
-    replace(hard.EXPERIMENT, name="qwen3-4b-dflash-b16-soft-kd", num_gpus=8),
-]
-
-(EXPERIMENT,) = experiment_configs
+    @classmethod
+    def experiment_configs(cls) -> list["SoftKD"]:
+        root = COMMON_ROOT / "dflash-kd"
+        return [
+            cls(
+                name="qwen3-4b-dflash-b16-soft-kd",
+                output_dir=root / "45d1905c50658e45",
+                milestones=[5000, 10000],
+                archived_eval_pattern="gsm8k-step-{step:05d}-5938c51ca9ec",
+            ),
+            cls(
+                name="higher-temperature",
+                output_dir=root / "higher-temperature",
+                temperature=2.0,
+                milestones=[5000, 10000],
+            ),
+        ]

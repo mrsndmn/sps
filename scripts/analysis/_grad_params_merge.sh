@@ -20,7 +20,7 @@ cd "$ROOT_DIR"
 while IFS=$'\t' read -r out_dir kind label ckpt warp; do
   [[ -z "${out_dir}" ]] && continue
   echo "=== merge ${out_dir} (${kind} ${label}) ==="
-  uv run python -m scripts.analysis.gradient_analysis_params --merge "${out_dir}"
+  uv run python scripts/analysis/gradient_analysis_params.py --merge "${out_dir}"
 done < "$MANIFEST"
 
 echo "All merges complete -> ${OUTPUT_ROOT}"

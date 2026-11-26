@@ -4,7 +4,7 @@ Zero-window SPS adaptation can preserve the source model's accuracy when MMLU an
 
 # Setup
 
-`scripts.mmlu_run.evaluate`; executable protocol and checkpoint registry in `src/experiments/mmlu_config.py`, prompt, generation and answer extraction in `scripts/evaluation/mmlu_generation.py`.
+`workloads.evaluation.mmlu_run.evaluate`; executable protocol and checkpoint registry in `src/experiments/mmlu_config.py`, prompt, generation and answer extraction in `src/workloads/evaluation/mmlu_generation.py`.
 
 # Results
 

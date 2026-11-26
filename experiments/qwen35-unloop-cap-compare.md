@@ -4,7 +4,7 @@ The Unloop checkpoint can complete more thinking answers within the same generat
 
 ## Setup
 
-Evaluation functions are `scripts.qwen35_cap_compare.generate` and `scripts.qwen35_cap_compare.summarize`.
+Evaluation functions are `workloads.evaluation.qwen35_cap_compare.generate` and `workloads.evaluation.qwen35_cap_compare.summarize`.
 
 ## Results
 

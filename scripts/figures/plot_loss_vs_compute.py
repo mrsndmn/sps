@@ -2,7 +2,7 @@
 """Pre-decay validation NLL vs. training FLOPs for the Standard/SPS x size grid.
 
 Pulls per-run validation trajectories from W&B (``--entity``/``--project``, defaulting to
-``$WANDB_ENTITY`` and the project ``conf/logging/default.yaml`` trains into), truncates to
+``$WANDB_ENTITY`` and the project ``experiments.worker_args.LoggingArgs`` trains into), truncates to
 the constant-LR (pre-decay) phase, converts tokens to
 training FLOPs with the term-by-term DeepMind-convention accounting in
 ``plotting.flops``, Gaussian-smooths each trajectory, and renders a single publication

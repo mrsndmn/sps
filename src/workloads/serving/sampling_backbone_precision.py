@@ -1,0 +1,160 @@
+"""FP16-backbone control for cached verification discrepancies with FP32 head.
+
+Same FP32 source export and previous prefix/output cases. Both weight rounding
+and backbone arithmetic change when selecting FP16 instead of BF16; this is not
+an arithmetic-only intervention. FP16 has a smaller exponent range; nonfinite
+distributions fail validation. Original failed-gate evidence stays immutable.
+"""
+from orchestration.named.publication import work_path
+from experiments.launch import run_filter
+import argparse
+import json
+import math
+from pathlib import Path
+import shlex
+import time
+from unittest.mock import patch
+
+from workloads.serving import sampling_precision as precision
+from workloads.serving import sampling_cache_trace as cache
+from workloads.serving import sampling_audit as audit
+from workloads.serving import sampling_trace as trace
+from orchestration import mlspace_launch as launch
+
+from experiments.sampling_backbone_precision import (
+    Experiment,
+    experiment_configs,
+    Job,
+    job_configs,
+)
+
+ROOT = precision.ROOT.parent / 'sps-sampling-backbone-precision'
+SOURCE = precision.root(precision.REFERENCE_JOB)
+
+
+def root(job):
+    return work_path(ROOT / 'runs/out' / job.name)
+
+
+def identity():
+    prior = json.loads((SOURCE / 'identity.json').read_text())
+    if prior != precision.recorded_identity(precision.REFERENCE_JOB):
+        raise RuntimeError('Precision baseline inputs changed')
+    files = [SOURCE / 'report.json', cache.root(cache.REFERENCE_JOB) / 'report.json', cache.root(cache.REFERENCE_JOB) / 'cases.json']
+    for name, arm in [('fp32head-four', 'sps'), ('fp32head-mtp', 'sps_mtp')]:
+        files.append(SOURCE / name / 'decode' / f'{arm}-eager.json')
+        dist_arm = 'sps_four_slots' if arm == 'sps' else arm
+        files += [SOURCE / name / 'distributions' / f'{dist_arm}.{s}' for s in ('json', 'npz')]
+    return dict(audit=prior['audit'], precision=prior, evidence={str(p): audit.common.file_hash(p) for p in files})
+
+
+class BackbonePrecisionWorkerExtension(precision.PrecisionWorkerExtension):
+    def sps_backbone_precision_info(self):
+        import torch
+        model = self.model_runner.model
+        parameters = list(model.parameters())
+        return dict(parameter_dtypes=sorted({str(p.dtype) for p in parameters if p.is_floating_point()}),
+                    finite=all(bool(torch.isfinite(p).all().item()) for p in parameters),
+                    **self.sps_precision_info())
+
+
+def engine_worker(exp, task, job):
+    import vllm
+    original = vllm.LLM
+    observed = []
+    class BackboneLLM(original):
+        def __init__(self, *args, **kwargs):
+            # precision.engine_worker sets the head and trace extension first;
+            # this outer intervention substitutes dtype and an inherited extension.
+            kwargs.update(dtype=exp.dtype,
+                          worker_extension_cls='workloads.serving.sampling_backbone_precision.BackbonePrecisionWorkerExtension')
+            super().__init__(*args, **kwargs)
+            observed.extend(self.collective_rpc('sps_backbone_precision_info'))
+            if len(observed) != 1 or observed[0]['parameter_dtypes'] != ['torch.float16'] or not observed[0]['finite']:
+                raise RuntimeError('FP16 weights absent or nonfinite after conversion')
+            if observed[0]['head_dtype'] != 'torch.float32':
+                raise RuntimeError('Expected unchanged FP32 head')
+    destination_root = root(job)
+    with patch.object(vllm, 'LLM', BackboneLLM), patch.object(precision, 'root', lambda job: destination_root):
+        precision.engine_worker(exp, task, job)
+    launch.store_json(root(job) / exp.name / task / 'backbone.json', dict(experiment=exp.__dict__, observed=observed))
+
+
+def validate_decodes(group):
+    for row in group["samples"]:
+        values = row["sampled_logprobs"]
+        if len(values) != len(row["tokens"]) or not all(math.isfinite(v) for v in values):
+            raise RuntimeError("Missing or nonfinite sampled log probabilities")
+
+
+def report(job):
+    cases = json.loads((precision.TRACE_SOURCE / 'cases.json').read_text())
+    matrices = {}
+    for exp in experiment_configs:
+        matrices[exp.name] = precision.load_matrix(root(job) / exp.name / 'distributions', exp.arm, cases)
+    for name, arm in [('fp32head-four', 'sps_four_slots'), ('fp32head-mtp', 'sps_mtp')]:
+        matrices[name] = precision.load_matrix(SOURCE / name / 'distributions', arm, cases)
+    comparisons = [dict(case=c['name'], a=a, b=b, **trace.compare(matrices[a][i], matrices[b][i]))
+                   for i, c in enumerate(cases) for a, b in
+                   [('fp16-four', 'fp16-mtp'), ('fp32head-four', 'fp16-four'), ('fp32head-mtp', 'fp16-mtp')]]
+    decodes = {exp.name: json.loads((root(job) / exp.name / 'decode' /
+                f"{'sps' if exp.arm == 'sps_four_slots' else exp.arm}-eager.json").read_text())
+               for exp in experiment_configs}
+    for group in decodes.values():
+        validate_decodes(group)
+    cached = audit.compare_decodes({'sps-eager': decodes['fp16-four'], 'mtp': decodes['fp16-mtp']})
+    result = dict(identity=json.loads((root(job) / 'identity.json').read_text()), comparisons=comparisons,
+                  cached=cached, passed=True, diagnostic_completed=True,
+                  scope='FP16-backbone numerical control with FP32 head; weight rounding and arithmetic both change from the same FP32 source export. Diagnostic completion is not a pass of the original BF16 sampling gate. Finite-weight and full-distribution checks do not prove all cached activations finite.')
+    launch.store_json(root(job) / 'report.json', result)
+    launch.store_json(root(job) / 'evaluated.json', result)
+
+
+def worker(job):
+    current = identity()
+    path = root(job) / 'identity.json'
+    if path.exists() and json.loads(path.read_text()) != current:
+        raise RuntimeError('Backbone diagnostic inputs changed')
+    launch.store_json(path, current)
+    env = audit.runtime.runtime_environment()
+    env.update(SPS_VLLM_SOURCE=str(audit.graphs.SITE), VLLM_USE_V2_MODEL_RUNNER='0')
+    env['PYTHONPATH'] = str(audit.graphs.SITE) + ':' + env.get('PYTHONPATH', str(Path.cwd()) + ':' + str(Path.cwd() / 'src'))
+    deadline = time.monotonic() + job.hours * 3600 - 300
+    for exp in experiment_configs:
+        for task in ('distributions', 'decode'):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError('Backbone precision deadline exceeded')
+            audit.bench.child([audit.runtime.RUNTIME / 'bin/python', 'scripts/serving/sampling_backbone_precision.py', '--filter', job.name,
+                               '--engine-worker', exp.name, '--task', task], env, remaining / 3600)
+    report(job=job)
+
+
+def payload(exp, staged):
+    body = audit.bench.payload(audit.source.Experiment(exp.name, 'audit'), staged, 'audit')
+    body['job_desc'] = f'sps-sampling-backbone-precision {exp.name} #d.tarasov @mrsndmn'
+    body['script'] = f'cd {shlex.quote(str(staged))} && ' + shlex.join([str(launch.PYTHON), 'scripts/serving/sampling_backbone_precision.py', '--worker', '--filter', exp.name])
+    return body
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--dry', action='store_true')
+    parser.add_argument('--worker', action='store_true')
+    parser.add_argument('--engine-worker', choices=[e.name for e in experiment_configs])
+    parser.add_argument('--task', choices=('distributions', 'decode'))
+    jobs = run_filter(parser, job_configs)
+    args = parser.parse_args()
+    job = jobs[args.filter]
+    if args.engine_worker:
+        if not args.task:
+            parser.error('--engine-worker requires --task')
+        return engine_worker(next(e for e in experiment_configs if e.name == args.engine_worker), args.task, job=job)
+    if args.worker:
+        return worker(job=job)
+    with patch.object(launch, "ARTIFACTS_ROOT", ROOT), patch.object(launch, "RUN_ROOT", ROOT / "runs"):
+        arguments = (job, ROOT, root(job), identity, payload)
+        if args.dry:
+            return audit.submit(*arguments, dry=True)
+        with launch.submission_lock():
+            return audit.submit(*arguments)

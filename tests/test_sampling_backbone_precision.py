@@ -3,13 +3,13 @@ import sys
 from types import SimpleNamespace as NS
 import torch
 import pytest
-from scripts import sampling_backbone_precision as b
+from workloads.serving import sampling_backbone_precision as b
 
 
 def test_one_gpu_isolated_payload():
     result = b.payload(b.job_configs[0], Path('/staged'))
     assert result['instance_type'] == b.launch.INSTANCE_TYPES_BY_NUM_GPUS[1]
-    assert 'scripts.sampling_backbone_precision --worker' in result['script']
+    assert 'scripts/serving/sampling_backbone_precision.py --worker' in result['script']
     assert b.ROOT not in (b.precision.ROOT, b.audit.ROOT, b.cache.ROOT)
 
 
@@ -47,7 +47,7 @@ def test_nested_engine_intervention_preserves_head_and_four_slots(tmp_path, monk
             return []
     fake = NS(LLM=FakeLLM)
     monkeypatch.setitem(sys.modules, 'vllm', fake)
-    monkeypatch.setattr(b, 'root', lambda: tmp_path)
+    monkeypatch.setattr(b, 'root', lambda job: tmp_path)
     b.launch.store_json(tmp_path/'identity.json', dict(audit={}))
     old = tmp_path/'old'
     b.launch.store_json(old/'prefixes.json', [])
@@ -63,7 +63,7 @@ def test_nested_engine_intervention_preserves_head_and_four_slots(tmp_path, monk
         engine.generate()
     monkeypatch.setattr(b.audit, 'decode_worker', decode)
     monkeypatch.setattr(b.trace, 'engine_worker', distributions)
-    b.engine_worker(b.experiment_configs[0], task)
+    b.engine_worker(b.experiment_configs[0], task, b.job_configs[0])
     assert events[0]['dtype'] == 'float16'
     assert events[0]['hf_overrides'] == {'head_dtype': 'float32'}
     assert events[0]['worker_extension_cls'].endswith('BackbonePrecisionWorkerExtension')

@@ -6,7 +6,7 @@ at a matched training-token budget even when prediction tokens cannot read other
 prediction tokens.
 
 ## Setup
-Training function: `scripts.pilot_run.train`; experiment definitions and launch
+Training function: `workloads.pilot.pilot_run.train`; experiment definitions and launch
 arguments live in `src/experiments/pilot.py` (`experiment_configs`).
 
 ## Results

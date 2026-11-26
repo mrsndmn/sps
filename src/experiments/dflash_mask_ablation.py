@@ -1,23 +1,25 @@
 """Executable definitions for dflash mask ablation."""
 
 from dataclasses import dataclass
+from pathlib import Path
+
 from .environment import COMMON_ROOT
 
-TARGET = "Qwen/Qwen3-4B"
 
-TARGET_REVISION = "1cfa9a7208912126459214e8b04321603b3df60c"
+@dataclass(kw_only=True)
+class FamilyConfig:
+    OUTPUT_NAME: str = "277ae900c11f7e9a"
+    TARGET: str = "Qwen/Qwen3-4B"
+    TARGET_REVISION: str = "1cfa9a7208912126459214e8b04321603b3df60c"
+    DRAFT: str = "z-lab/Qwen3-4B-DFlash-b16"
+    DRAFT_REVISION: str = "b74e3a329c4d963783143b1e970d95b002be72bd"
+    ROOT: Path = COMMON_ROOT / "dflash-mask-ablation"
+    PROMPTS: int = 24
+    MAX_NEW_TOKENS: int = 128
+    REPEATS: int = 2
 
-DRAFT = "z-lab/Qwen3-4B-DFlash-b16"
 
-DRAFT_REVISION = "b74e3a329c4d963783143b1e970d95b002be72bd"
-
-ROOT = COMMON_ROOT / "dflash-mask-ablation"
-
-PROMPTS = 24
-
-MAX_NEW_TOKENS = 128
-
-REPEATS = 2
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)
@@ -33,3 +35,14 @@ class Experiment:
 experiment_configs = [
     Experiment(mask, width) for width in (4, 8) for mask in ("bidirectional", "causal")
 ]
+
+
+def launches(family):
+    from .launch import Launch
+
+    yield Launch(
+        "paired-masks",
+        "eval",
+        "scripts/distillation/dflash_mask_ablation.py",
+        ("--submit",),
+    )

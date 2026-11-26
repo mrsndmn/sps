@@ -4,7 +4,7 @@ An instruction-tuned Qwen can be transferred to zero-window SPS while retaining 
 
 # Setup
 
-Training function: `scripts.instruct_train.main`; executable design: `scripts.instruct_config.experiment_configs`. Preparation and bounded workers: `scripts.instruct_run`.
+Training function: `workloads.instruction.instruct_train.main`; executable design: `experiments.instruct_config.experiment_configs`. Preparation and bounded workers: `workloads.instruction.instruct_run`.
 
 # Results
 

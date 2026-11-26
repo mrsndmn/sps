@@ -1,7 +1,15 @@
 """Protocol settings for qwen4b drafter data."""
 
-REPO = "jiamingshan/qwen3-4b-dflash-official100k-prepared"
-REVISION = "948e343b5ccc06e21794d195f2a34872ed180b9b"
-SOURCE_ROWS = 100_000
-MMLU_TEST_FILE = "all/test-00000-of-00001.parquet"
-MIN_LOSS_TOKENS = 128
+from dataclasses import dataclass
+
+
+@dataclass(kw_only=True)
+class FamilyConfig:
+    REPO: str = "jiamingshan/qwen3-4b-dflash-official100k-prepared"
+    REVISION: str = "948e343b5ccc06e21794d195f2a34872ed180b9b"
+    SOURCE_ROWS: int = 100_000
+    MMLU_TEST_FILE: str = "all/test-00000-of-00001.parquet"
+    MIN_LOSS_TOKENS: int = 128
+
+
+family_config = FamilyConfig()

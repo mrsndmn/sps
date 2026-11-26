@@ -24,7 +24,7 @@ COMBINE_MODELS="${COMBINE_MODELS:-sps,delayed_state}"
 scales="$(cut -f2 "$MANIFEST" | sort -u)"
 for scale in ${scales}; do
   echo "=== combine ${OUTPUT_ROOT}/${scale} (models: ${COMBINE_MODELS}) ==="
-  uv run python -m scripts.analysis.persistent_window_nll_analysis \
+  uv run python scripts/analysis/persistent_window_nll_analysis.py \
     --combine "${OUTPUT_ROOT}/${scale}" \
     --combine-models "${COMBINE_MODELS}" \
     --persistent-window "${PERSISTENT_WINDOW}" \

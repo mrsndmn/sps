@@ -2,7 +2,7 @@
 
 Both speed columns of the main results table — **Throughput (×)** and **Peak Memory (×)** —
 come from a **single** benchmark run: `scripts/benchmark/benchmark_generation_speed.py`,
-driven by one cluster-independent config, `conf/benchmark/speed.yaml`. Hyperparameters (the
+driven by one cluster-independent config, `src/experiments/speed.py`. Hyperparameters (the
 *what*) live in version-controlled YAML; checkpoint paths, `val.bin`, and the SLURM partition
 (the *where*) are passed as environment variables — so you can reproduce the numbers on
 another cluster with the same architectures but different checkpoint weights.
@@ -48,7 +48,7 @@ Output lands in `../sps-artifacts/outputs/generation_timing_correctness/<benchma
 
 Plus the usual SLURM knobs (`ACCOUNT`, `GRES`, `CONSTRAINT`, `NODELIST`, `TIME_LIMIT`, `MEM`,
 `CPUS`, `DEVICE`), documented in the `run.sh` header. For a different checkpoint-naming
-scheme, edit the `run_name` templates in `conf/benchmark/speed.yaml`.
+scheme, edit the `run_name` templates in `src/experiments/speed.py`.
 
 ## Regenerate the table
 

@@ -4,7 +4,7 @@ Larger pretrained SmolLM2 models can recover source-model quality under staged z
 
 # Setup
 
-`scripts.ar_sps_train.main`, selected through the larger CE registries in `src/experiments/ar_sps_config.py`. Each suite includes its own original-AR baseline and staged SPS arm. Preparation refuses to reduce the prescribed training exposure. Data preparation uses each pinned source tokenizer and isolated artifacts.
+`workloads.adaptation.ar_sps_train.main`, selected through the larger CE registries in `src/experiments/ar_sps_config.py`. Each suite includes its own original-AR baseline and staged SPS arm. Preparation refuses to reduce the prescribed training exposure. Data preparation uses each pinned source tokenizer and isolated artifacts.
 
 # Results
 

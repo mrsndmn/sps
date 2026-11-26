@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from transformers import LlamaConfig, LlamaForCausalLM, Qwen3Config, Qwen3ForCausalLM
 
 from modeling.models.sps.pretrained import PretrainedSPS
-from scripts.instruct_common import masked_loss, loss, nll
+from workloads.instruction.instruct_common import masked_loss, loss, nll
 
 
 def tiny(family, sps=True):
@@ -113,11 +113,11 @@ def test_empty_or_invalid_mask_fails():
 
 
 def test_checkpoint_provenance_and_stage_metadata(tmp_path, monkeypatch):
-    from scripts import experiment_suite as e
+    from orchestration import experiment_suite as e
     from types import SimpleNamespace
-    from scripts import instruct_common as common
+    from workloads.instruction import instruct_common as common
     monkeypatch.setattr(common, 'configuration', lambda: SimpleNamespace(MODEL='test/model', REVISION='pinned'))
-    monkeypatch.setattr(e, 'design_signature', lambda: 'signature')
+
     model = tiny('qwen3')
     model.set_stage(True)
     optimizer = torch.optim.AdamW([model.prediction], lr=.01)
@@ -133,14 +133,14 @@ def test_checkpoint_provenance_and_stage_metadata(tmp_path, monkeypatch):
         common.validate_final(path, plan)
     common.save(path, model, optimizer, 8, 3.5, False, plan)
     common.validate_final(path, plan)
-    monkeypatch.setattr(e, 'design_signature', lambda: 'different')
+    monkeypatch.setattr(common, 'configuration', lambda: SimpleNamespace(MODEL='test/model', REVISION='different'))
     with pytest.raises(RuntimeError, match='provenance'):
         common.restore(path, restored, torch.device('cpu'))
 
 
 @pytest.mark.parametrize('family', ['llama', 'qwen3'])
 def test_optimizer_transition_unfreezes_backbone_and_checkpointed_gradients(family):
-    from scripts.instruct_train import optimizer_for
+    from workloads.instruction.instruct_train import optimizer_for
     model = tiny(family)
     model.train()
     initial = {name: value.clone() for name, value in model.backbone.state_dict().items()}
@@ -161,7 +161,7 @@ def test_optimizer_transition_unfreezes_backbone_and_checkpointed_gradients(fami
 
 
 def test_final_checkpoint_failure_does_not_advance_resume_cursor(tmp_path, monkeypatch):
-    from scripts import instruct_train as train
+    from workloads.instruction import instruct_train as train
     names = []
     def interrupted(path, *args):
         names.append(path.name)

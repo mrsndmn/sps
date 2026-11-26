@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 import torch
-from scripts.vllm_sps_model import QwenSPSMTP, horizon_targets
+from workloads.serving.vllm_sps_model import QwenSPSMTP, horizon_targets
 from transformers import Qwen3Config, Qwen3ForCausalLM
 
 from modeling.models.sps.pretrained import PretrainedSPS
 
 
 def test_legacy_optimizer_resume_checks_configured_learning_rate():
-    from scripts.vllm_sps_train import restore_optimizer
+    from workloads.serving.vllm_sps_train import restore_optimizer
 
     parameter = torch.nn.Parameter(torch.ones(1))
     recorded = torch.optim.AdamW([parameter], lr=1e-3).state_dict()
@@ -25,12 +25,12 @@ def test_legacy_optimizer_resume_checks_configured_learning_rate():
 
 
 def test_legacy_schedule_cannot_resume_with_a_different_batch_or_boundary(monkeypatch):
-    from scripts.serving import vllm_sps_train as train
+    from workloads.serving import vllm_sps_train as train
 
     state = {"step": 75, "frozen": True}
     assert train.matches_schedule(state, 512, 102)
     assert not train.matches_schedule(state, 512, 101)
-    monkeypatch.setattr(train.c, "GLOBAL_BATCH", 8)
+    monkeypatch.setattr(train.c.family_config, "GLOBAL_BATCH", 8)
     assert not train.matches_schedule(state, 512, 102)
 
 
@@ -211,7 +211,7 @@ def test_paged_prediction_kernel_matches_dense_mask_with_reordered_pages(
 
 
 def test_real_readout_matches_native_ar_and_trains_future_slots():
-    from scripts.real_readout_model import RealReadoutMTP
+    from workloads.readout.real_readout_model import RealReadoutMTP
 
     sps, _ = tiny()
     model = RealReadoutMTP(sps.backbone, 4).eval()
@@ -232,7 +232,7 @@ def test_real_readout_matches_native_ar_and_trains_future_slots():
 
 
 def test_real_readout_resume_requires_boundary_audit():
-    from scripts.real_readout_train import resume_audit
+    from workloads.readout.real_readout_train import resume_audit
 
     state = {"step": 5, "readout_audit": {"initial": {}}}
     assert resume_audit(state, 6) == state["readout_audit"]
@@ -245,8 +245,8 @@ def test_real_readout_resume_requires_boundary_audit():
 @pytest.mark.cuda
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 def test_real_readout_training_backend_audit():
-    from scripts.real_readout_model import RealReadoutMTP
-    from scripts.real_readout_train import audit_readout
+    from workloads.readout.real_readout_model import RealReadoutMTP
+    from workloads.readout.real_readout_train import audit_readout
 
     wrapper, _ = tiny(head_dim=16)
     model = RealReadoutMTP(wrapper.backbone, 4, backend="flex_attention").cuda()

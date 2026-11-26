@@ -5,7 +5,7 @@ from itertools import product
 import pytest
 import torch
 
-from src.modeling.mtp_speculative import speculative_generate
+from modeling.mtp_speculative import speculative_generate
 
 
 def reference(prefix, proposals):

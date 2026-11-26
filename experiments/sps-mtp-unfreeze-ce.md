@@ -5,9 +5,9 @@ Unfreezing the Transformer and tied input/output embeddings improves future-toke
 predictions beyond embedding-only adaptation of the same trained parent.
 
 ## Setup
-Training function: `scripts.mtp_train.main`; continuation suite in the
+Training function: `workloads.speculative.mtp_train.main`; continuation suite in the
 `experiment_configs` registry in `src/experiments/mtp.py`. Evaluation uses
-`scripts.mtp_evaluate.evaluate` with a separate original SPS verifier.
+`workloads.speculative.mtp_evaluate.evaluate` with a separate original SPS verifier.
 
 ## Results
 All continuation and evaluation jobs completed successfully. Each run reused its

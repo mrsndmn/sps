@@ -1,18 +1,25 @@
 """Executable definitions for provenance prepare."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
 from . import instruct_config as c
 
-SPLITS = ("train", "val", "test")
 
-GENERATION = dict(
-    temperature=c.GENERATION["nonthinking"]["temperature"],
-    top_p=c.GENERATION["nonthinking"]["top_p"],
-    top_k=c.GENERATION["nonthinking"]["top_k"],
-    max_new_tokens=c.TEACHER_MAX_NEW_TOKENS,
-)
+@dataclass(kw_only=True)
+class FamilyConfig:
+    SPLITS: tuple[str, ...] = ("train", "val", "test")
+    GENERATION: dict = field(
+        default_factory=lambda: dict(
+            temperature=c.family_config.GENERATION["nonthinking"]["temperature"],
+            top_p=c.family_config.GENERATION["nonthinking"]["top_p"],
+            top_k=c.family_config.GENERATION["nonthinking"]["top_k"],
+            max_new_tokens=c.family_config.TEACHER_MAX_NEW_TOKENS,
+        )
+    )
+    MIN_PAIRED_FRACTION: float = 0.8
 
-MIN_PAIRED_FRACTION = 0.8
+
+family_config = FamilyConfig()
 
 
 @dataclass(frozen=True)
@@ -20,6 +27,26 @@ class Experiment:
     name: str = "paired-response-preparation"
     num_gpus: int = 4
     hours: int = 12
+    directory: str | None = None
 
 
-experiment_configs = [Experiment()]
+experiment_configs = [Experiment(directory="prepared")]
+
+
+def launches(family):
+    from . import provenance_train, provenance_evaluate
+    from .launch import Launch, filtered
+
+    yield from filtered(experiment_configs, "prepare", "scripts/provenance/provenance_prepare.py")
+    for exp in provenance_train.experiment_configs:
+        yield Launch(
+            exp.name,
+            "train",
+            "scripts/provenance/provenance_train.py",
+            ("--arm", exp.name),
+        )
+    yield from filtered(
+        provenance_evaluate.experiment_configs,
+        "eval",
+        "scripts/provenance/provenance_evaluate.py",
+    )

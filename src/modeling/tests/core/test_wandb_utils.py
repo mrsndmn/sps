@@ -49,20 +49,6 @@ def test_prepare_wandb_dir_does_not_overwrite_existing_env(tmp_path, monkeypatch
     assert os.environ["WANDB_DIR"] == str(env_dir)
 
 
-def test_default_wandb_dir_from_repo_config_expands_system_data_root(tmp_path):
-    repo_root = tmp_path / "repo"
-    (repo_root / "conf" / "logging").mkdir(parents=True)
-    (repo_root / "conf" / "system").mkdir(parents=True)
-    (repo_root / "conf" / "logging" / "default.yaml").write_text(
-        "wandb_log: true\n"
-        "wandb_project: sps\n"
-        "wandb_entity: null\n"
-        "wandb_dir: ${system.data_root}/wandb\n"
-    )
-    (repo_root / "conf" / "system" / "default.yaml").write_text(
-        f'data_root: "{tmp_path / "scratch_project"}"\n'
-    )
-
-    resolved = default_wandb_dir_from_repo_config(repo_root)
-
-    assert resolved == str(tmp_path / "scratch_project" / "wandb")
+def test_default_wandb_dir_honors_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("WANDB_DIR", str(tmp_path / "logs"))
+    assert default_wandb_dir_from_repo_config(tmp_path) == str(tmp_path / "logs")

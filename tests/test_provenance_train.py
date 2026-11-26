@@ -1,7 +1,7 @@
 from copy import deepcopy
 from pathlib import Path
 import pytest
-from scripts import provenance_train as t
+from workloads.provenance import provenance_train as t
 
 
 def row(i, mode='nonthinking', size=4):
@@ -58,7 +58,7 @@ def test_scoped_training_wiring_and_per_arm_signature():
             assert t.trainer.e.collect_experiments(exp.name)==[exp]
             assert t.trainer.read_plan()==plan
             assert t.trainer.rows('val')==values[exp.condition]['val']
-            signatures.append(t.trainer.e.design_signature())
+            signatures.append(t.prep.data.digest(ident))
     assert signatures[0]!=signatures[1]
     assert t.trainer.rows is original
 
@@ -69,7 +69,7 @@ def test_train_payload_and_stage_configs():
     for exp in t.experiment_configs:
         p=t.payload(exp,Path('/staged'))
         assert p['instance_type']==t.launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus]
-        assert p['env_variables']['SPS_EXPERIMENT_SUITE']==t.c.SUITE
+        assert p['env_variables']['SPS_EXPERIMENT_SUITE']==t.c.family_config.SUITE
         assert f'--worker --arm {exp.name}' in p['script']
 
 

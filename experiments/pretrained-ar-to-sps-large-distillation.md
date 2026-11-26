@@ -4,7 +4,7 @@ Frozen original-AR teacher distillation improves retention relative to staged CE
 
 # Setup
 
-`scripts.ar_sps_train.main` with the larger KD registries in `src/experiments/ar_sps_config.py`. Each fresh student uses its own frozen original teacher and the exact completed CE corpus, order and stage endpoints. Model identities, objectives, reference signatures, controls and budgets are defined in code. Artifacts are isolated from completed CE runs.
+`workloads.adaptation.ar_sps_train.main` with the larger KD registries in `src/experiments/ar_sps_config.py`. Each fresh student uses its own frozen original teacher and the exact completed CE corpus, order and stage endpoints. Model identities, objectives, reference signatures, controls and budgets are defined in code. Artifacts are isolated from completed CE runs.
 
 # Results
 
