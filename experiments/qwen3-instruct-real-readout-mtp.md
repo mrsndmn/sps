@@ -52,6 +52,8 @@ and 62.63%). In non-thinking mode they scored 53.62% and 53.28% (macro
 Unparseable answers counted as incorrect. Their thinking rates were
 13.83% and 12.36%, and non-thinking rates were 1.90% and 3.82%.
 
+On all 1,319 GSM8K questions, strict numeric accuracy for A/B was 36.09%/32.90% in thinking and 42.76%/2.35% in non-thinking. The parser required a final line containing the requested hash delimiter and number. In B non-thinking, 1,262 outputs were unparseable and seven reached the generation cap. An exploratory fallback accepting the last simple boxed number in otherwise unparseable final text changed thinking scores to 71.11%/73.24% and non-thinking scores to 57.54%/14.86%. These additional scores depend on the extraction rule.
+
 ## Conclusions
 
 Measure both parents before MTP training and both final models with sequential
@@ -94,3 +96,4 @@ respectively. This comparison does not resolve a readout advantage.
 - 2026-11-26: Verified all eight parent and final IFEval answer sets against the pinned prompts, reproduced per-answer scores, and compared paired changes.
 - 2026-11-26: Scored all four HumanEval files on the external VM and verified returned solutions and task IDs against the submitted files.
 - 2026-11-26: Verified four full-MMLU checkpoint manifests, answer hashes and per-question scores against the pinned test split.
+- 2026-11-26: Verified all four GSM8K answer files, seeds and strict scores, and measured sensitivity to boxed-answer formatting.
