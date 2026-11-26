@@ -1,5 +1,6 @@
 """Read-only STEM aggregation of the pinned MMLU reasoning evaluation."""
 from experiments.evaluation_outputs import families
+from workloads.evaluation.mmlu_results import matches_manifest
 import hashlib
 import json
 from pathlib import Path
@@ -76,7 +77,7 @@ def main():
             samples = []
         else:
             manifest = json.loads(meta.read_text())
-            if (manifest['limit'] is not None or any(manifest['experiment'].get(k) != v for k, v in vars(exp).items())):
+            if not matches_manifest(manifest, exp, None):
                 raise ValueError(f'Unexpected source evaluation: {exp.name}')
             samples = read_samples(folder / 'samples.jsonl')
         results[exp.name] = summarize(samples, dataset)

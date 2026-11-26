@@ -12,7 +12,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from orchestration import experiment_suite as e
 from modeling.models.sps.pretrained import PretrainedSPS
 from experiments import mmlu_config as c
-from workloads.evaluation.mmlu_results import recover_samples
+from workloads.evaluation.mmlu_results import recover_samples, matches_manifest, generation_protocol
 from workloads.evaluation.mmlu_subset import selected_indices, reuse_samples, validate_saved, reuse_full_and_stem
 from workloads.evaluation.mmlu_generation import generate, prompt, parse_answer
 
@@ -45,9 +45,9 @@ def evaluate(exp, limit=None, *, destination=None):
     root = destination or e.output_dir(exp) / ('smoke' if limit else 'full')
     root.mkdir(parents=True, exist_ok=True)
     signature = e.SUITE
-    manifest = dict(design_signature=signature, experiment=exp.__dict__, limit=limit)
+    manifest = dict(design_signature=signature, experiment=vars(exp), limit=limit, protocol=generation_protocol(c))
     meta = root / 'manifest.json'
-    if meta.exists() and json.loads(meta.read_text()) != manifest:
+    if meta.exists() and not matches_manifest(json.loads(meta.read_text()), exp, limit):
         raise ValueError('Resume manifest mismatch')
     write_json(meta, manifest)
     dataset = load_dataset(c.DATASET, 'all', revision=c.REVISION, split='test')

@@ -108,6 +108,7 @@ def training_inputs(exp, prepared, parent):
     config = mtp.family_config
     return dict(
         experiment=exp.name, horizons=exp.horizons, num_gpus=exp.num_gpus,
+        max_horizons=config.MTP_MAX_HORIZONS, step_tokens=config.MTP_STEP_TOKENS,
         source_sha256=prepared["source_sha256"], data_sha256=prepared["data"]["manifest_sha256"],
         warmstart=parent, context=config.MTP_CONTEXT, global_batch=config.MTP_GLOBAL_BATCH,
         micro_batch=config.MTP_MICRO_BATCH, steps=config.MTP_TRAIN_STEPS, seed=config.MTP_SEED,

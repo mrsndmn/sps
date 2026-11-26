@@ -98,3 +98,41 @@ def test_historical_stem_report_ignores_current_evaluator_signature(tmp_path, mo
     meta['design_signature'] = 'unexpected-source'
     (folder/'manifest.json').write_text(json.dumps(meta))
     report.main()
+
+
+def test_partial_manifest_uses_concrete_model_and_generation_settings():
+    from experiments.mmlu import experiments, family_config
+    from workloads.evaluation.mmlu_results import generation_protocol, matches_manifest
+
+    exp = experiments("mmlu-generation")[0]
+    manifest = {"experiment": dict(vars(exp), signature="old-source-hash"), "limit": 4}
+    assert matches_manifest(manifest, exp, 4)
+    assert not matches_manifest(manifest, exp, None)
+    manifest["protocol"] = dict(generation_protocol(family_config), seed=0)
+    assert not matches_manifest(manifest, exp, 4)
+
+
+def test_mmlu_worker_resumes_saved_answers(tmp_path, monkeypatch):
+    from experiments.mmlu import experiments
+    from workloads.evaluation import mmlu_run as worker
+
+    exp = experiments("mmlu-generation")[0]
+    rows = [dict(subject="astronomy", answer=0, question=q) for q in ("first", "second")]
+    meta = dict(experiment=dict(vars(exp), signature="archived"), limit=2)
+    (tmp_path / "manifest.json").write_text(json.dumps(meta))
+    first = dict(sample(0, rows[0], "A"), correct=True, generation="saved", tokens=[1])
+    samples = tmp_path / "samples.jsonl"
+    samples.write_text(json.dumps(first) + "\n")
+    monkeypatch.setattr(worker.e, "SUITE", "mmlu-generation")
+    monkeypatch.setattr(worker, "load_dataset", lambda *a, **kw: rows)
+    monkeypatch.setattr(worker, "load_model", lambda *a: None)
+    monkeypatch.setattr(worker.AutoTokenizer, "from_pretrained", lambda *a, **kw: None)
+    monkeypatch.setattr(worker, "prompt", lambda row: row["question"])
+    generated = []
+    def generate(model, tokenizer, question, limit):
+        generated.append(question)
+        return "Final answer: A", [2], "answer"
+    monkeypatch.setattr(worker, "generate", generate)
+    worker.evaluate(exp, limit=2, destination=tmp_path)
+    assert generated == ["second"]
+    assert [json.loads(line)["index"] for line in samples.read_text().splitlines()] == [0, 1]

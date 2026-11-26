@@ -10,7 +10,7 @@ from orchestration import mlspace_launch as launch
 from workloads.distillation import qwen4b_drafter_eval as paired
 from workloads.distillation import qwen4b_drafter_train as previous
 
-from experiments.dflash_repro_eval import family_config as settings
+from experiments.dflash_repro_eval import family_config
 
 
 def signature():
@@ -21,7 +21,7 @@ def gsm8k():
     from huggingface_hub import hf_hub_download
     from pyarrow.parquet import read_table
 
-    path = hf_hub_download(settings.GSM8K, settings.GSM8K_FILE, repo_type="dataset", revision=settings.GSM8K_REVISION,
+    path = hf_hub_download(family_config.GSM8K, family_config.GSM8K_FILE, repo_type="dataset", revision=family_config.GSM8K_REVISION,
                            cache_dir=HF_HOME / "hub", local_files_only=True)
     return read_table(path, columns=["question"])["question"].to_pylist()
 
@@ -63,16 +63,16 @@ def evaluate(checkpoint, result, *, experiment=training.EXPERIMENT):
 
     warmup = prompt(questions[0])
     for _, draft in order:
-        decode(draft, warmup, settings.WARMUP_TOKENS)
+        decode(draft, warmup, family_config.WARMUP_TOKENS)
     for index, question in enumerate(questions):
         ids = prompt(question)
         offset = index % len(order)
-        runs = {name: decode(draft, ids, settings.LIMIT) for name, draft in order[offset:] + order[:offset]}
+        runs = {name: decode(draft, ids, family_config.LIMIT) for name, draft in order[offset:] + order[:offset]}
         for name, row in runs.items():
             row.update(index=index, repeat=0, greedy_match=row["tokens"] == runs["ar"]["tokens"])
             samples[name].append(row)
         if (index + 1) % 25 == 0:
-            print(f"settings.GSM8K {index + 1}/{len(questions)}", flush=True)
+            print(f"family_config.GSM8K {index + 1}/{len(questions)}", flush=True)
     summary = {name: reference.summary(samples[name], spec) for name in ("published", "trained")}
     summary["ar"] = {"requests": len(questions), "tokens_per_second": paired.decode_rate(samples["ar"])}
     summary["all_arms_matched"] = paired.matched_throughput(samples)
@@ -80,7 +80,7 @@ def evaluate(checkpoint, result, *, experiment=training.EXPERIMENT):
     launch.store_json(result, dict(
         design=experiment.name, evaluation=signature(), checkpoint=str(checkpoint),
         target=reference.TARGET_REVISION,
-        published=reference.DRAFT_REVISION, gsm8k=settings.GSM8K_REVISION,
+        published=reference.DRAFT_REVISION, gsm8k=family_config.GSM8K_REVISION,
         gpu=torch.cuda.get_device_name(), summary=summary, samples=samples,
     ))
     print(json.dumps(summary, indent=2), flush=True)

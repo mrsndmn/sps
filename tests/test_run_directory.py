@@ -336,6 +336,10 @@ def test_mtp_resume_validates_training_batch_and_data(monkeypatch):
     with pytest.raises(ValueError, match="training inputs"):
         mtp_run.check_resume_inputs(initial, inputs())
     monkeypatch.setattr(mtp_run.mtp.family_config, "MTP_GLOBAL_BATCH", initial["global_batch"])
+    monkeypatch.setattr(mtp_run.mtp.family_config, "MTP_MAX_HORIZONS", initial["max_horizons"] + 1)
+    with pytest.raises(ValueError, match="training inputs"):
+        mtp_run.check_resume_inputs(initial, inputs())
+    monkeypatch.setattr(mtp_run.mtp.family_config, "MTP_MAX_HORIZONS", initial["max_horizons"])
     prepared["data"]["manifest_sha256"] = "changed"
     with pytest.raises(ValueError, match="training inputs"):
         mtp_run.check_resume_inputs(initial, inputs())

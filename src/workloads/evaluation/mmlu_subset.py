@@ -1,5 +1,6 @@
 """STEM selection and validated reuse from the original full-MMLU run."""
 from experiments.evaluation_outputs import families
+from workloads.evaluation.mmlu_results import matches_manifest
 import hashlib
 import json
 from pathlib import Path
@@ -16,12 +17,8 @@ def reuse_samples(folder, exp, rows, indices):
     if not meta.exists():
         return []
     manifest = json.loads(meta.read_text())
-    if (manifest.get('limit') is not None or any(manifest['experiment'].get(k) != v for k, v in vars(exp).items())):
+    if not matches_manifest(manifest, exp, None):
         raise ValueError('Unexpected full-MMLU source manifest')
-    from experiments.mmlu import family_config as c
-    if (c.MAX_NEW_TOKENS != 512 or c.SEED != 1337 or c.DATASET != 'cais/mmlu' or
-            c.REVISION != 'c30699e8356da336a370243923dbaf21066bb9fe'):
-        raise ValueError('Generation protocol changed; cannot reuse old answers')
     samples = read_samples(folder / 'samples.jsonl')
     summarize(samples, rows)  # Validate document hashes, targets, subjects and unique IDs.
     selected = set(indices)
