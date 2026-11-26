@@ -2,7 +2,7 @@
 Attention adapters can preserve more source-model quality than full SPS adaptation. Magnitude adaptation and adapter scaling may affect retention.
 
 # Setup
-Training function: `scripts.qwen_adapter_worker.train`.
+Training function: `workloads.adaptation.qwen_adapter_worker.train`.
 
 # Results
 Pending.

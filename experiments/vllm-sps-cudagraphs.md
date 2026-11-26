@@ -5,8 +5,8 @@ correctly and change the speedup observed in the eager pilot.
 
 ## Setup
 
-Training function: `scripts.serving.vllm_sps_train.main` (reuse its completed checkpoint).
-Evaluation function: `scripts.serving_graphs.main` and its `experiment_configs`.
+Training function: `workloads.serving.vllm_sps_train.main` (reuse its completed checkpoint).
+Evaluation function: `workloads.serving.serving_graphs.main` and its `experiment_configs`.
 
 ## Results
 

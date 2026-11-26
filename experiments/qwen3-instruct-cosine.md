@@ -4,9 +4,9 @@ An earlier checkpoint and a gradual learning-rate schedule reduce loss of instru
 
 # Setup
 
-Training function: `scripts.sched_train.main`; evaluation function: `scripts.sched_eval.evaluate`. The launcher `scripts.sched_run` reuses the original instruct experiment registry, pinned prepared dialogs, model and objective definitions. Variant selection, checkpoint gates, schedule and resource limits are defined in `scripts.sched_config` and `scripts.sched_common`.
+Training function: `workloads.instruction.sched_train.main`; evaluation function: `workloads.instruction.sched_eval.evaluate`. The launcher `workloads.instruction.sched_run` reuses the original instruct experiment registry, pinned prepared dialogs, model and objective definitions. Variant selection, checkpoint gates, schedule and resource limits are defined in `experiments.sched_config` and `workloads.instruction.sched_common`.
 
-Artifacts are isolated under the variant roots selected by `scripts.sched_common.root`. Training writes `runs/out/<experiment>`; each evaluation workload writes `runs/out/<experiment>--<workload>`. Original source artifacts and signatures remain intact.
+Artifacts are isolated under the variant roots selected by `workloads.instruction.sched_common.root`. Training writes `runs/out/<experiment>`; each evaluation workload writes `runs/out/<experiment>--<workload>`. Original source artifacts and signatures remain intact.
 
 # Results
 

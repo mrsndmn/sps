@@ -4,7 +4,7 @@ A DFlash drafter trained from scratch on the prepared Qwen3-4B corpus can recove
 
 ## Setup
 
-`scripts.dflash_repro_train.train`
+`workloads.distillation.dflash_repro_train.train`
 
 ## Results
 

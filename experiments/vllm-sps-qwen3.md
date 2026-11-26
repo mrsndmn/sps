@@ -6,7 +6,7 @@ sampling distribution.
 
 ## Setup
 
-`scripts.serving.vllm_sps_train.main`
+`workloads.serving.vllm_sps_train.main`
 
 ## Results
 

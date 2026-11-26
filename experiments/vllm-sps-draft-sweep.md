@@ -5,7 +5,7 @@ when the fraction of accepted proposals decreases.
 
 ## Setup
 
-Training function `scripts.serving.draft_sweep_train.main`.
+Training function `workloads.serving.draft_sweep_train.main`.
 
 ## Results
 

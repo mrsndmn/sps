@@ -5,8 +5,8 @@ A frozen pretrained SPS can support useful multi-token proposals by adapting onl
 new prediction embeddings, with reference verification preserving generation quality.
 
 ## Setup
-Training function: `scripts.mtp_train.main`; source registry: `experiment_configs`
-in `src/experiments/mtp.py`. Evaluation: `scripts.mtp_evaluate.evaluate`.
+Training function: `workloads.speculative.mtp_train.main`; source registry: `experiment_configs`
+in `src/experiments/mtp.py`. Evaluation: `workloads.speculative.mtp_evaluate.evaluate`.
 Artifacts use a separate suite directory under the existing shared artifact root;
 prepared data, source checkpoint, environment and HF cache are reused.
 

@@ -4,7 +4,7 @@ Separate mask embeddings may improve the accepted prefix of a parallel draft. Th
 
 ## Setup
 
-`scripts.qwen4b_drafter_train.train`
+`workloads.distillation.qwen4b_drafter_train.train`
 
 ## Results
 

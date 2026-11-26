@@ -3,7 +3,7 @@ Matching a frozen original AR teacher during both stages of SPS adaptation will
 reduce the remaining quality loss compared with the completed plain-CE treatment.
 
 # Setup
-Training function: `scripts.ar_sps_train.main`. The distillation suite selects its
+Training function: `workloads.adaptation.ar_sps_train.main`. The distillation suite selects its
 registry and objective in executable code. The student starts from the pretrained
 source; the completed CE treatment supplies immutable data and evaluation controls.
 

@@ -2,7 +2,7 @@
 A pretrained autoregressive model can recover its measured benchmark quality after conversion to zero-window SPS. Learning the prediction embedding before unfreezing the backbone may improve recovery relative to immediate full adaptation.
 
 # Setup
-Training function: `scripts.ar_sps_train.main`. The `ar-sps` suite selects the executable experiment registry. Source identity, training arguments, job resources, budget and scoring rules are defined in code.
+Training function: `workloads.adaptation.ar_sps_train.main`. The `ar-sps` suite selects the executable experiment registry. Source identity, training arguments, job resources, budget and scoring rules are defined in code.
 
 # Results
 All training and evaluation jobs completed. The two trained SPS variants and

@@ -4,7 +4,7 @@ Giving length-capped teacher generations more tokens can recover complete reason
 
 ## Setup
 
-Evaluation function is `scripts.teacher_cap_probe.run`.
+Evaluation function is `workloads.evaluation.teacher_cap_probe.run`.
 
 ## Results
 

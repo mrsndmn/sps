@@ -5,7 +5,7 @@ Verifying proposed token blocks in a single layer traversal and retaining accept
 prefix KV reduces speculative decoding overhead on existing learned MTP drafts.
 
 ## Setup
-Evaluation function: `scripts.mtp_parallel_evaluate.evaluate`. The evaluation-only
+Evaluation function: `workloads.speculative.mtp_parallel_evaluate.evaluate`. The evaluation-only
 registry in `src/experiments/mtp.py` selects completed drafts and their learned parents.
 The original SPS generator supplies baseline timings and a numerical oracle.
 
