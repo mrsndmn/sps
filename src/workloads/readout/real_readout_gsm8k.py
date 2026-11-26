@@ -41,13 +41,14 @@ def dataset():
     from huggingface_hub import hf_hub_download
     from pyarrow.parquet import read_table
     from experiments.environment import HF_HOME
-    from workloads.distillation.dflash_repro_eval import GSM8K, GSM8K_REVISION, GSM8K_FILE
-    path = hf_hub_download(GSM8K, GSM8K_FILE, repo_type="dataset", revision=GSM8K_REVISION,
+    from experiments.dflash_repro_eval import GSM8KProtocol
+    protocol = GSM8KProtocol()
+    path = hf_hub_download(protocol.gsm8k, protocol.gsm8k_file, repo_type="dataset", revision=protocol.gsm8k_revision,
                            cache_dir=HF_HOME / "hub", local_files_only=True)
     docs = read_table(path, columns=["question", "answer"]).to_pylist()
     if len(docs) != 1319 or any(answer(d["answer"]) is None for d in docs):
         raise ValueError("Incomplete or unparseable GSM8K test split")
-    return docs, dict(repo=GSM8K, revision=GSM8K_REVISION, sha256=common.file_hash(path))
+    return docs, dict(repo=protocol.gsm8k, revision=protocol.gsm8k_revision, sha256=common.file_hash(path))
 
 
 def identity(exp, marker, data):
@@ -139,17 +140,12 @@ def main():
     selected = [exp for exp in selected if launch.pending(ROOT / "runs/out" / exp.name)]
     if not selected:
         return
-    from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
     _, data = dataset()
     launch.ARTIFACTS_ROOT, launch.RUN_ROOT = ROOT, ROOT / "runs"
     with launch.submission_lock():
-        client, opts = training_job_api_from_profile("default")
-        launch.disable_submission_retries(client)
-        active = {launch.normalize(j["job_desc"]): j["job_name"]
-                  for j in get_in_progress_jobs(client_profile="default")}
-        launch.reconcile_for_outputs(client, active, [ROOT / "runs/out" / exp.name for exp in selected])
         commit = launch.git("rev-parse", "HEAD")
-        staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
+        batch = launch.SubmissionBatch(commit)
+        staged = launch.STAGING_ROOT / commit
         for exp in selected:
             marker = quality.endpoint(exp)
             ident = identity(exp, marker, data)
@@ -161,9 +157,4 @@ def main():
                     raise ValueError("Stale completion")
                 continue
             body = payload(exp, staged)
-            body["region"] = opts["region"]
-            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name)
-            if key in active:
-                print(exp.name, active[key], flush=True)
-            else:
-                print(json.dumps(launch.submit_payload(client, body, "eval", exp.name, commit, output_dir=ROOT / "runs/out" / exp.name)), flush=True)
+            print(json.dumps(batch.submit(body, "eval", exp.name, ROOT / "runs/out" / exp.name)), flush=True)

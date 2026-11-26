@@ -63,7 +63,7 @@ def test_nested_engine_intervention_preserves_head_and_four_slots(tmp_path, monk
         engine.generate()
     monkeypatch.setattr(b.audit, 'decode_worker', decode)
     monkeypatch.setattr(b.trace, 'engine_worker', distributions)
-    b.engine_worker(b.experiment_configs[0], task)
+    b.engine_worker(b.experiment_configs[0], task, b.job_configs[0])
     assert events[0]['dtype'] == 'float16'
     assert events[0]['hf_overrides'] == {'head_dtype': 'float32'}
     assert events[0]['worker_extension_cls'].endswith('BackbonePrecisionWorkerExtension')

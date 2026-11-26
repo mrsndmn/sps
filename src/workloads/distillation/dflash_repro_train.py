@@ -2,10 +2,9 @@
 
 from contextlib import nullcontext
 from dataclasses import asdict
-import json
-from hashlib import sha256
-import os
 from pathlib import Path
+import json
+import os
 import random
 from statistics import mean, median
 import tempfile
@@ -19,39 +18,46 @@ from torch.nn.attention.flex_attention import create_block_mask, flex_attention
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.checkpoint import checkpoint
 
-from experiments.environment import COMMON_ROOT
 from workloads.distillation import dflash_mask_ablation as reference
 from data import instruct_data
 from orchestration import mlspace_launch as launch
 from orchestration.named.publication import work_path
 from workloads.distillation import qwen4b_drafter_data as prepared, qwen4b_drafter_train as previous
-from experiments.dflash_repro_train import Experiment, experiment_configs
-EXPERIMENT = experiment_configs[0]
+from experiments.dflash_repro_train import TrainArguments, experiment_configs
+
+
+
+def training_settings(experiment):
+    settings = asdict(experiment)
+    for key in ("output_root", "eval_dir_pattern"):
+        settings.pop(key, None)
+    return settings
 
 
 def training_inputs(experiment):
-    settings = asdict(experiment)
-    for key in ("output_root", "eval_dir_pattern"):
-        settings.pop(key)
-    return json.loads(json.dumps(dict(
-        settings=settings, selection_sha256=instruct_data.file_hash(previous.selection_path()),
+    return dict(settings=training_settings(experiment), **input_provenance())
+
+
+def input_provenance():
+    return dict(
+        selection_sha256=instruct_data.file_hash(previous.selection_path()),
         target_revision=reference.TARGET_REVISION, draft_revision=reference.DRAFT_REVISION,
-    )))
+    )
 
 
-def total_steps(row_count, exp=EXPERIMENT):
+def total_steps(row_count, exp):
     if row_count % exp.global_batch or exp.global_batch % exp.num_gpus:
         raise ValueError("DFlash training requires complete global batches")
     return row_count // exp.global_batch * exp.epochs
 
 
-def epoch_order(indices, epoch, experiment=EXPERIMENT):
+def epoch_order(indices, epoch, experiment):
     order = list(indices)
     random.Random(experiment.seed + epoch).shuffle(order)
     return order
 
 
-def sample_anchors(mask, epoch, row_id, experiment=EXPERIMENT):
+def sample_anchors(mask, epoch, row_id, experiment):
     eligible = [i for i in range(1, len(mask) - experiment.proposals)
                 if mask[i] and any(mask[i + 1 : i + experiment.width])]
     if not eligible:
@@ -60,13 +66,13 @@ def sample_anchors(mask, epoch, row_id, experiment=EXPERIMENT):
     return sorted(sampler.sample(eligible, min(experiment.max_anchors, len(eligible))))
 
 
-def block_visibility(starts, source_width, q, kv, experiment=EXPERIMENT):
+def block_visibility(starts, source_width, q, kv, experiment):
     group = q // experiment.width
     return (kv < starts[group]) | ((kv >= source_width) & ((kv - source_width) // experiment.width == group))
 
 
 class BlockLoss(nn.Module):
-    def __init__(self, draft, head, experiment=EXPERIMENT):
+    def __init__(self, draft, head, experiment):
         super().__init__()
         self.experiment = experiment
         self.draft = draft
@@ -92,7 +98,7 @@ class BlockLoss(nn.Module):
         return torch.stack(parts).sum() / weights.sum()
 
 
-def build_draft(device, *, backend="sdpa", experiment=EXPERIMENT):
+def build_draft(device, *, backend="sdpa", experiment):
     from transformers import AutoConfig
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
     from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
@@ -122,7 +128,7 @@ def build_draft(device, *, backend="sdpa", experiment=EXPERIMENT):
     return model
 
 
-def draft_inputs(target, draft, row, anchors, device, *, sparse=True, experiment=EXPERIMENT):
+def draft_inputs(target, draft, row, anchors, device, *, sparse=True, experiment):
     tokens = torch.tensor([row["input_ids"]], device=device)
     supervision = torch.tensor(row["loss_mask"], device=device, dtype=torch.bool)
     starts = torch.tensor(anchors, device=device)
@@ -185,13 +191,11 @@ def load_checkpoint(folder, model, optimizer, schedule, design):
     return state["step"]
 
 
-def checkpoint_path(step, experiment=None):
-    if experiment is None:
-        experiment = EXPERIMENT
+def checkpoint_path(step, experiment):
     return work_path(experiment.output("train")) / f"step-{step:05d}"
 
 
-def train(probe, experiment=EXPERIMENT):
+def train(probe, experiment):
     from transformers import get_cosine_schedule_with_warmup
 
     startup = time.monotonic()

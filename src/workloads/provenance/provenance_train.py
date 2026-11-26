@@ -34,9 +34,9 @@ def output_dir(exp):
 
 
 def paired_data():
-    if not prep.completed():
+    if not prep.completed(prep.REFERENCE_JOB):
         raise RuntimeError('Paired preparation is not complete')
-    report = json.loads((prep.results() / 'prepared.json').read_text())
+    report = json.loads((prep.results(prep.REFERENCE_JOB) / 'prepared.json').read_text())
     values = {condition: {split: [json.loads(line) for line in
                   Path(report['splits'][split]['conditions'][condition]['path']).read_text().splitlines()]
               for split in prep.SPLITS} for condition in ('corpus', 'teacher')}
@@ -183,17 +183,8 @@ def submit(selected, dry=False):
         return
     values, report = paired_data()
     plan = make_plan(values)
-    launch.store_json(ROOT / 'plan.json', dict(plan=plan, preparation_sha256=prep.common.file_hash(prep.results() / 'prepared.json')))
-    from mls.manager.job.utils import training_job_api_from_profile
-    client, options = training_job_api_from_profile('default')
-    launch.disable_submission_retries(client)
-    active = {}
-    for status in ('Pending', 'Running'):
-        response = client.get_list_jobs(options['region'], None, status, 1000, 0)
-        if 'jobs' not in response:
-            raise RuntimeError('Cannot establish active jobs')
-        active.update({launch.normalize(x['job_desc']): x['job_name'] for x in response['jobs']})
-    launch.reconcile_for_outputs(client, active, [output_dir(exp) for exp in selected])
+    launch.store_json(ROOT / 'plan.json', dict(plan=plan, preparation_sha256=prep.common.file_hash(prep.results(prep.REFERENCE_JOB) / 'prepared.json')))
+    batch = launch.SubmissionBatch(commit)
     jobs = []
     for exp in selected:
         ident = identity(exp, report, plan)
@@ -204,14 +195,7 @@ def submit(selected, dry=False):
                 raise RuntimeError('Stale completed control')
             continue
         body = payload(exp, staged)
-        key = launch.output_identity(body['job_desc'], output_dir(exp))
-        if key in active:
-            verify_active_identity(exp, active[key], ident)
-            job = dict(name=exp.name, job_name=active[key], reused=True)
-        else:
-            staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
-            body = payload(exp, staged)
-            body['region'] = options['region']
+        def reserve():
             path = ROOT / exp.name / 'budget.json'
             ledger = json.loads(path.read_text()) if path.exists() else dict(attempts=[])
             cost = exp.num_gpus * exp.hours
@@ -222,9 +206,10 @@ def submit(selected, dry=False):
             # Persist before API send so lost-response intent reconciliation can
             # recover both the UUID receipt and its exact input identity.
             launch.store_json(submission_input_path(commit, exp), ident)
-            job = launch.submit_payload(client, body, 'train', exp.name, commit, output_dir=output_dir(exp))
-            if job.get("job_name"):
-                active[key] = job['job_name']
+
+        job = batch.submit(body, "train", exp.name, output_dir(exp), before_send=reserve)
+        if job.get("reused") and job.get("job_name"):
+            verify_active_identity(exp, job["job_name"], ident)
         jobs.append(job)
         # Emit each receipt immediately so partial submission is observable.
         print('__MLS_JOBS_JSON__'); print(json.dumps(dict(jobs=[job])), flush=True)

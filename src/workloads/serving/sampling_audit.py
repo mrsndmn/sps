@@ -5,7 +5,7 @@ then compares extended greedy cached decoding with/without speculation in eager
 and graph modes. This is a diagnostic gate, not a proof of full sampling equality.
 """
 from orchestration.named.publication import work_path
-from experiments.launch import run_filter
+from experiments.launch import named_run, run_filter
 import argparse
 import hashlib
 import json
@@ -25,6 +25,8 @@ from experiments import vllm_sps_config as source
 
 from experiments.sampling_audit import family_config as sampling_audit_settings
 from experiments.sampling_audit import Experiment, experiment_configs
+
+REFERENCE_JOB = named_run(experiment_configs, Experiment.name)
 SAMPLES = sampling_audit_settings.SAMPLES
 SEED = sampling_audit_settings.SEED
 PREFIX_LENGTHS = sampling_audit_settings.PREFIX_LENGTHS
@@ -55,7 +57,7 @@ def live_input_identity():
 input_identity = live_input_identity
 
 
-def output_dir(job=experiment_configs[0]):
+def output_dir(job):
     return work_path(ROOT/'runs/out'/job.name)
 
 
@@ -78,7 +80,7 @@ def frequency_check(values, probabilities, trials):
                 tolerance=tolerance, passed=max(errors) <= tolerance and all(n == 0 for n,p in zip(values, probabilities) if p == 0.))
 
 
-def kernel_worker(job=experiment_configs[0]):
+def kernel_worker(job):
     import torch
     from types import SimpleNamespace
     from vllm.v1.sample.rejection_sampler import rejection_sample, apply_sampling_constraints
@@ -169,7 +171,7 @@ def prepare_prefixes():
     return result
 
 
-def decode_worker(arm, execution, job=experiment_configs[0]):
+def decode_worker(arm, execution, job):
     import torch
     from vllm import LLM, SamplingParams
     from workloads.serving.vllm_sps_evaluate import check_runtime, engine_arguments
@@ -220,7 +222,7 @@ def compare_decodes(groups):
     return results
 
 
-def worker(job=experiment_configs[0]):
+def worker(job):
     identity = input_identity()
     root = output_dir(job)
     meta = root/'identity.json'
@@ -275,31 +277,16 @@ def submit(exp, root, destination, input_identity, payload, dry=False):
         if result['identity'] != identity or not result['passed']:
             raise RuntimeError('Stale audit completion')
         print('Already completed'); return
-    from mls.manager.job.utils import training_job_api_from_profile
-    client,options = training_job_api_from_profile('default')
-    launch.disable_submission_retries(client)
-    active = {}
-    for status in ('Pending','Running'):
-        response = client.get_list_jobs(options['region'],None,status,1000,0)
-        if 'jobs' not in response:
-            raise RuntimeError('Cannot establish active jobs')
-        active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
-    launch.reconcile_for_outputs(client, active, [destination])
-    body = payload(exp,staged)
-    name = launch.output_identity(body['job_desc'], destination)
-    if name in active:
-        job = dict(name=exp.name, job_name=active[name],reused=True)
-    else:
-        staged = launch.stage_repo(Path(launch.git('rev-parse','--show-toplevel')),commit)
-        body = payload(exp,staged); body['region'] = options['region']
+    def reserve():
         ledger_path=root/'budget.json'
         ledger=json.loads(ledger_path.read_text()) if ledger_path.exists() else {'attempts':[]}
         if sum(x['gpu_hours'] for x in ledger['attempts'])+exp.hours > 3*exp.hours:
             raise RuntimeError('Audit reservation cap exceeded')
         ledger['attempts'].append(dict(gpu_hours=exp.hours,time=time.time()))
         launch.store_json(ledger_path,ledger)
-        job=launch.submit_payload(client,body,'eval',exp.name,commit, output_dir=destination)
-    print('__MLS_JOBS_JSON__'); print(json.dumps({'jobs':[job]}),flush=True)
+
+    job = launch.SubmissionBatch(commit).submit(payload(exp, staged), "eval", exp.name, destination, before_send=reserve)
+    print("__MLS_JOBS_JSON__"); print(json.dumps({"jobs": [job]}), flush=True)
 
 
 def main():

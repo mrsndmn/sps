@@ -257,7 +257,7 @@ def test_second_dflash_config_reaches_worker_and_owns_its_output(tmp_path):
         stream.write(
             '\nexperiment_configs.append(Experiment(name="second", '
             f"output_root=Path({str(artifacts / 'custom')!r}), "
-            'eval_dir_pattern="eval-{step}", lr=0.0123, num_gpus=1))\n'
+            'eval_dir_pattern="eval-{step}", lr=0.0123, num_gpus=1, milestones=[]))\n'
         )
     # Isolate NFS state while keeping both entry points and their real parsers.
     (tmp_path / "sitecustomize.py").write_text(
@@ -298,21 +298,22 @@ def test_second_dflash_config_reaches_worker_and_owns_its_output(tmp_path):
         call(native, "--phase", "train", "--filter", "second", "--dry")
     )
     output = artifacts / "custom/runs/out/second"
+    assert "--cfg." not in plan["payload"]["script"]
+    assert plan["settings"]["lr"] == 0.0123
     assert plan["output_dir"] == str(output)
     assert plan["payload"]["instance_type"] == "a100.1gpu"
     command = shlex.split(shlex.split(plan["payload"]["script"])[-1])
     argv = command[command.index(native) + 1 :]
     worker = """
 import json, sys
-from experiments.family_cli import read_worker_arguments
-read_worker_arguments(sys.argv)
 from workloads.distillation import dflash_repro as jobs
-jobs.training.train = lambda experiment, probe: print(json.dumps([experiment.name, experiment.lr, str(experiment.output("train")), probe]))
+jobs.training.train = lambda experiment, probe: print(json.dumps([experiment.name, experiment.lr, experiment.milestones, str(experiment.output("train")), probe]))
 jobs.main()
 """
     assert json.loads(call("-c", worker, *argv)) == [
         "second",
         0.0123,
+        [],
         str(output),
         False,
     ]
@@ -325,7 +326,17 @@ jobs.main()
     }
     output.mkdir(parents=True)
     (output / "trained.json").write_text('{"steps": 42}')
-    assert json.loads(call(*evaluate))["output_dir"] == str(output.parent / "eval-42")
+    eval_plan = json.loads(call(*evaluate))
+    eval_output = output.parent / "eval-42"
+    assert eval_plan["output_dir"] == str(eval_output)
+    assert "lr" not in eval_plan["settings"]
+    command = shlex.split(shlex.split(eval_plan["payload"]["script"])[-1])
+    assert json.loads(call(
+        "-c",
+        "import json; from workloads.distillation import dflash_repro as jobs; "
+        "jobs.evaluation.evaluate = lambda args: print(json.dumps([args.name, str(args.checkpoint), str(args.result)])); jobs.main()",
+        *command[command.index(native) + 1 :],
+    )) == ["second", str(output / "step-00042"), str(eval_output / "evaluated.json")]
     assert "Skip existing output" in call(launcher, "--experiment", name)
 
 

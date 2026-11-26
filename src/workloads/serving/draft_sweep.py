@@ -334,7 +334,7 @@ def complete(phase, exp, manifest=None, *, protocol=None):
         if not marker.exists():
             return False
         if phase == "probe":
-            common.probe_seconds(marker, legacy_horizons=training.LEGACY_HORIZONS)
+            common.probe_seconds(marker, num_gpus=TRAINER.num_gpus, legacy_horizons=training.LEGACY_HORIZONS)
         else:
             bench.trained()
         return True
@@ -398,7 +398,7 @@ def submit(args, choices):
     if phase == "train":
         if not complete("probe", TRAINER):
             raise RuntimeError("Finish the 9-position probe first")
-        estimate = common.probe_seconds(probe_report(), legacy_horizons=training.LEGACY_HORIZONS)
+        estimate = common.probe_seconds(probe_report(), num_gpus=TRAINER.num_gpus, legacy_horizons=training.LEGACY_HORIZONS)
         if 2 * estimate > c.family_config.TRAIN_HOURS * 3600:
             raise RuntimeError("Probe does not fit the reserved training time")
     if phase in {"audit", "eval"}:
@@ -412,49 +412,19 @@ def submit(args, choices):
         print(json.dumps({"phase": phase, "jobs": [], "deferred": []}), flush=True)
         return
 
-    from mls.manager.job.utils import training_job_api_from_profile
-
-    client, options = training_job_api_from_profile("default")
-    launch.disable_submission_retries(client)
-    active = {}
-    for status in ("Pending", "Running"):
-        response = client.get_list_jobs(options["region"], None, status, 1000, 0)
-        if "jobs" not in response:
-            raise RuntimeError(f"Cannot establish {status} jobs")
-        active.update(
-            {
-                launch.normalize(row["job_desc"]): row["job_name"]
-                for row in response["jobs"]
-            }
-        )
-    launch.reconcile_for_outputs(client, active, [output(exp) for exp in choices])
-    staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
-    occupied = launch.occupied_slots(client, active, "sps-draft-sweep eval ") if phase == "eval" else 0
+    batch = launch.SubmissionBatch(commit)
     jobs = []
     deferred = []
     for exp in pending:
         body = payload(phase, exp, staged)
-        identity = launch.output_identity(body["job_desc"], output(exp))
-        arm_prefix = identity.rsplit(" ", 1)[0] + " "
-        if any(key.startswith(arm_prefix) and key != identity and " output=" not in key for key in active):
-            raise RuntimeError(f"An older design is already running for {exp.name}")
-        if identity in active:
-            jobs.append(
-                {"name": exp.name, "job_name": active[identity], "reused": True}
-            )
-            continue
-        if complete(phase, exp, manifest):
-            continue
-        if phase == "eval" and occupied >= bench.MAX_ACTIVE_JOBS:
+        receipt_phase = {"probe": "prepare", "audit": "eval"}.get(phase, phase)
+        result = batch.submit(body, receipt_phase, exp.name, output(exp),
+                              capacity=("sps-draft-sweep eval ", bench.MAX_ACTIVE_JOBS) if phase == "eval" else None,
+                              reject_legacy=True,
+                              before_send=lambda: run.reserve("eval" if phase == "audit" else phase, exp))
+        if result.get("deferred"):
             deferred.append(exp.name)
             continue
-        body["region"] = options["region"]
-        run.reserve("eval" if phase == "audit" else phase, exp)
-        receipt_phase = (
-            "prepare" if phase == "probe" else "eval" if phase == "audit" else phase
-        )
-        result = launch.submit_payload(client, body, receipt_phase, exp.name, commit, output_dir=output(exp))
-        occupied += 1
         jobs.append(result)
         print(json.dumps(result), flush=True)
     print("__MLS_JOBS_JSON__")

@@ -66,28 +66,11 @@ def submit(args):
         raise ValueError("No matching experiments")
     commit = launch.git("rev-parse", "HEAD")
     staged = launch.STAGING_ROOT / commit
-    active = {}
-    extra = {}
-    client = None
     if not args.dry:
         experiments = [exp for exp in experiments if launch.pending(exp.output(args.phase), args.profile)]
         if not experiments:
             return
-        from mls.manager.job.utils import (
-            get_in_progress_jobs,
-            training_job_api_from_profile,
-        )
-
-        client, extra = training_job_api_from_profile(args.profile)
-        launch.disable_submission_retries(client)
-        active = {
-            launch.normalize(j["job_desc"]): j["job_name"]
-            for j in get_in_progress_jobs(client_profile=args.profile)
-        }
-        launch.reconcile_for_outputs(client, active, [exp.output(args.phase) for exp in experiments])
-        staged = launch.stage_repo(
-            Path(launch.git("rev-parse", "--show-toplevel")), commit
-        )
+    batch = launch.SubmissionBatch(commit, args.profile)
     jobs = []
     for exp in experiments:
         root = exp.output(args.phase)
@@ -98,27 +81,12 @@ def submit(args):
             if estimate * 2 > c.family_config.TRAIN_HOURS * 3600:
                 raise RuntimeError("Training exceeds bounded reservation")
         body = payload(args.phase, exp, staged, args.author_name, args.telegram_nick)
-        identity = launch.output_identity(body["job_desc"], root)
-        if identity in active:
-            jobs.append(
-                {"name": exp.name, "job_name": active[identity], "reused": True}
-            )
-            continue
         if args.dry:
             launch.print_preview(body, root, staged, args.phase)
             continue
-        body["region"] = extra["region"]
-        reserve(args.phase, exp)
-        job = launch.submit_payload(
-            client,
-            body,
-            "prepare" if args.phase == "probe" else args.phase,
-            exp.name,
-            commit,
-        output_dir=root)
+        job = batch.submit(body, "prepare" if args.phase == "probe" else args.phase, exp.name, root,
+            before_send=lambda: reserve(args.phase, exp))
         jobs.append(job)
-        if job.get("job_name"):
-            active[identity] = job["job_name"]
         print(json.dumps(job), flush=True)
     if args.dry:
         return

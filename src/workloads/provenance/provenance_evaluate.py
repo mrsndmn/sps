@@ -65,7 +65,7 @@ def protocol():
 
 def identity(exp):
     return dict(experiment=exp.__dict__, checkpoint=checkpoint(exp.arm), protocol=protocol(),
-                preparation_sha256=train.prep.common.file_hash(train.prep.results() / 'prepared.json'))
+                preparation_sha256=train.prep.common.file_hash(train.prep.results(train.prep.REFERENCE_JOB) / 'prepared.json'))
 
 
 def input_path(commit, exp):
@@ -112,10 +112,10 @@ def evaluate(exp):
     # These are descriptive endpoints; no checkpoint is selected with them.
     crossed = None
     if exp.mode == 'nonthinking':
-        if train.prep.common.file_hash(train.prep.results() / 'prepared.json') != ident['preparation_sha256']:
+        if train.prep.common.file_hash(train.prep.results(train.prep.REFERENCE_JOB) / 'prepared.json') != ident['preparation_sha256']:
             raise RuntimeError('Held-out preparation changed during generation')
         values, _ = train.paired_data()
-        if train.prep.common.file_hash(train.prep.results() / 'prepared.json') != ident['preparation_sha256']:
+        if train.prep.common.file_hash(train.prep.results(train.prep.REFERENCE_JOB) / 'prepared.json') != ident['preparation_sha256']:
             raise RuntimeError('Held-out preparation changed while reading')
         crossed = {condition: train.common.nll(model, values[condition]['test'], torch.device('cuda'))
                    for condition in ('corpus', 'teacher')}
@@ -151,16 +151,7 @@ def submit(selected, dry=False):
     if not selected:
         return
     identities = {exp.name: identity(exp) for exp in selected}
-    from mls.manager.job.utils import training_job_api_from_profile
-    client, options = training_job_api_from_profile('default')
-    launch.disable_submission_retries(client)
-    active = {}
-    for status in ('Pending', 'Running'):
-        response = client.get_list_jobs(options['region'], None, status, 1000, 0)
-        if 'jobs' not in response:
-            raise RuntimeError('Cannot establish active jobs')
-        active.update({launch.normalize(x['job_desc']): x['job_name'] for x in response['jobs']})
-    launch.reconcile_for_outputs(client, active, [output_dir(exp) for exp in selected])
+    batch = launch.SubmissionBatch(commit)
     for exp in selected:
         ident = identities[exp.name]
         marker = output_dir(exp) / 'evaluated.json'
@@ -171,19 +162,7 @@ def submit(selected, dry=False):
                 raise RuntimeError('Stale evaluation completion')
             continue
         body = payload(exp, staged)
-        key = launch.output_identity(body['job_desc'], output_dir(exp))
-        if key in active:
-            job_name = active[key]
-            path = ROOT / 'submissions' / f'{job_name}.json'
-            if not path.exists():
-                raise RuntimeError('Active evaluation has no local receipt')
-            receipt = json.loads(path.read_text())
-            if receipt['name'] != exp.name or receipt['phase'] != 'eval' or receipt['job_name'] != job_name:
-                raise RuntimeError('Active evaluation receipt mismatch')
-            require_identity(input_path(receipt['commit'], exp), ident)
-            job = dict(name=exp.name, job_name=job_name, reused=True)
-        else:
-            staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
+        def reserve():
             path = ROOT / exp.name / 'budget.json'
             ledger = json.loads(path.read_text()) if path.exists() else dict(attempts=[])
             if sum(x['gpu_hours'] for x in ledger['attempts']) + exp.hours > 2 * exp.hours:
@@ -191,10 +170,17 @@ def submit(selected, dry=False):
             ledger['attempts'].append(dict(gpu_hours=exp.hours, time=time.time()))
             launch.store_json(path, ledger)
             launch.store_json(input_path(commit, exp), ident)
-            body = payload(exp, staged); body['region'] = options['region']
-            job = launch.submit_payload(client, body, 'eval', exp.name, commit, output_dir=output_dir(exp))
-            if job.get("job_name"):
-                active[key] = job['job_name']
+
+        job = batch.submit(body, "eval", exp.name, output_dir(exp), before_send=reserve)
+        if job.get("reused") and job.get("job_name"):
+            job_name = job["job_name"]
+            path = ROOT / 'submissions' / f'{job_name}.json'
+            if not path.exists():
+                raise RuntimeError('Active evaluation has no local receipt')
+            receipt = json.loads(path.read_text())
+            if receipt['name'] != exp.name or receipt['phase'] != 'eval' or receipt['job_name'] != job_name:
+                raise RuntimeError('Active evaluation receipt mismatch')
+            require_identity(input_path(receipt['commit'], exp), ident)
         print('__MLS_JOBS_JSON__'); print(json.dumps(dict(jobs=[job])), flush=True)
 
 

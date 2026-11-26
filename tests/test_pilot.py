@@ -122,7 +122,15 @@ def test_staging_uses_committed_snapshot(tmp_path, monkeypatch):
     git('remote', 'add', 'origin', 'https://user:credential@example.com/project')
     monkeypatch.setattr(mlspace_launch, 'STAGING_ROOT', tmp_path / 'stages')
     commit = git('rev-parse', 'HEAD')
+    # An independent family can publish the same committed checkout first.
+    rename = Path.rename
+    def publish_concurrently(snapshot, target):
+        import shutil
+        shutil.copytree(snapshot, target)
+        return rename(snapshot, target)
+    monkeypatch.setattr(Path, 'rename', publish_concurrently)
     staged = mlspace_launch.stage_repo(repo, commit)
+    assert list(staged.parent.iterdir()) == [staged]
     (repo / 'tracked').write_text('changed')
     assert (staged / 'tracked').read_text() == 'original'
     assert 'credential' not in (staged / '.git/config').read_text()

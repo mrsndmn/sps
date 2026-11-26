@@ -29,19 +29,18 @@ from experiments.sampling_backbone_precision import (
 )
 
 ROOT = precision.ROOT.parent / 'sps-sampling-backbone-precision'
-SOURCE = precision.root()
-BASE_IDENTITY = precision.recorded_identity
+SOURCE = precision.root(precision.REFERENCE_JOB)
 
 
-def root(job=job_configs[0]):
+def root(job):
     return work_path(ROOT / 'runs/out' / job.name)
 
 
 def identity():
     prior = json.loads((SOURCE / 'identity.json').read_text())
-    if prior != BASE_IDENTITY():
+    if prior != precision.recorded_identity(precision.REFERENCE_JOB):
         raise RuntimeError('Precision baseline inputs changed')
-    files = [SOURCE / 'report.json', cache.root() / 'report.json', cache.root() / 'cases.json']
+    files = [SOURCE / 'report.json', cache.root(cache.REFERENCE_JOB) / 'report.json', cache.root(cache.REFERENCE_JOB) / 'cases.json']
     for name, arm in [('fp32head-four', 'sps'), ('fp32head-mtp', 'sps_mtp')]:
         files.append(SOURCE / name / 'decode' / f'{arm}-eager.json')
         dist_arm = 'sps_four_slots' if arm == 'sps' else arm
@@ -59,7 +58,7 @@ class BackbonePrecisionWorkerExtension(precision.PrecisionWorkerExtension):
                     **self.sps_precision_info())
 
 
-def engine_worker(exp, task, job=job_configs[0]):
+def engine_worker(exp, task, job):
     import vllm
     original = vllm.LLM
     observed = []
@@ -77,7 +76,7 @@ def engine_worker(exp, task, job=job_configs[0]):
                 raise RuntimeError('Expected unchanged FP32 head')
     destination_root = root(job)
     with patch.object(vllm, 'LLM', BackboneLLM), patch.object(precision, 'root', lambda job: destination_root):
-        precision.engine_worker(exp, task)
+        precision.engine_worker(exp, task, job)
     launch.store_json(root(job) / exp.name / task / 'backbone.json', dict(experiment=exp.__dict__, observed=observed))
 
 
@@ -88,7 +87,7 @@ def validate_decodes(group):
             raise RuntimeError("Missing or nonfinite sampled log probabilities")
 
 
-def report(job=job_configs[0]):
+def report(job):
     cases = json.loads((precision.TRACE_SOURCE / 'cases.json').read_text())
     matrices = {}
     for exp in experiment_configs:
@@ -111,7 +110,7 @@ def report(job=job_configs[0]):
     launch.store_json(root(job) / 'evaluated.json', result)
 
 
-def worker(job=job_configs[0]):
+def worker(job):
     current = identity()
     path = root(job) / 'identity.json'
     if path.exists() and json.loads(path.read_text()) != current:

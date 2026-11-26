@@ -1,6 +1,7 @@
-import sys
 """Shared, side-effect-free planning and committed-code MLSpace submission."""
+import sys
 import argparse
+import errno
 import json
 import os
 from pathlib import Path
@@ -47,7 +48,11 @@ def stage_repo(repo, commit):
                        stdout=subprocess.DEVNULL)
         try:
             tmp.rename(target)
-        except FileExistsError:
+        except OSError as exc:
+            if exc.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
+                raise
+            if git('-C', str(target), 'rev-parse', 'HEAD') != commit:
+                raise RuntimeError('Concurrent staging published another commit') from exc
             shutil.rmtree(tmp)
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -207,34 +212,35 @@ def scope_payload(body, output):
     body["job_desc"] = " ".join([identity, *tags])
 
 
-def prepare_payload(body, output, staged, phase):
+def prepare_payload(body, output, staged, phase, *, settings=None):
     """Build the exact worker invocation used for preview and submission."""
-    from experiments.protocols import schemas
     from orchestration.named.publication import published_command
-
-    from experiments.family_cli import worker_command, worker_settings
 
     body = dict(body)
     scope_payload(body, output)
-    words = shlex.split(body["script"])
-    selected = next((words[words.index(k) + 1] for k in ("--filter", "--arm") if k in words), None)
-    settings = worker_settings(schemas(Path(sys.argv[0]).stem, phase), selected)
-    command = worker_command(body["script"], settings)
-    body["script"] = published_command(command, output, staged)
+    if settings is None:
+        from experiments.protocols import schemas
+        from experiments.family_cli import worker_command, worker_settings
+
+        words = shlex.split(body["script"])
+        selected = next((words[words.index(k) + 1] for k in ("--filter", "--arm") if k in words), None)
+        settings = worker_settings(schemas(Path(sys.argv[0]).stem, phase), selected)
+        body["script"] = worker_command(body["script"], settings)
+    body["script"] = published_command(body["script"], output, staged)
     return body, settings
 
 
-def print_preview(body, output, staged, phase):
+def print_preview(body, output, staged, phase, *, settings=None):
     from experiments.family_cli import json_value
-    payload, settings = prepare_payload(body, output, staged, phase)
+    payload, settings = prepare_payload(body, output, staged, phase, settings=settings)
     print(json.dumps(dict(payload=payload, output_dir=str(output), settings=settings), default=json_value, indent=2))
 
 
-def submit_payload(client, body, phase, name, commit, *, output_dir=None, directory=None, before_send=None):
+def submit_payload(client, body, phase, name, commit, *, output_dir=None, directory=None, before_send=None, settings=None):
     output = directory.output if directory else output_dir
     if output and directory is None:
         from orchestration.named.publication import COMMON_ROOT, RunDirectory
-        body, _ = prepare_payload(body, output, STAGING_ROOT / commit, phase)
+        body, _ = prepare_payload(body, output, STAGING_ROOT / commit, phase, settings=settings)
         directory = RunDirectory(COMMON_ROOT, Path(output))
     identity = normalize(body["job_desc"])
     intent = ARTIFACTS_ROOT / 'submission-intents' / (
@@ -281,6 +287,93 @@ def submit_payload(client, body, phase, name, commit, *, output_dir=None, direct
     store_json(ARTIFACTS_ROOT / 'submissions' / f'{job_name}.json', dict(data, job_name=job_name))
     intent.unlink()
     return dict(name=name, job_name=job_name, commit=commit)
+
+
+class SubmissionBatch:
+    """Reuse one active-job snapshot and committed checkout per native invocation."""
+
+    def __init__(self, commit, profile="default"):
+        self.commit = commit
+        self.profile = profile
+        self.client = None
+        self.staged = False
+
+    def connect(self):
+        if self.client is not None:
+            return
+        from mls.manager.job.utils import training_job_api_from_profile
+
+        client, options = training_job_api_from_profile(self.profile)
+        disable_submission_retries(client)
+        region = options["region"]
+        active = {}
+        for status in ("Pending", "Running"):
+            response = client.get_list_jobs(region, None, status, 1000, 0)
+            if "jobs" not in response:
+                raise RuntimeError(f"Cannot establish {status} jobs")
+            active.update(
+                {normalize(j["job_desc"]): j["job_name"] for j in response["jobs"]}
+            )
+        self.client, self.region, self.active = client, region, active
+
+    def submit(
+        self,
+        body,
+        phase,
+        name,
+        output,
+        *,
+        before_send=None,
+        settings=None,
+        capacity=None,
+        reject_legacy=False,
+        directory=None,
+    ):
+        if (
+            output is not None
+            and directory is None
+            and not pending(output, self.profile)
+        ):
+            return dict(name=name, output_dir=str(output), reused=True)
+        self.connect()
+        if output is None:
+            # Runtime provisioning shares a directory with its installer and receipts.
+            reconcile_receipts(self.client, self.active)
+            reconcile_intents(self.active)
+        else:
+            reconcile_for_outputs(self.client, self.active, [output])
+        identity = (
+            normalize(body["job_desc"])
+            if output is None or directory
+            else output_identity(body["job_desc"], output)
+        )
+        if reject_legacy:
+            prefix = normalize(body["job_desc"]) + " "
+            if any(k.startswith(prefix) and " output=" not in k for k in self.active):
+                raise RuntimeError(f"An older design is already running for {name}")
+        if identity in self.active:
+            return dict(name=name, job_name=self.active[identity], reused=True)
+        if capacity:
+            prefix, limit = capacity
+            if occupied_slots(self.client, self.active, prefix) >= limit:
+                return dict(name=name, deferred=True)
+        if not self.staged:
+            stage_repo(Path(git("rev-parse", "--show-toplevel")), self.commit)
+            self.staged = True
+        result = submit_payload(
+            self.client,
+            dict(body, region=self.region),
+            phase,
+            name,
+            self.commit,
+            output_dir=output,
+            directory=directory,
+            before_send=before_send,
+            settings=settings,
+        )
+        if job := result.get("job_name"):
+            self.active[identity] = job
+        return result
 
 
 def payload(phase, name, staged, author, nick, *, training_gpus=4):

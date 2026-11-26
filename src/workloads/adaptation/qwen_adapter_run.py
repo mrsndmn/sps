@@ -111,24 +111,13 @@ def submit(phase, dry, name=None):
         arms = [arm for arm in arms if launch.pending(directory(arm))]
         if not arms:
             return
-    from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
     if digest(WHEEL) != WHEEL_SHA or digest(PARENT) != PARENT_SHA:
         raise RuntimeError('Pinned dependency or source digest mismatch')
-    staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
-    client, extra = training_job_api_from_profile('default')
-    launch.disable_submission_retries(client)
-    active = {launch.normalize(job['job_desc']): job['job_name']
-              for job in get_in_progress_jobs(client_profile='default')}
-    launch.reconcile_for_outputs(client, active, [directory(arm) if phase == "train" else winner_output() for arm in arms])
+    batch = launch.SubmissionBatch(commit)
     for arm in arms:
-        body = payload(phase, arm, staged)
-        identity = launch.output_identity(body['job_desc'], directory(arm) if phase == "train" else winner_output())
-        if identity in active:
-            job = active[identity]
-            print(job, flush=True)
-            continue
-        body['region'] = extra['region']
-        print(json.dumps(launch.submit_payload(client, body, phase, arm.name, commit, output_dir=directory(arm) if phase == "train" else winner_output())), flush=True)
+        body = payload(phase, arm, launch.STAGING_ROOT / commit)
+        output = directory(arm) if phase == "train" else winner_output()
+        print(json.dumps(batch.submit(body, phase, arm.name, output)), flush=True)
 
 
 def main():

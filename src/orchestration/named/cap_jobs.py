@@ -79,23 +79,5 @@ def main():
                 print(f"Completed {name}: {marker}")
                 return
 
-        from mls.manager.job.utils import (
-            get_in_progress_jobs,
-            training_job_api_from_profile,
-        )
-
-        body = payload(marker)
-        client, options = training_job_api_from_profile("default")
-        launch.disable_submission_retries(client)
-        active = {
-            launch.normalize(j["job_desc"]): j["job_name"]
-            for j in get_in_progress_jobs(client_profile="default")
-        }
-        identity = launch.output_identity(body["job_desc"], marker.parent)
-        launch.reconcile_for_outputs(client, active, [marker.parent])
-        if identity in active:
-            print(active[identity])
-            return
-        launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
-        body["region"] = options["region"]
-        print(json.dumps(launch.submit_payload(client, body, "eval", name, commit, output_dir=marker.parent)))
+        receipt = launch.SubmissionBatch(commit).submit(payload(marker), "eval", name, marker.parent)
+        print(json.dumps(receipt))

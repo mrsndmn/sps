@@ -115,6 +115,7 @@ def submit(args):
         raise ValueError("No matching experiments")
     commit = launch.git("rev-parse", "HEAD")
     staged = launch.STAGING_ROOT / commit
+    batch = launch.SubmissionBatch(commit, args.profile)
     jobs = []
     for run in [None] if phase == "prepare" else runs:
         name = "data-and-probes" if run is None else run.name
@@ -191,7 +192,6 @@ def submit(args):
                     print(json.dumps(body, indent=2))
                 continue
             from orchestration.named.publication import retryable
-            from mls.manager.job.utils import training_job_api_from_profile
 
             if directory.reservation.exists() and not retryable(
                 directory, args.profile
@@ -200,8 +200,6 @@ def submit(args):
                 if job:
                     jobs.append(dict(name=name, job_name=job, reused=True))
                 continue
-            client, extra = training_job_api_from_profile(args.profile)
-            launch.disable_submission_retries(client)
             if phase in {"train", "eval"} and suite.SUITE in suite.AR_SPS_SUITES | {
                 suite.INSTRUCT_SUITE
             }:
@@ -230,8 +228,6 @@ def submit(args):
                 checkpoint = Path(json.loads(marker.read_text())["checkpoint"])
                 if not checkpoint.is_file():
                     raise FileNotFoundError(checkpoint)
-            launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
-            body["region"] = extra["region"]
 
             def reserve_budget():
                 if suite.SUITE in suite.AR_SPS_SUITES:
@@ -246,12 +242,11 @@ def submit(args):
                         reserve(phase, name)
 
             jobs.append(
-                launch.submit_payload(
-                    client,
+                batch.submit(
                     body,
                     phase,
                     name,
-                    commit,
+                    directory.output,
                     directory=directory,
                     before_send=reserve_budget,
                 )

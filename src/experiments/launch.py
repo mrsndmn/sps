@@ -20,6 +20,10 @@ def filtered(rows, phase, script, *args, options=(), required=()):
         )
 
 
+def named_run(rows, name):
+    return {row.name: row for row in rows}[name]
+
+
 def run_filter(parser, rows):
     by_name = {row.name: row for row in rows}
     parser.add_argument(

@@ -53,21 +53,8 @@ def submit(exp, phase, dry):
         return
     if phase == "train":
         check_probe(exp)
-    from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
-
-    client, extra = training_job_api_from_profile("default")
-    launch.disable_submission_retries(client)
-    active = {launch.normalize(j["job_desc"]): j["job_name"]
-              for j in get_in_progress_jobs(client_profile="default")}
-    launch.reconcile_for_outputs(client, active, [output])
-    identity = launch.output_identity(body["job_desc"], output)
-    if identity in active:
-        print(active[identity])
-        return
-    launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
-    body["region"] = extra["region"]
-    print(json.dumps(launch.submit_payload(client, body, "prepare" if phase == "probe" else phase,
-                                          exp.name, commit, output_dir=output)), flush=True)
+    receipt = launch.SubmissionBatch(commit).submit(body, "prepare" if phase == "probe" else phase, exp.name, output)
+    print(json.dumps(receipt), flush=True)
 
 
 def main():

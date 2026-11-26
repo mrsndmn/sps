@@ -49,19 +49,12 @@ def submit(exp, dry):
         print('Already completed'); return
     if dry:
         launch.print_preview(payload(exp, staged), marker.parent, staged, "train"); return
-    from mls.manager.job.utils import training_job_api_from_profile, get_in_progress_jobs
-    client, extra = training_job_api_from_profile('default')
-    launch.disable_submission_retries(client)
-    active = {launch.normalize(j['job_desc']):j['job_name'] for j in get_in_progress_jobs(client_profile='default')}
-    launch.reconcile_for_outputs(client, active, [marker.parent])
-    identity = launch.output_identity(payload(exp, staged)['job_desc'], marker.parent)
-    if identity in active:
-        print(json.dumps(dict(job_name=active[identity], reused=True))); return
-    staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
-    body = payload(exp, staged); body['region'] = extra['region']
-    launch.store_json(e.ARTIFACTS_ROOT/'followup.json', dict(reminder=config.REMINDER,
-                     checkpoint=str(e.RUN_ROOT/'out'/exp.name/'final.pt')))
-    result = launch.submit_payload(client, body, 'train', exp.name, commit, output_dir=marker.parent)
+    def record_followup():
+        launch.store_json(e.ARTIFACTS_ROOT / "followup.json", dict(reminder=config.REMINDER,
+                          checkpoint=str(marker.parent / "final.pt")))
+
+    result = launch.SubmissionBatch(commit).submit(payload(exp, staged), "train", exp.name,
+                                                   marker.parent, before_send=record_followup)
     print(json.dumps(result), flush=True)
 
 

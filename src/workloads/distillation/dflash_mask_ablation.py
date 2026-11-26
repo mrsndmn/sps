@@ -306,7 +306,6 @@ def evaluate():
 
 def submit(dry):
     name = run_name()
-    repo = Path(launch.git("rev-parse", "--show-toplevel"))
     commit = launch.git("rev-parse", "HEAD")
     staged = launch.STAGING_ROOT / commit
     body = launch.payload("eval", name, staged, "d.tarasov", "mrsndmn")
@@ -320,7 +319,6 @@ def submit(dry):
 
     if not launch.pending(result_path().parent):
         return
-    from mls.manager.job.utils import training_job_api_from_profile
 
     with (
         patch.object(launch, "ARTIFACTS_ROOT", ROOT),
@@ -330,31 +328,8 @@ def submit(dry):
             if result_path().is_file():
                 print(result_path())
                 return
-            client, options = training_job_api_from_profile("default")
-            launch.disable_submission_retries(client)
-            body["region"] = options["region"]
-            active = {}
-            for status in ("Pending", "Running"):
-                response = client.get_list_jobs(
-                    options["region"], None, status, 1000, 0
-                )
-                active.update(
-                    {
-                        launch.normalize(j["job_desc"]): j["job_name"]
-                        for j in response["jobs"]
-                    }
-                )
-            launch.reconcile_for_outputs(client, active, [result_path().parent])
-            identity = launch.output_identity(body["job_desc"], result_path().parent)
-            if identity in active:
-                print(
-                    json.dumps(
-                        {"name": name, "job_name": active[identity], "reused": True}
-                    )
-                )
-                return
-            launch.stage_repo(repo, commit)
-            print(json.dumps(launch.submit_payload(client, body, "eval", name, commit, output_dir=result_path().parent)))
+            receipt = launch.SubmissionBatch(commit).submit(body, "eval", name, result_path().parent)
+            print(json.dumps(receipt))
 
 
 def main():

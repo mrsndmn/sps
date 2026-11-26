@@ -1,6 +1,10 @@
 """Launch the isolated DFlash-b16 reproduction probe, training, or evaluation."""
 
 import argparse
+from dataclasses import asdict, fields, replace
+import sys
+
+from experiments.dflash_repro_eval import DFlashEvalArguments
 from orchestration.named.publication import submitting, work_path
 import json
 from pathlib import Path
@@ -28,7 +32,45 @@ def marker(experiment, phase, step=None):
     return work_path(experiment.output(phase, step)) / filename
 
 
-def payload(experiment, phase, step, staged, script):
+def worker_arguments(trainer, experiment, phase, step):
+    if phase == "eval":
+        return DFlashEvalArguments(
+            name=experiment.name,
+            checkpoint=trainer.checkpoint_path(step, experiment),
+            result=experiment.output(phase, step) / "evaluated.json",
+            proposals=experiment.proposals,
+            seed=experiment.seed,
+            training_settings_sha256=evaluation.settings_digest(
+                training.training_settings(experiment)
+            ),
+        )
+    return trainer.TrainArguments(
+        **{f.name: getattr(experiment, f.name) for f in fields(trainer.TrainArguments)}
+    )
+
+
+def worker(trainer, evaluate, phase, argv):
+    from transformers import HfArgumentParser
+
+    schema = DFlashEvalArguments if phase == "eval" else trainer.TrainArguments
+    (args,) = HfArgumentParser(schema).parse_args_into_dataclasses(
+        argv, look_for_args_file=False
+    )
+    if phase == "eval":
+        if work_path(args.result).is_file():
+            return
+        if not (args.checkpoint.parent / "trained.json").is_file():
+            raise RuntimeError(
+                "Complete DFlash training before evaluating any checkpoint"
+            )
+        return evaluate(replace(args, result=work_path(args.result)))
+    if phase not in ("train", "probe"):
+        raise ValueError(f"Unknown phase {phase}")
+    if not marker(args, phase).is_file():
+        return trainer.train(experiment=args, probe=phase == "probe")
+
+
+def payload(experiment, phase, step, staged, script, arguments):
     name = experiment.output(phase, step).name if phase == "eval" else experiment.name
     body = launch.payload(
         "eval" if phase == "eval" else "train", name, staged, "d.tarasov", "mrsndmn"
@@ -43,9 +85,12 @@ def payload(experiment, phase, step, staged, script):
             "--standalone",
             f"--nproc-per-node={experiment.num_gpus}",
         ]
-    command += [script, "--worker", "--phase", phase, "--filter", experiment.name]
-    if phase == "eval":
-        command += ["--step", str(step)]
+    command += [script, "--worker", phase]
+    for key, value in asdict(arguments).items():
+        if value == []:
+            continue
+        command.append(f"--{key}")
+        command.extend(map(str, value if isinstance(value, list) else [value]))
     body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(command)
     study = Path(script).stem.replace("_", "-")
     body["job_desc"] = (
@@ -54,7 +99,7 @@ def payload(experiment, phase, step, staged, script):
     return body
 
 
-def submit_phase(experiment, trainer, phase, step, body, commit):
+def submit_phase(experiment, trainer, phase, step, body, commit, arguments):
     output = experiment.output(phase, step)
     with submitting(output) as ready:
         if not ready:
@@ -71,61 +116,32 @@ def submit_phase(experiment, trainer, phase, step, body, commit):
             ).is_file():
                 raise FileNotFoundError(trainer.checkpoint_path(step, experiment))
         name = output.name if phase == "eval" else experiment.name
-        submit_job(
-            phase,
-            name,
-            experiment.output_root,
-            marker(experiment, phase, step),
-            body,
-            commit,
-        )
-
-
-def submit_job(phase, name, root, result_path, body, commit):
-    from mls.manager.job.utils import training_job_api_from_profile
-
-    with (
-        patch.object(launch, "ARTIFACTS_ROOT", root),
-        patch.object(launch, "RUN_ROOT", root / "runs"),
-        launch.submission_lock(),
-    ):
-        if result_path.is_file():
-            print(result_path)
-            return
-        client, options = training_job_api_from_profile("default")
-        launch.disable_submission_retries(client)
-        body["region"] = options["region"]
-        active = {}
-        for status in ("Pending", "Running"):
-            response = client.get_list_jobs(options["region"], None, status, 1000, 0)
-            if "jobs" not in response:
-                raise RuntimeError(f"Cannot establish {status} jobs")
-            active.update(
-                {
-                    launch.normalize(job["job_desc"]): job["job_name"]
-                    for job in response["jobs"]
-                }
+        with (
+            patch.object(launch, "ARTIFACTS_ROOT", experiment.output_root),
+            launch.submission_lock(),
+        ):
+            receipt = launch.SubmissionBatch(commit).submit(
+                body,
+                "prepare" if phase == "probe" else phase,
+                name,
+                output,
+                settings=asdict(arguments),
             )
-        launch.reconcile_for_outputs(client, active, [result_path.parent])
-        identity = launch.output_identity(body["job_desc"], result_path.parent)
-        if identity in active:
-            result = {"name": name, "job_name": active[identity], "reused": True}
-        else:
-            launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
-            receipt_phase = "prepare" if phase == "probe" else phase
-            result = launch.submit_payload(
-                client, body, receipt_phase, name, commit, output_dir=result_path.parent
-            )
-        print(json.dumps(result), flush=True)
+            print(json.dumps(receipt), flush=True)
 
 
 def run(trainer, script, evaluate):
+    if sys.argv[1:2] == ["--worker"]:
+        parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+        parser.add_argument("phase", choices=tuple(TIMEOUTS))
+        control, fields_argv = parser.parse_known_args(sys.argv[2:])
+        return worker(trainer, evaluate, control.phase, fields_argv)
     parser = argparse.ArgumentParser(description=__doc__)
     configs = run_filter(parser, trainer.experiment_configs)
     parser.add_argument("--phase", choices=tuple(TIMEOUTS), default="probe")
     parser.add_argument("--step", type=int)
     modes = parser.add_mutually_exclusive_group()
-    for flag in ("dry", "worker", "report"):
+    for flag in ("dry", "report"):
         modes.add_argument(f"--{flag}", action="store_true")
     args = parser.parse_args()
     experiment = configs[args.filter]
@@ -145,27 +161,21 @@ def run(trainer, script, evaluate):
     if args.report:
         report = json.loads(result.read_text())
         print(json.dumps(report["summary"] if phase == "eval" else report, indent=2))
-    elif args.worker:
-        if result.is_file():
-            return
-        if phase == "eval":
-            if not marker(experiment, "train").is_file():
-                raise RuntimeError(
-                    "Complete DFlash training before evaluating any checkpoint"
-                )
-            evaluate(
-                trainer.checkpoint_path(step, experiment), result, experiment=experiment
-            )
-        else:
-            trainer.train(experiment=experiment, probe=phase == "probe")
     else:
         commit = launch.git("rev-parse", "HEAD")
         staged = launch.STAGING_ROOT / commit
-        body = payload(experiment, phase, step, staged, script)
+        arguments = worker_arguments(trainer, experiment, phase, step)
+        body = payload(experiment, phase, step, staged, script, arguments)
         if args.dry:
-            launch.print_preview(body, experiment.output(phase, step), staged, phase)
+            launch.print_preview(
+                body,
+                experiment.output(phase, step),
+                staged,
+                phase,
+                settings=asdict(arguments),
+            )
         else:
-            submit_phase(experiment, trainer, phase, step, body, commit)
+            submit_phase(experiment, trainer, phase, step, body, commit, arguments)
 
 
 def main():

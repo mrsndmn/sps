@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import vllm_sps_config as c
+from .launch import named_run
 
 
 @dataclass(kw_only=True)
@@ -19,4 +20,4 @@ class FamilyConfig:
 family_config = FamilyConfig()
 
 
-EXPERIMENT = c.experiment_configs[0]
+EXPERIMENT = named_run(c.experiment_configs, c.SPS_MTP.name)

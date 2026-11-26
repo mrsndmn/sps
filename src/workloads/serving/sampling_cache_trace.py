@@ -5,7 +5,7 @@ Capture divergent histories and compare with cold full-prefix evaluation. The
 original failed correctness gate is immutable; instrumentation is not a benchmark.
 """
 from orchestration.named.publication import work_path
-from experiments.launch import run_filter
+from experiments.launch import named_run, run_filter
 import argparse
 import hashlib
 import json
@@ -27,15 +27,16 @@ from experiments.sampling_cache_trace import (
     job_configs,
 )
 
+REFERENCE_JOB = named_run(job_configs, Job.name)
+
 ROOT = precision.ROOT.parent / 'sps-sampling-cache-trace'
-SOURCE = precision.root()
-BASE_IDENTITY = precision.recorded_identity
+SOURCE = precision.root(precision.REFERENCE_JOB)
 
 
 LIMIT = max(audit.OUTPUT_LENGTHS)
 
 
-def root(job=job_configs[0]):
+def root(job):
     return work_path(ROOT / 'runs/out' / job.name)
 
 
@@ -45,7 +46,7 @@ def digest(tokens):
 
 def identity():
     prior = json.loads((SOURCE / 'identity.json').read_text())
-    if prior != BASE_IDENTITY():
+    if prior != precision.recorded_identity(precision.REFERENCE_JOB):
         raise RuntimeError('Precision evidence inputs changed')
     files = [SOURCE / 'report.json', SOURCE / 'identity.json',
              SOURCE / 'fp32head-four/decode/sps-eager.json',
@@ -160,7 +161,7 @@ class CacheTraceWorkerExtension(precision.PrecisionWorkerExtension):
         return result
 
 
-def engine_worker(exp, job=job_configs[0]):
+def engine_worker(exp, job):
     from vllm import LLM, SamplingParams
     from workloads.serving.vllm_sps_evaluate import check_runtime, engine_arguments
     torch, _ = check_runtime()
@@ -196,7 +197,7 @@ def engine_worker(exp, job=job_configs[0]):
     launch.store_json(destination / 'samples.json', dict(samples=samples, observed=observed, arguments=arguments))
 
 
-def report(job=job_configs[0]):
+def report(job):
     cases = json.loads((root(job) / 'cases.json').read_text())
     matrices = {e.name: precision.load_matrix(root(job) / e.name, 'logprobs', cases) for e in experiment_configs}
     comparisons = [dict(case=c['name'], a=a, b=b, **trace.compare(matrices[a][i], matrices[b][i]))
@@ -209,7 +210,7 @@ def report(job=job_configs[0]):
     launch.store_json(root(job) / 'evaluated.json', result)
 
 
-def worker(job=job_configs[0]):
+def worker(job):
     current = identity()
     path = root(job) / 'identity.json'
     if path.exists() and json.loads(path.read_text()) != current:

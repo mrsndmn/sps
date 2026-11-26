@@ -83,7 +83,8 @@ class Experiment:
         return family_config.ROOT / ("sanity" if phase == "probe" else "runs") / "out" / self.name
 
 
-experiment_configs = [Experiment("qwen3_sps_mtp", "train", num_gpus=4)] + [
+SPS_MTP = Experiment("qwen3_sps_mtp", "train", num_gpus=4)
+experiment_configs = [SPS_MTP] + [
     Experiment(f"{arm}-{mode}", arm, mode)
     for mode in family_config.GENERATION
     for arm in ("ar", "eagle3", "sps", "sps_mtp")

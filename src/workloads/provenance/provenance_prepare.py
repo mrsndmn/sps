@@ -5,7 +5,7 @@ corresponding prompt from BOTH conditions. No benchmark score selects responses.
 This stage reports actual token budgets before training configurations are fixed.
 """
 from orchestration.named.publication import work_path, public_path
-from experiments.launch import run_filter
+from experiments.launch import named_run, run_filter
 import argparse
 from collections import Counter
 import json
@@ -24,6 +24,8 @@ from experiments import vllm_sps_config as source
 
 from experiments.provenance_prepare import family_config as provenance_prepare_settings
 from experiments.provenance_prepare import Experiment, experiment_configs
+
+REFERENCE_JOB = named_run(experiment_configs, Experiment.name)
 SPLITS = provenance_prepare_settings.SPLITS
 GENERATION = provenance_prepare_settings.GENERATION
 MIN_PAIRED_FRACTION = provenance_prepare_settings.MIN_PAIRED_FRACTION
@@ -31,11 +33,11 @@ MIN_PAIRED_FRACTION = provenance_prepare_settings.MIN_PAIRED_FRACTION
 ROOT = source.family_config.ROOT.parent/'instruct-response-provenance'
 
 
-def prepared_dir(job=experiment_configs[0]):
+def prepared_dir(job):
     return ROOT / (job.directory or job.name)
 
 
-def results(job=experiment_configs[0]):
+def results(job):
     path = work_path(prepared_dir(job))
     if job.directory == "prepared" and path == prepared_dir(job) and not path.exists() and (ROOT / "prepared.json").is_file():
         return ROOT
@@ -67,7 +69,7 @@ def identity():
                 model=c.family_config.MODEL, revision=c.family_config.REVISION, generation=GENERATION)
 
 
-def record_path(row, job=experiment_configs[0]):
+def record_path(row, job):
     name = row['source_id']
     if len(name) != 64 or any(x not in '0123456789abcdef' for x in name):
         raise ValueError('Invalid source identifier')
@@ -86,7 +88,7 @@ def validate_record(record, row, split, expected):
             raise RuntimeError('Teacher response changed prompt identity')
 
 
-def generate_worker(job=experiment_configs[0]):
+def generate_worker(job):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
     rank, world = int(os.environ['RANK']), int(os.environ['WORLD_SIZE'])
@@ -173,7 +175,7 @@ def summarize(rows):
     return result
 
 
-def finalize(job=experiment_configs[0]):
+def finalize(job):
     expected=signature()
     report=dict(identity=identity(),splits={},
         scope='Paired accepted prompts; thinking unchanged. Response length and supervised tokens are measured, not assumed equal. Training is a separate next stage.')
@@ -192,7 +194,7 @@ def finalize(job=experiment_configs[0]):
     print(json.dumps(report,indent=2),flush=True)
 
 
-def worker(job=experiment_configs[0]):
+def worker(job):
     current=identity()
     meta=results(job)/'identity.json'
     if meta.exists() and json.loads(meta.read_text()) != current:
@@ -205,7 +207,7 @@ def worker(job=experiment_configs[0]):
     finalize(job=job)
 
 
-def completed(job=experiment_configs[0]):
+def completed(job):
     marker=results(job)/'prepared.json'
     if not marker.exists():return False
     report=json.loads(marker.read_text())
@@ -235,27 +237,15 @@ def submit(job, dry=False):
         return
     if completed(job=job):print('Already completed');return
     source_rows()
-    from mls.manager.job.utils import training_job_api_from_profile
-    client,options=training_job_api_from_profile('default');launch.disable_submission_retries(client)
-    active={}
-    for status in ('Pending','Running'):
-        response=client.get_list_jobs(options['region'],None,status,1000,0)
-        if 'jobs' not in response:raise RuntimeError('Cannot establish active jobs')
-        active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
-    launch.reconcile_for_outputs(client, active, [prepared_dir(job)])
-    key=launch.output_identity(payload(job,staged)['job_desc'], prepared_dir(job))
-    if key in active:
-        receipt=dict(name=job.name,job_name=active[key],reused=True)
-    else:
-        staged=launch.stage_repo(Path(launch.git('rev-parse','--show-toplevel')),commit)
-        body=payload(job,staged);body['region']=options['region']
+    def reserve():
         path=ROOT/'budget.json';ledger=json.loads(path.read_text()) if path.exists() else {'attempts':[]}
         cost=job.hours*job.num_gpus
         if sum(x['gpu_hours'] for x in ledger['attempts'])+cost > 2*cost:
             raise RuntimeError('Preparation reservation cap exceeded')
         ledger['attempts'].append(dict(gpu_hours=cost,time=time.time()));launch.store_json(path,ledger)
-        receipt=launch.submit_payload(client,body,'prepare',job.name,commit, output_dir=prepared_dir(job))
-    print('__MLS_JOBS_JSON__');print(json.dumps({'jobs':[receipt]}),flush=True)
+
+    receipt = launch.SubmissionBatch(commit).submit(payload(job, staged), "prepare", job.name, prepared_dir(job), before_send=reserve)
+    print("__MLS_JOBS_JSON__"); print(json.dumps({"jobs": [receipt]}), flush=True)
 
 
 def main():

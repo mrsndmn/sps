@@ -74,9 +74,6 @@ class Rerun:
             raise ValueError("No matching trainable experiments")
         commit = launch.git("rev-parse", "HEAD")
         staged = self.sc.e.STAGING_ROOT / commit
-        active = {}
-        client = None
-        extra = {}
         workloads = (
             [None]
             if args.phase == "train"
@@ -97,21 +94,7 @@ class Rerun:
             elif args.phase == "eval":
                 for exp in exps:
                     self.sc.validate_checkpoint(args.variant, exp)
-            from mls.manager.job.utils import (
-                get_in_progress_jobs,
-                training_job_api_from_profile,
-            )
-
-            client, extra = training_job_api_from_profile(args.profile)
-            launch.disable_submission_retries(client)
-            active = {
-                launch.normalize(j["job_desc"]): j["job_name"]
-                for j in get_in_progress_jobs(client_profile=args.profile)
-            }
-            launch.reconcile_for_outputs(client, active, [self.sc.output_dir(args.variant, exp, w) for exp in exps for w in workloads if (exp.name, w) in pending])
-            staged = launch.stage_repo(
-                Path(launch.git("rev-parse", "--show-toplevel")), commit
-            )
+        batch = launch.SubmissionBatch(commit, args.profile)
         jobs = []
         for exp in exps:
             for workload in workloads:
@@ -135,23 +118,12 @@ class Rerun:
                     args.author_name,
                     args.telegram_nick,
                 )
-                identity = launch.output_identity(body["job_desc"], marker.parent)
-                if identity in active:
-                    jobs.append(
-                        {"name": name, "job_name": active[identity], "reused": True}
-                    )
-                    continue
                 if args.dry:
                     launch.print_preview(body, marker.parent, staged, args.phase)
                     continue
-                body["region"] = extra["region"]
-                job = launch.submit_payload(
-                    client, body, args.phase, name, commit, output_dir=marker.parent,
-                    before_send=lambda: self.reserve(args.variant, args.phase, name, workload, exp),
-                )
+                job = batch.submit(body, args.phase, name, marker.parent,
+                    before_send=lambda: self.reserve(args.variant, args.phase, name, workload, exp))
                 jobs.append(job)
-                if job.get("job_name"):
-                    active[identity] = job["job_name"]
                 print(json.dumps(job), flush=True)
         if args.dry:
             return

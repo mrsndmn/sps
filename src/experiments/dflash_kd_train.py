@@ -8,8 +8,13 @@ from .environment import COMMON_ROOT
 
 
 @dataclass(frozen=True, kw_only=True)
-class SoftDistillation(hard.Experiment):
+class TrainArguments(hard.TrainArguments):
     temperature: float = 1.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class SoftDistillation(hard.Experiment, TrainArguments):
+    pass
 
 
 experiment_configs = [

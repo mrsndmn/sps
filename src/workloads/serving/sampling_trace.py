@@ -5,7 +5,7 @@ FP32/BF16 and vLLM BF16. The four-slot non-speculative arm is a diagnostic eager
 intervention, not a benchmark. Existing audit outputs and runtimes stay immutable.
 """
 from orchestration.named.publication import work_path
-from experiments.launch import run_filter
+from experiments.launch import named_run, run_filter
 import argparse
 import json
 import os
@@ -21,16 +21,18 @@ from orchestration import mlspace_launch as launch
 
 from experiments.sampling_trace import family_config as sampling_trace_settings
 from experiments.sampling_trace import Experiment, experiment_configs
+
+REFERENCE_JOB = named_run(experiment_configs, Experiment.name)
 ARMS = sampling_trace_settings.ARMS
 NATIVE_ARMS = sampling_trace_settings.NATIVE_ARMS
 
 ROOT = audit.ROOT.parent/'sps-sampling-trace'
-SOURCE = audit.output_dir()
+SOURCE = audit.output_dir(audit.REFERENCE_JOB)
 FILES = ('identity.json','prefixes.json','kernel.json','report.json',
          'sps-eager.json','sps_mtp-eager.json','sps-graphs.json','sps_mtp-graphs.json')
 
 
-def output_dir(job=experiment_configs[0]):
+def output_dir(job):
     return work_path(ROOT/'runs/out'/job.name)
 
 
@@ -87,7 +89,7 @@ def check_logprobs(values):
     return values
 
 
-def save_distributions(name, cases, arrays, metadata, job=experiment_configs[0]):
+def save_distributions(name, cases, arrays, metadata, job):
     if len(arrays)!=len(cases):
         raise ValueError('Missing distributions')
     matrix=np.stack([check_logprobs(x) for x in arrays])
@@ -97,7 +99,7 @@ def save_distributions(name, cases, arrays, metadata, job=experiment_configs[0])
                                              sha256=audit.common.file_hash(root/f'{name}.npz')))
 
 
-def engine_worker(arm, job=experiment_configs[0]):
+def engine_worker(arm, job):
     from vllm import LLM,SamplingParams
     from workloads.serving.vllm_sps_evaluate import check_runtime,engine_arguments
     torch,_=check_runtime()
@@ -125,7 +127,7 @@ def engine_worker(arm, job=experiment_configs[0]):
     save_distributions(arm,cases,arrays,dict(arguments=arguments,intervention=intervention,samples=samples), job=job)
 
 
-def native_worker(job=experiment_configs[0]):
+def native_worker(job):
     import torch
     from modeling.models.sps.pretrained import PretrainedSPS
     if torch.cuda.device_count()!=1:raise RuntimeError('One GPU required')
@@ -172,7 +174,7 @@ def compare(a,b):
         top_candidates={str(i):dict(logprob_a=float(a[i]),logprob_b=float(b[i])) for i in sorted(top)})
 
 
-def report(job=experiment_configs[0]):
+def report(job):
     cases=json.loads((output_dir(job)/'cases.json').read_text())
     matrices={}
     for arm in (*ARMS,*NATIVE_ARMS):
@@ -194,7 +196,7 @@ def report(job=experiment_configs[0]):
     return value
 
 
-def worker(job=experiment_configs[0]):
+def worker(job):
     current=identity()
     root=output_dir(job);path=root/'identity.json'
     if path.exists() and json.loads(path.read_text())!=current:raise RuntimeError('Trace inputs changed')

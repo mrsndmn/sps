@@ -10,7 +10,6 @@ DRAFTER = (
     "qwen4b_drafter_data",
     "qwen4b_drafter_train",
 )
-DFLASH = (*DRAFTER, "dflash_repro", "dflash_repro_train")
 
 WORKERS = {
     "base50_run": ("ar_sps_config", "base50"),
@@ -54,16 +53,12 @@ WORKERS = {
     "draft_sweep": (*SERVING, "draft_sweep_train", "draft_sweep"),
     "qwen4b_drafter": (*DRAFTER, "qwen4b_drafter"),
     "dflash_mask_ablation": (*SERVING, "dflash_mask_ablation"),
-    "dflash_repro": DFLASH,
-    "dflash_kd": (*DFLASH, "dflash_kd_train"),
     "cap_jobs": (*SERVING, "teacher_cap_probe", "qwen35_cap_compare"),
 }
 
 EVALUATION = {
     "draft_sweep": ("serving_benchmark", "serving_graphs"),
     "qwen4b_drafter": ("qwen4b_drafter_eval",),
-    "dflash_kd": ("dflash_repro_eval",),
-    "dflash_repro": ("dflash_repro_eval",),
 }
 
 

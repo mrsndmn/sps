@@ -36,6 +36,6 @@ def test_payload_is_single_gpu_staged_and_separate():
 def test_completed_audit_skips_after_code_changes(tmp_path,monkeypatch):
     monkeypatch.setattr(a,'ROOT',tmp_path)
     monkeypatch.setattr(a,'input_identity',lambda: pytest.fail('existing output should skip before preflight'))
-    a.launch.store_json(a.output_dir()/'evaluated.json',dict(identity={'design_signature':'old'},passed=True))
+    a.launch.store_json(a.output_dir(a.REFERENCE_JOB)/'evaluated.json',dict(identity={'design_signature':'old'},passed=True))
     monkeypatch.setattr(sys, "argv", ["scripts/serving/sampling_audit.py"])
     a.main()

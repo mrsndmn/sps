@@ -185,17 +185,12 @@ def main():
     selected = [exp for exp in selected if launch.pending(ROOT / "runs/out" / exp.name)]
     if not selected:
         return
-    from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
     _, digest = dataset()
     launch.ARTIFACTS_ROOT, launch.RUN_ROOT = ROOT, ROOT/"runs"
     with launch.submission_lock():
-        client, opts = training_job_api_from_profile("default")
-        launch.disable_submission_retries(client)
-        active = {launch.normalize(j["job_desc"]): j["job_name"]
-                  for j in get_in_progress_jobs(client_profile="default")}
-        launch.reconcile_for_outputs(client, active, [ROOT / "runs/out" / exp.name for exp in selected])
         commit = launch.git("rev-parse", "HEAD")
-        staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
+        batch = launch.SubmissionBatch(commit)
+        staged = launch.STAGING_ROOT / commit
         for exp in selected:
             root = work_path(ROOT/"runs/out"/exp.name)
             marker = quality.endpoint(exp)
@@ -207,9 +202,4 @@ def main():
                     raise ValueError("Stale full MMLU result")
                 continue
             body = payload(exp, staged)
-            body["region"] = opts["region"]
-            key = launch.output_identity(body["job_desc"], ROOT / "runs/out" / exp.name)
-            if key in active:
-                print(exp.name, active[key], flush=True)
-            else:
-                print(json.dumps(launch.submit_payload(client, body, "eval", exp.name, commit, output_dir=ROOT / "runs/out" / exp.name)), flush=True)
+            print(json.dumps(batch.submit(body, "eval", exp.name, ROOT / "runs/out" / exp.name)), flush=True)

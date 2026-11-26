@@ -321,43 +321,20 @@ def submit(args):
     trained()
     if args.phase == "eval":
         check_gate(manifest)
-    from mls.manager.job.utils import training_job_api_from_profile
-
-    client, options = training_job_api_from_profile("default")
-    launch.disable_submission_retries(client)
-    active = {}
-    for status in ("Pending", "Running"):
-        response = client.get_list_jobs(options["region"], None, status, 1000, 0)
-        if "jobs" not in response:
-            raise RuntimeError("Cannot establish active jobs")
-        active.update(
-            {launch.normalize(j["job_desc"]): j["job_name"] for j in response["jobs"]}
-        )
-    launch.reconcile_for_outputs(client, active, [root_for(exp) for exp in choices])
-    staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
+    batch = launch.SubmissionBatch(commit)
     jobs = []
-    occupied = launch.occupied_slots(client, active, "sps-serving-benchmark ")
     deferred = []
     for exp in choices:
         if completed(exp, manifest):
             print("Already completed:", exp.name)
             continue
         body = payload(exp, staged, args.phase)
-        identity = launch.output_identity(body["job_desc"], root_for(exp))
-        if identity in active:
-            jobs.append(
-                {"name": exp.name, "job_name": active[identity], "reused": True}
-            )
-            continue
-        if occupied >= MAX_ACTIVE_JOBS:
+        job = batch.submit(body, "eval", exp.name, root_for(exp),
+                           capacity=("sps-serving-benchmark ", MAX_ACTIVE_JOBS),
+                           before_send=lambda: reserve("eval", exp))
+        if job.get("deferred"):
             deferred.append(exp.name)
             continue
-        body["region"] = options["region"]
-        reserve("eval", exp)
-        job = launch.submit_payload(client, body, "eval", exp.name, commit, output_dir=root_for(exp))
-        if job.get("job_name"):
-            active[identity] = job["job_name"]
-        occupied += 1
         jobs.append(job)
         print(json.dumps(job), flush=True)
     print("__MLS_JOBS_JSON__")

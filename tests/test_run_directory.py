@@ -33,6 +33,7 @@ def test_submission_lifecycle(tmp_path, monkeypatch):
         assert run.reservation.is_dir()
         return {"job_name": job}
 
+    client.get_list_jobs = lambda *args: {"jobs": []}
     client.run_job = send
     client.get_job_status = lambda _: {"status": client.status}
     api = ModuleType("mls.manager.job.utils")
@@ -168,19 +169,14 @@ def test_native_and_named_submission_share_the_same_reservation(tmp_path, monkey
 
 
 def test_dflash_worker_uses_explicit_run_fields(monkeypatch):
-    from experiments import dflash_kd_train
-    from experiments.family_cli import worker_command, worker_settings, read_worker_arguments
-    import shlex
+    from workloads.distillation import dflash_kd_train as trainer, dflash_repro as jobs
 
-    (exp,) = dflash_kd_train.experiment_configs
-    monkeypatch.setattr(dflash_kd_train, "experiment_configs", [exp])
-    group = f"dflash_kd_train.experiment_configs.{exp.name}"
-    argv = [*shlex.split(worker_command("worker", worker_settings(["dflash_kd_train"], exp.name))), f"--cfg.{group}.epochs=7"]
-    read_worker_arguments(argv)
-    (selected,) = dflash_kd_train.experiment_configs
-    assert argv == ["worker"]
-    assert selected.epochs == 7 and selected.output_root == exp.output_root
-    assert selected.temperature == exp.temperature
+    received = []
+    monkeypatch.setattr(trainer, "train", lambda experiment, probe: received.append(experiment))
+    jobs.worker(trainer, None, "probe", ["--name", "test", "--output_root", "/tmp/test",
+                                         "--epochs", "7", "--temperature", "2.5"])
+    assert received[0].epochs == 7 and received[0].temperature == 2.5
+    assert received[0].name == "test"
 
 
 @pytest.mark.parametrize("family", ["ar-sps", "ar-sps-qwen3-1.7b-instruct"])
@@ -340,3 +336,36 @@ def test_mtp_resume_validates_training_batch_and_data(monkeypatch):
     prepared["data"]["manifest_sha256"] = "changed"
     with pytest.raises(ValueError, match="training inputs"):
         mtp_run.check_resume_inputs(initial, inputs())
+
+
+def test_batch_skips_finished_active_and_deferred_before_charging(tmp_path, monkeypatch):
+    from orchestration.named import publication
+
+    monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
+    monkeypatch.setattr(mlspace_launch, "ARTIFACTS_ROOT", tmp_path)
+    monkeypatch.setattr(mlspace_launch, "disable_submission_retries", lambda client: None)
+    staged, charged, sent = [], [], []
+    monkeypatch.setattr(mlspace_launch, "stage_repo", lambda repo, commit: staged.append(commit))
+    job = "lm-mpi-job-48fcb78d-e22e-4076-a28d-f92f4e1d6b0c"
+    client = SimpleNamespace(
+        get_list_jobs=lambda *args: {"jobs": []},
+        get_job_status=lambda name: {"status": "Running"},
+        run_job=lambda body: sent.append(body) or {"job_name": job},
+    )
+    api = ModuleType("mls.manager.job.utils")
+    api.training_job_api_from_profile = lambda profile: (client, {"region": "test"})
+    monkeypatch.setitem(sys.modules, api.__name__, api)
+    batch = mlspace_launch.SubmissionBatch("commit")
+    def submit(name):
+        return batch.submit({"job_desc": f"test {name}", "script": "worker --name " + name},
+                            "train", name, tmp_path / name, settings={"name": name},
+                            capacity=("test ", 1), before_send=lambda: charged.append(name))
+
+    (tmp_path / "finished").mkdir()
+    assert submit("finished")["reused"] and batch.client is None
+    assert submit("first")["job_name"] == job
+    assert submit("first")["reused"]
+    assert submit("second")["deferred"]
+    assert len(sent) == 1 and sent[0]["region"] == "test"
+    assert staged == ["commit"] and charged == ["first"]
+    assert not RunDirectory(tmp_path, tmp_path / "second").reservation.exists()

@@ -88,34 +88,11 @@ def submit(phase, selected, dry, dataset):
 
 
 def submit_pending(phase, selected, commit, staged, dataset):
-    from mls.manager.job.utils import training_job_api_from_profile
-
-    pending = [name for name in selected if not marker(phase, name, dataset).is_file()]
-    if not pending:
-        return
-    client, options = training_job_api_from_profile("default")
-    launch.disable_submission_retries(client)
-    active = {}
-    for status in ("Pending", "Running"):
-        result = client.get_list_jobs(options["region"], None, status, 1000, 0)
-        if "jobs" not in result:
-            raise RuntimeError(f"Cannot establish active {status} jobs")
-        active.update({launch.normalize(job["job_desc"]): job["job_name"]
-                       for job in result["jobs"]})
-    launch.reconcile_for_outputs(client, active, [phase_output(phase, name, dataset) for name in pending])
-    launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
-    for name in pending:
-        if marker(phase, name, dataset).is_file():
-            continue
+    batch = launch.SubmissionBatch(commit)
+    for name in selected:
         body = payload(phase, name, staged, dataset)
-        body["region"] = options["region"]
-        identity = launch.output_identity(body["job_desc"], phase_output(phase, name, dataset))
-        if identity in active:
-            result = {"name": name, "job_name": active[identity], "reused": True}
-        else:
-            receipt_phase = "prepare" if phase == "probe" else phase
-            result = launch.submit_payload(client, body, receipt_phase, name, commit, output_dir=phase_output(phase, name, dataset))
-        print(json.dumps(result), flush=True)
+        receipt = batch.submit(body, "prepare" if phase == "probe" else phase, name, phase_output(phase, name, dataset))
+        print(json.dumps(receipt), flush=True)
 
 
 def worker(phase, name, dataset):

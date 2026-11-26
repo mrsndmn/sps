@@ -2,7 +2,6 @@
 
 from contextlib import nullcontext
 from hashlib import sha256
-from pathlib import Path
 from statistics import mean, median
 import os
 import time
@@ -13,21 +12,16 @@ from torch.nn import functional as F
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.checkpoint import checkpoint
 
-from experiments.environment import COMMON_ROOT
+from workloads.distillation.dflash_repro_train import checkpoint_path
 from workloads.distillation import dflash_repro_train as hard
 from orchestration import mlspace_launch as launch
 from orchestration.named.publication import work_path
-from experiments.dflash_kd_train import experiment_configs
-EXPERIMENT = experiment_configs[0]
+from experiments.dflash_kd_train import TrainArguments, experiment_configs
+from experiments.dflash_repro_train import BASELINE
 
 
-def checkpoint_path(step, experiment=None):
-    if experiment is None:
-        experiment = EXPERIMENT
-    return work_path(experiment.output("train")) / f"step-{step:05d}"
 
-
-def teacher_indices(anchors, weights, device, experiment=EXPERIMENT):
+def teacher_indices(anchors, weights, device, experiment):
     positions = torch.tensor(anchors, device=device)[:, None]
     positions = positions + torch.arange(experiment.proposals, device=device)
     selected = torch.nonzero(weights.flatten() > 0, as_tuple=False).flatten()
@@ -36,7 +30,7 @@ def teacher_indices(anchors, weights, device, experiment=EXPERIMENT):
 
 
 @torch.no_grad()
-def soft_inputs(target, draft, row, anchors, device, *, sparse=True, experiment=EXPERIMENT):
+def soft_inputs(target, draft, row, anchors, device, *, sparse=True, experiment):
     def capture(_, _args, output):
         captured.append(output.last_hidden_state)
 
@@ -56,7 +50,7 @@ def soft_inputs(target, draft, row, anchors, device, *, sparse=True, experiment=
     return noise, context, positions, mask, weights, selected, teacher, inverse
 
 
-def weighted_kl(logits, teacher_logp, weights, experiment=EXPERIMENT):
+def weighted_kl(logits, teacher_logp, weights, experiment):
     student_logp = F.log_softmax(logits.float() / experiment.temperature, dim=-1)
     per_slot = F.kl_div(student_logp, teacher_logp, log_target=True, reduction="none").sum(dim=-1)
     return (per_slot * weights).sum() * experiment.temperature**2
@@ -91,7 +85,7 @@ def initial_hash(model):
     return digest.hexdigest()
 
 
-def train(probe, experiment=EXPERIMENT):
+def train(probe, experiment):
     from transformers import get_cosine_schedule_with_warmup
 
     startup = time.monotonic()
@@ -173,7 +167,7 @@ def train(probe, experiment=EXPERIMENT):
     if rank == 0:
         if probe:
             launch.store_json(work_path(experiment.output("probe")) / "prepared.json", dict(
-                design=design, hard_design=hard.EXPERIMENT.name, initial_sha256=initial,
+                design=design, hard_design=BASELINE.name, initial_sha256=initial,
                 gpu=torch.cuda.get_device_name(device), world=world, full_steps=steps,
                 measured_steps=len(durations), wall_seconds=time.monotonic()-startup,
                 mean_step_seconds=mean(durations), median_step_seconds=median(durations),
@@ -182,7 +176,7 @@ def train(probe, experiment=EXPERIMENT):
             ))
         else:
             launch.store_json(checkpoint_path(steps, experiment=experiment).parent / "trained.json", dict(
-                design=design, hard_design=hard.EXPERIMENT.name, initial_sha256=initial,
+                design=design, hard_design=BASELINE.name, initial_sha256=initial,
                 steps=steps, rows=len(train_indices), checkpoints=milestone_steps,
             ))
     dist.barrier()

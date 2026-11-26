@@ -70,7 +70,6 @@ def submit(args):
         raise ValueError('No matching experiments')
     commit = launch.git('rev-parse', 'HEAD')
     staged = e.STAGING_ROOT / commit
-    active = {}; client = None; extra = {}
     if not args.dry:
         modes = [args.mode] if args.mode else c.family_config.MODES
         pending = {(exp.name, mode) for exp in experiments for mode in modes
@@ -80,13 +79,7 @@ def submit(args):
             return
         for exp in experiments:
             source_check(exp)
-        from mls.manager.job.utils import training_job_api_from_profile, get_in_progress_jobs
-        client, extra = training_job_api_from_profile(args.profile)
-        launch.disable_submission_retries(client)
-        active = {launch.normalize(x['job_desc']): x['job_name']
-                  for x in get_in_progress_jobs(client_profile=args.profile)}
-        launch.reconcile_for_outputs(client, active, [output_dir(exp, mode) for exp in experiments for mode in modes if (exp.name, mode) in pending])
-        staged = launch.stage_repo(Path(launch.git('rev-parse', '--show-toplevel')), commit)
+    batch = launch.SubmissionBatch(commit, args.profile)
     jobs = []
     for exp, mode in ((x, m) for x in experiments for m in ([args.mode] if args.mode else c.family_config.MODES)):
         if not args.dry and (exp.name, mode) not in pending:
@@ -96,19 +89,12 @@ def submit(args):
             print('Skip completed:', exp.name)
             continue
         body = payload(exp, staged, args.author_name, args.telegram_nick, mode)
-        identity = launch.output_identity(body['job_desc'], marker.parent)
-        if identity in active:
-            jobs.append(dict(name=arm_name(exp, mode), job_name=active[identity], reused=True))
-            continue
         if args.dry:
             launch.print_preview(body, marker.parent, staged, "eval")
             continue
-        body['region'] = extra['region']
-        reserve(arm_name(exp, mode))
-        job = launch.submit_payload(client, body, 'eval', arm_name(exp, mode), commit, output_dir=marker.parent)
+        job = batch.submit(body, "eval", arm_name(exp, mode), marker.parent,
+            before_send=lambda: reserve(arm_name(exp, mode)))
         jobs.append(job)
-        if job.get('job_name'):
-            active[identity] = job['job_name']
         print(json.dumps(job), flush=True)
     if args.dry:
         return

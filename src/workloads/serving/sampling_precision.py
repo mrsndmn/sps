@@ -4,7 +4,7 @@ Preserves both previous experiments. Completion means diagnostics collected, not
 that the original sampling gate passed. No serving speed claims are made here.
 """
 from orchestration.named.publication import work_path
-from experiments.launch import run_filter
+from experiments.launch import named_run, run_filter
 import argparse
 import json
 import os
@@ -24,12 +24,14 @@ from experiments.sampling_precision import (
     job_configs,
 )
 
+REFERENCE_JOB = named_run(job_configs, Job.name)
+
 ROOT=audit.ROOT.parent/'sps-sampling-precision'
-AUDIT_SOURCE=audit.output_dir()
-TRACE_SOURCE=trace.output_dir()
+AUDIT_SOURCE=audit.output_dir(audit.REFERENCE_JOB)
+TRACE_SOURCE=trace.output_dir(trace.REFERENCE_JOB)
 
 
-def root(job=job_configs[0]):return work_path(ROOT/'runs/out'/job.name)
+def root(job):return work_path(ROOT/'runs/out'/job.name)
 
 
 def identity():
@@ -45,7 +47,7 @@ def identity():
                 evidence={str(p):audit.common.file_hash(p) for p in files})
 
 
-def recorded_identity(job=job_configs[0]):
+def recorded_identity(job):
     recorded = json.loads((root(job)/'identity.json').read_text())
     report = json.loads((root(job)/'report.json').read_text())
     current = identity()
@@ -61,7 +63,7 @@ class PrecisionWorkerExtension(trace.TraceWorkerExtension):
         return dict(head_dtype=str(model.logits_processor.head_dtype),horizons=model.sps_horizons)
 
 
-def engine_worker(exp,task, job=job_configs[0]):
+def engine_worker(exp,task, job):
     import vllm
     from workloads.serving import vllm_sps_evaluate as evaluator
     original=vllm.LLM
@@ -92,10 +94,10 @@ def engine_worker(exp,task, job=job_configs[0]):
             return super().generate(*args,**kwargs)
     with patch.object(vllm,'LLM',ConfiguredLLM):
         if task=='distributions':
-            with patch.object(trace,'output_dir',lambda job: destination):trace.engine_worker(exp.arm)
+            with patch.object(trace,'output_dir',lambda job: destination):trace.engine_worker(exp.arm, job)
         else:
             with patch.object(audit,'output_dir',lambda job: destination):
-                audit.decode_worker('sps' if exp.arm=='sps_four_slots' else exp.arm,'eager')
+                audit.decode_worker('sps' if exp.arm=='sps_four_slots' else exp.arm,'eager', job)
     launch.store_json(destination/'precision.json',dict(experiment=exp.__dict__,observed=observed))
 
 
@@ -108,7 +110,7 @@ def load_matrix(directory,arm,cases):
     return matrix
 
 
-def report(job=job_configs[0]):
+def report(job):
     cases=json.loads((TRACE_SOURCE/'cases.json').read_text())
     matrices={arm:load_matrix(TRACE_SOURCE,arm,cases) for arm in (*trace.ARMS,*trace.NATIVE_ARMS)}
     # Reanalyse saved arrays with stable ties; do not rewrite original trace artifacts.
@@ -134,7 +136,7 @@ def report(job=job_configs[0]):
     launch.store_json(root(job)/'report.json',result);launch.store_json(root(job)/'evaluated.json',result)
 
 
-def worker(job=job_configs[0]):
+def worker(job):
     current=identity();path=root(job)/'identity.json'
     if path.exists() and json.loads(path.read_text())!=current:raise RuntimeError('Precision inputs changed')
     launch.store_json(path,current)

@@ -2,25 +2,27 @@
 
 import json
 from pathlib import Path
+from dataclasses import replace
 import tempfile
 
 from workloads.distillation import dflash_kd_train as training, dflash_repro as runner
 from workloads.distillation import dflash_repro_eval as evaluation
-from workloads.distillation import dflash_repro_train as hard
+from experiments.dflash_repro_train import BASELINE
 from orchestration import mlspace_launch as launch
 
 
-def evaluate(checkpoint, result, *, experiment):
+def evaluate(args):
+    result = args.result
     # Reuse the exact hard-run evaluation protocol without changing its archived identity.
     result.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=result.parent) as tmp:
         raw = Path(tmp) / "raw.json"
-        evaluation.evaluate(checkpoint, raw, experiment=experiment)
+        evaluation.evaluate(replace(args, result=raw))
         report = json.loads(raw.read_text())
         report.update(
-            design=experiment.name,
+            design=args.name,
             evaluation=evaluation.signature(),
-            hard_design=hard.EXPERIMENT.name,
+            hard_design=BASELINE.name,
             objective="soft-kl",
         )
         launch.store_json(result, report)

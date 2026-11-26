@@ -75,9 +75,9 @@ def probe_workload(num_gpus):
     }
 
 
-def probe_seconds(path, *, num_gpus=None, legacy_horizons=4):
+def probe_seconds(path, *, num_gpus, legacy_horizons=4):
     probe = json.loads(path.read_text())
-    expected = probe_workload(c.experiment_configs[0].num_gpus if num_gpus is None else num_gpus)
+    expected = probe_workload(num_gpus)
     legacy = dict(_LEGACY_PROBE, horizons=legacy_horizons)
     recorded = {field: probe.get(field, default) for field, default in legacy.items()}
     if recorded != expected:

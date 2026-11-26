@@ -128,15 +128,10 @@ def submit(experiments):
     experiments = [exp for exp in experiments if launch.pending(ROOT / "runs/out" / exp.name)]
     if not experiments:
         return
-    from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
 
-    client, options = training_job_api_from_profile("default")
-    launch.disable_submission_retries(client)
-    active = {launch.normalize(j["job_desc"]): j["job_name"]
-              for j in get_in_progress_jobs(client_profile="default")}
-    launch.reconcile_for_outputs(client, active, [ROOT / "runs/out" / exp.name for exp in experiments])
     commit = launch.git("rev-parse", "HEAD")
-    staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
+    batch = launch.SubmissionBatch(commit)
+    staged = launch.STAGING_ROOT / commit
     for exp in experiments:
         ident = identity(exp)
         marker = work_path(ROOT / "runs/out" / exp.name) / "evaluated.json"
@@ -146,12 +141,7 @@ def submit(experiments):
                 raise ValueError("Stale evaluation marker")
             continue
         body = payload(exp, staged)
-        body["region"] = options["region"]
-        key = launch.output_identity(body["job_desc"], marker.parent)
-        if key in active:
-            print(exp.name, active[key], flush=True)
-        else:
-            print(json.dumps(launch.submit_payload(client, body, "eval", exp.name, commit, output_dir=marker.parent)), flush=True)
+        print(json.dumps(batch.submit(body, "eval", exp.name, ROOT / "runs/out" / exp.name)), flush=True)
 
 
 def payload(exp, staged):

@@ -91,9 +91,9 @@ def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, lega
 def test_legacy_probe_matches_its_measured_workload(tmp_path, monkeypatch, config, field, changed):
     probe = tmp_path / "probe.json"
     probe.write_text(json.dumps({"seconds": [1, 2], "projected_hours": 0}))
-    assert common.probe_seconds(probe) == c.family_config.STAGE_STEPS + 2 * (c.family_config.TRAIN_STEPS - c.family_config.STAGE_STEPS)
+    assert common.probe_seconds(probe, num_gpus=4) == c.family_config.STAGE_STEPS + 2 * (c.family_config.TRAIN_STEPS - c.family_config.STAGE_STEPS)
     with pytest.raises(RuntimeError, match="another workload"):
         common.probe_seconds(probe, num_gpus=1)
     monkeypatch.setattr(config.family_config, field, changed)
     with pytest.raises(RuntimeError, match="another workload"):
-        common.probe_seconds(probe)
+        common.probe_seconds(probe, num_gpus=4)

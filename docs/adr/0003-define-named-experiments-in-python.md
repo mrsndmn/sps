@@ -44,8 +44,10 @@ Give evaluation exactly one GPU and keep probe and training allocations separate
 
 The named and native commands use the same payload builder. Specialized workers
 receive family and run fields as named CLI options. The parser selects a run by
-its declared name. DFlash passes the parsed experiment object to the training
-function. The paper entry points accept typed CLI arguments directly.
+its declared name. DFlash probe and training parse the selected training dataclass directly from CLI
+flags. Evaluation has its own argument schema with the checkpoint, output,
+dataset and decoding settings. It checks training provenance against the
+checkpoint before loading weights. The paper entry points accept typed CLI arguments directly.
 
 Consumers validate the training data, model revision, checkpoint and scoring
 settings they depend on. Record the Git commit with each submission for

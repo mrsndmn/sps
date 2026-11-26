@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import vllm_sps_config as c
+from .launch import named_run
 
 
 @dataclass(kw_only=True)
@@ -14,7 +15,7 @@ class FamilyConfig:
 
     @property
     def OUT(self) -> Path:
-        return self.ROOT / "runs/out" / experiment_configs[0].name
+        return self.ROOT / "runs/out" / NATIVE_READOUT.name
 
 
 family_config = FamilyConfig()
@@ -30,11 +31,11 @@ class Experiment(c.Experiment):
         return family_config.ROOT / "runs/out" / self.name
 
 
-experiment_configs = [
-    Experiment(
-        "qwen3_real_readout_mtp", "train", num_gpus=c.experiment_configs[0].num_gpus, probe_dir="probe"
-    )
-]
+NATIVE_READOUT = Experiment(
+    "qwen3_real_readout_mtp", "train",
+    num_gpus=named_run(c.experiment_configs, c.SPS_MTP.name).num_gpus, probe_dir="probe",
+)
+experiment_configs = [NATIVE_READOUT]
 
 
 def launches(family):

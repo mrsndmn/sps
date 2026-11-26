@@ -30,7 +30,7 @@ OVERLAY = (
     "vllm/v1/attention/ops/sps_prediction.py",
     "vllm/v1/spec_decode/sps_proposer.py",
 )
-from experiments.serving_runtime import experiment_configs
+from experiments.serving_runtime import RUNTIME_SETUP
 
 
 def identity():
@@ -275,7 +275,7 @@ print(json.dumps(dict(torch=torch.__version__, cuda=torch.version.cuda,
 
 
 def payload(staged):
-    exp = experiment_configs[0]
+    exp = RUNTIME_SETUP
     body = launch.payload("prepare", exp.name, staged, "d.tarasov", "mrsndmn")
     body.update(
         instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus],
@@ -294,42 +294,21 @@ def submit(dry):
         print(json.dumps(payload(staged), indent=2))
         return
     validate_overlay()
-    from mls.manager.job.utils import training_job_api_from_profile
-
-    client, options = training_job_api_from_profile("default")
-    launch.disable_submission_retries(client)
-    active = {}
-    # Reuse the authenticated client, avoiding repeated service_auth requests.
-    for status in ("Pending", "Running"):
-        response = client.get_list_jobs(options["region"], None, status, 1000, 0)
-        if "jobs" not in response:
-            raise RuntimeError("Cannot establish active jobs")
-        for job in response["jobs"]:
-            active[launch.normalize(job["job_desc"])] = job["job_name"]
-    launch.reconcile_receipts(client, active)
-    launch.reconcile_intents(active)
     marker = ARTIFACTS / "prepared.json"
     if marker.exists():
         if json.loads(marker.read_text())["design_signature"] != signature():
             raise RuntimeError("Runtime configuration changed")
         print("Runtime already prepared:", RUNTIME)
         return
-    body = payload(staged)
-    job_identity = launch.normalize(body["job_desc"])
-    if job_identity in active:
-        print(json.dumps({"job_name": active[job_identity], "reused": True}))
-        return
-    staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
-    source_snapshot()
-    UV.parent.mkdir(parents=True, exist_ok=True)
-    if not UV.exists():
-        shutil.copyfile(UV_BOOTSTRAP, UV)
-        UV.chmod(0o755)
-    body = payload(staged)
-    body["region"] = options["region"]
-    job = launch.submit_payload(
-        client, body, "prepare", experiment_configs[0].name, commit
-    )
+    def prepare_source():
+        source_snapshot()
+        UV.parent.mkdir(parents=True, exist_ok=True)
+        if not UV.exists():
+            shutil.copyfile(UV_BOOTSTRAP, UV)
+            UV.chmod(0o755)
+
+    job = launch.SubmissionBatch(commit).submit(payload(staged), "prepare", RUNTIME_SETUP.name,
+                                                None, before_send=prepare_source)
     print(json.dumps(job), flush=True)
 
 
@@ -347,7 +326,7 @@ def main():
             start_new_session=True,
         )
         try:
-            code = process.wait(timeout=experiment_configs[0].hours * 3600)
+            code = process.wait(timeout=RUNTIME_SETUP.hours * 3600)
             if code:
                 raise RuntimeError(f"Runtime worker exited {code}")
         except BaseException:
