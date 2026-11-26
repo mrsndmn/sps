@@ -1,92 +1,7 @@
 """Named recipes for the paper training, evaluation and generation commands."""
 
-from dataclasses import asdict, dataclass
-
-
-@dataclass(frozen=True, kw_only=True)
-class PaperRun:
-    name: str
-    architecture: str
-    tags: tuple[str, ...]
-    n_layer: int = 12
-    n_head: int = 12
-    hidden_size: int = 768
-    intermediate_size: int = 2304
-    micro_batch_size: int = 6
-    block_size: int = 4096
-    window_size: int | None = None
-    max_tokens: int = 20_000_000_000
-    eval_interval_tokens: int = 40_000_000
-    save_every: int = 2_000_000_000
-    lr_decay_tokens: int = 2_000_000_000
-    warmup_tokens: int = 50_000_000
-    seed: int = 1337
-
-    def arguments(self):
-        return dict(
-            asdict(self), wandb_run_name=self.name, chunk_shuffle_seed=self.seed
-        )
-
-
-@dataclass(frozen=True, kw_only=True)
-class LRun(PaperRun):
-    n_layer: int = 36
-    n_head: int = 20
-    hidden_size: int = 1280
-    intermediate_size: int = 3840
-
-
-@dataclass(frozen=True, kw_only=True)
-class MRun(PaperRun):
-    n_layer: int = 24
-    n_head: int = 16
-    hidden_size: int = 1024
-    intermediate_size: int = 3072
-
-
-@dataclass(frozen=True, kw_only=True)
-class XLRun(PaperRun):
-    n_layer: int = 48
-    n_head: int = 25
-    hidden_size: int = 1600
-    intermediate_size: int = 4800
-
-
-@dataclass(frozen=True, kw_only=True)
-class XSRun(PaperRun):
-    n_layer: int = 8
-    n_head: int = 8
-    hidden_size: int = 512
-    intermediate_size: int = 1536
-
-
-@dataclass(frozen=True)
-class ZeroWindowReproduction:
-    scale: str
-    model: type[PaperRun]
-    warmup_tokens: int
-    micro_batch_size: int
-    num_gpus: int = 4
-
-    @classmethod
-    def experiment_configs(cls) -> list["ZeroWindowReproduction"]:
-        return [
-            cls("s", PaperRun, warmup_tokens=50_000_000, micro_batch_size=6),
-            cls("m", MRun, warmup_tokens=100_000_000, micro_batch_size=2),
-            cls("xl", XLRun, warmup_tokens=100_000_000, micro_batch_size=1),
-        ]
-
-    @property
-    def recipe(self) -> PaperRun:
-        window_tags = () if self.model is XLRun else ("sliding_predict_tokens",)
-        return self.model(
-            name=f"repro_{self.scale}_sps_w0_20b",
-            architecture="sps",
-            tags=(self.scale, "sps", *window_tags, "deterministic", "w0", "20b", "triton"),
-            window_size=0,
-            warmup_tokens=self.warmup_tokens,
-            micro_batch_size=self.micro_batch_size,
-        )
+from experiments.paper_models import LRun, MRun, PaperRun, XLRun, XSRun
+from experiments.paper_reproduction import PaperSPS, TrainSPS
 
 
 experiment_configs = [
@@ -703,7 +618,7 @@ experiment_configs = [
         ),
         window_size=64,
     ),
-    *(run.recipe for run in ZeroWindowReproduction.experiment_configs()),
+    *(run.recipe for run in PaperSPS.experiment_configs() if isinstance(run, TrainSPS)),
 ]
 
 recipes = {run.name: run for run in experiment_configs}

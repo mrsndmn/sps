@@ -6,21 +6,20 @@ import os
 import shlex
 import subprocess
 
-from experiments import paper_reproduction as study
-from experiments.environment import PYTHON
+from experiments.paper_reproduction import PaperSPS, TrainSPS
+from experiments.environment import COMMON_ROOT, PYTHON
 from experiments.worker_args import TrainArgs
 from orchestration import mlspace_launch as jobs
 from orchestration.run_directory import RunDirectory
-from experiments.environment import COMMON_ROOT
 
 
-def check_data(dest):
+def check_data(dest, corpus, training_runs):
     from data.pilot_data import checked_manifest
     from training.sampler import FixedRandomChunkDistributedSampler, initial_sampler_offset
 
-    manifest = checked_manifest(dest, study.FILES)
+    manifest = checked_manifest(dest, corpus.files)
     defaults = TrainArgs()
-    for run in study.experiment_configs:
+    for run in training_runs:
         recipe = run.recipe
         length = manifest["tokens"]["train"] - recipe.block_size
         offset = initial_sampler_offset(length, recipe.seed)
@@ -32,7 +31,7 @@ def check_data(dest):
                 recipe.seed, start_offset=offset,
             )
             if len(sampler) < required:
-                raise ValueError(f"Insufficient training data for {run.scale}, rank {rank}")
+                raise ValueError(f"Insufficient training data for {run.name}, rank {rank}")
     if manifest["tokens"]["val"] < defaults.eval_total_tokens:
         raise ValueError("Insufficient validation data")
     return manifest["tokens"]
@@ -41,52 +40,54 @@ def check_data(dest):
 def train_command(run, output):
     return [str(PYTHON), "-m", "torch.distributed.run", "--standalone",
             f"--nproc_per_node={run.num_gpus}", "scripts/train.py",
-            "--recipe", run.recipe.name, "--data_root", str(study.ROOT),
+            "--recipe", run.recipe.name, "--data_root", str(run.corpus.data_root),
             "--out_dir", str(output), "--wandb_log", "false"]
 
 
 def main():
-    runs = {r.scale: r for r in study.experiment_configs}
+    runs = {r.name: r for r in PaperSPS.experiment_configs()}
     parser = argparse.ArgumentParser()
-    parser.add_argument("name", choices=["data", *runs])
+    parser.add_argument("name", choices=runs)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry", action="store_true")
     mode.add_argument("--worker", action="store_true")
     args = parser.parse_args()
-    run = runs.get(args.name)
-    phase = "train" if run else "prepare"
-    output = study.ROOT / "out" / run.recipe.name if run else study.CORPUS
+    run = runs[args.name]
+    training = isinstance(run, TrainSPS)
+    corpus = run.corpus if training else run
+    training_runs = [r for r in runs.values() if isinstance(r, TrainSPS) and r.corpus == corpus]
+    output = run.output
     if args.worker:
         directory = RunDirectory(COMMON_ROOT, output)
         work = directory.work
         if (os.environ.get("SPS_JOB_OUTPUT") != str(output)
                 or os.environ.get("SPS_JOB_WORK") != str(work) or not work.is_dir()):
             parser.error("Worker requires the MLSpace publication directory")
-        if run:
-            check_data(study.CORPUS)
+        if training:
+            check_data(corpus.output, corpus, training_runs)
             subprocess.run(train_command(run, work), check=True)
             if not any(work.glob("*_final.pt")):
                 raise RuntimeError("Missing final training checkpoint")
         else:
             from data.pilot_data import prepare_memmaps
-            prefix = study.PREFIX if (study.PREFIX / "manifest.json").is_file() else None
-            prepare_memmaps(work, study.FILES, study.PREPARE_FREE_BYTES,
-                            max(r.recipe.max_tokens for r in runs.values()),
-                            prefix_dir=prefix, prefix_files=study.PREFIX_FILES)
-            print(check_data(work))
+            prefix = corpus.prefix if (corpus.prefix / "manifest.json").is_file() else None
+            prepare_memmaps(work, corpus.files, corpus.free_bytes,
+                            max(r.recipe.max_tokens for r in training_runs),
+                            prefix_dir=prefix, prefix_files=corpus.prefix_files)
+            print(check_data(work, corpus, training_runs))
         return
     commit = jobs.git("rev-parse", "HEAD")
     staged = jobs.STAGING_ROOT / commit
-    body = jobs.payload(phase, args.name, staged, "d.tarasov", "mrsndmn",
-                        training_gpus=run.num_gpus if run else 1)
-    body["job_desc"] = f"sps-{study.FAMILY} {phase} {args.name} #d.tarasov @mrsndmn"
-    body["script"] = shlex.join([str(PYTHON), study.SCRIPT, args.name, "--worker"])
-    settings = run.recipe.arguments() if run else dict(files=study.FILES, corpus=str(output))
+    body = jobs.payload(run.phase, args.name, staged, "d.tarasov", "mrsndmn",
+                        training_gpus=run.num_gpus)
+    body["job_desc"] = f"sps-{run.family} {run.phase} {args.name} #d.tarasov @mrsndmn"
+    body["script"] = shlex.join([str(PYTHON), run.script, args.name, "--worker"])
+    settings = run.recipe.arguments() if training else dict(files=corpus.files, corpus=str(output))
     if args.dry:
-        jobs.print_preview(body, output, staged, phase, settings=settings)
+        jobs.print_preview(body, output, staged, run.phase, settings=settings)
         return
-    if run or output.is_dir():
-        check_data(study.CORPUS)
+    if training or output.is_dir():
+        check_data(corpus.output, corpus, training_runs)
     with jobs.submission_lock():
-        receipt = jobs.SubmissionBatch(commit).submit(body, phase, args.name, output, settings=settings)
+        receipt = jobs.SubmissionBatch(commit).submit(body, run.phase, args.name, output, settings=settings)
     print(json.dumps(receipt))

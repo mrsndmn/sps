@@ -11,9 +11,16 @@ from orchestration.named.registry import family_runs
 def test_catalog_matches_training_recipes():
     from experiments.paper import recipes
 
-    catalog = family_runs(study.FAMILY)
+    catalog = family_runs(study.PaperSPS.family)
     assert set(catalog) == {("data", "prepare"), ("s", "train"), ("m", "train"), ("xl", "train")}
-    for exp in study.experiment_configs:
+    configs = study.PaperSPS.experiment_configs()
+    assert isinstance(configs, list)
+    assert [(exp.name, exp.phase) for exp in configs] == list(catalog)
+    corpus, *training = configs
+    assert isinstance(corpus, study.PrepareFineWeb)
+    assert len(corpus.files) == len(set(corpus.files)) == 36
+    for exp in training:
+        assert exp.corpus is corpus
         recipe = recipes[exp.recipe.name]
         assert recipe == exp.recipe
         assert (recipe.window_size, recipe.max_tokens, recipe.block_size) == (0, 20_000_000_000, 4096)
