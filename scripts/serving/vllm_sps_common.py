@@ -7,7 +7,13 @@ from pathlib import Path
 
 from scripts import vllm_sps_config as c
 
-LEGACY_GLOBAL_BATCH = 16
+_LEGACY_SCHEDULE = {"training_steps": 512, "stage_steps": 102, "global_batch": 16}
+_LEGACY_PROBE = {
+    "global_batch": _LEGACY_SCHEDULE["global_batch"],
+    "num_gpus": 4,
+    "context": 2048,
+    "backend": "flex_attention",
+}
 
 
 def file_hash(path):
@@ -18,12 +24,21 @@ def file_hash(path):
     return h.hexdigest()
 
 
+def training_schedule():
+    return {"training_steps": c.TRAIN_STEPS, "stage_steps": c.STAGE_STEPS, "global_batch": c.GLOBAL_BATCH}
+
+
+def recorded_schedule(record):
+    return {name: record.get(name, default) for name, default in _LEGACY_SCHEDULE.items()}
+
+
 def trained():
     marker = c.ROOT / "runs/out/qwen3_sps_mtp/trained.json"
     record = json.loads(marker.read_text())
     checkpoint = Path(record["checkpoint"])
     if (
         record["steps"] != c.TRAIN_STEPS
+        or recorded_schedule(record) != training_schedule()
         or record["horizons"] != c.HORIZONS
         or record["parent"] != str(c.PARENT)
         or checkpoint.name != "final.pt"
@@ -50,17 +65,22 @@ def matches_training_input(state):
     )
 
 
-def probe_workload():
-    return {"horizons": c.HORIZONS, "global_batch": c.GLOBAL_BATCH}
-
-
-def probe_seconds(path, *, legacy_horizons=4):
-    probe = json.loads(path.read_text())
-    workload = {
-        "horizons": probe.get("horizons", legacy_horizons),
-        "global_batch": probe.get("global_batch", LEGACY_GLOBAL_BATCH),
+def probe_workload(num_gpus):
+    return {
+        "horizons": c.HORIZONS,
+        "global_batch": c.GLOBAL_BATCH,
+        "num_gpus": num_gpus,
+        "context": c.source.CONTEXT,
+        "backend": c.BACKEND,
     }
-    if workload != probe_workload():
+
+
+def probe_seconds(path, *, num_gpus=None, legacy_horizons=4):
+    probe = json.loads(path.read_text())
+    expected = probe_workload(c.experiment_configs[0].num_gpus if num_gpus is None else num_gpus)
+    legacy = dict(_LEGACY_PROBE, horizons=legacy_horizons)
+    recorded = {field: probe.get(field, default) for field, default in legacy.items()}
+    if recorded != expected:
         raise RuntimeError(f"Training probe uses another workload: {path}")
     if "seconds" in probe:
         embedding, full = probe["seconds"]

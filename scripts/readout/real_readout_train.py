@@ -168,10 +168,11 @@ def main():
         if rank == 0:
             projected = (measured[0]*c.STAGE_STEPS + measured[1]*(c.TRAIN_STEPS-c.STAGE_STEPS))/3600
             store_json(run.ROOT / "prepared.json", dict(
-                       **common.probe_workload(), seconds=measured.tolist(), projected_hours=projected.item()))
+                       **common.probe_workload(world), seconds=measured.tolist(), projected_hours=projected.item()))
     elif rank == 0:
         store_json(root / "trained.json", dict(parent=str(run.PARENT),
                    checkpoint=str(root/"final.pt"), step=steps,
+                   **common.training_schedule(),
                    checkpoint_sha256=common.file_hash(root/"final.pt")))
     dist.destroy_process_group()
 

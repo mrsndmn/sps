@@ -15,8 +15,8 @@ _MIGRATED = {
         "362831dcffbf63a5156afd1369265767f878c39cfd704fa7037ac20a5a4b627b",
     },
     "mmlu": {
-        "b77fdc99ccfbeb0d956792a3052c50cbb54e05295c9eb3afdd834ba4dc22597c",
-        "af09887ba15f1a146047b3448c6107e3883dc15574731c294e0609596c8a8f84",
+        "f5ddac456258e4090bfa384213a55c24fcc89b4be052b9ebc21c5953de32e291",
+        "e19b6a9a3c193eacc9eca4bb3b9dcc10eb529d4b02d504fb9a5fab791088ccc2",
     },
 }
 # Source checksums from the readout workers at 620a1f1.

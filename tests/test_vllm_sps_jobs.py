@@ -64,8 +64,14 @@ def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, lega
     }
     if legacy:
         marker["design_signature"] = "historical code hash"
+    else:
+        marker.update(common.training_schedule())
     (folder / "trained.json").write_text(json.dumps(marker))
     assert common.checked_checkpoint(common.trained()) == checkpoint
+    with monkeypatch.context() as different_schedule:
+        different_schedule.setattr(c, "GLOBAL_BATCH", 8)
+        with pytest.raises(RuntimeError, match="configured run"):
+            common.trained()
     checkpoint.write_bytes(b"other model")
     with pytest.raises(RuntimeError, match="checkpoint changed"):
         common.checked_checkpoint(common.trained())
@@ -97,10 +103,17 @@ def test_direct_evaluation_reuses_only_its_live_protocol(tmp_path, monkeypatch):
         launcher.check_evaluation(exp, dry=True)
 
 
-def test_legacy_probe_matches_its_measured_workload(tmp_path, monkeypatch):
+@pytest.mark.parametrize("config, field, changed", [
+    (c, "GLOBAL_BATCH", 8),
+    (c, "BACKEND", "sdpa"),
+    (c.source, "CONTEXT", 4096),
+])
+def test_legacy_probe_matches_its_measured_workload(tmp_path, monkeypatch, config, field, changed):
     probe = tmp_path / "probe.json"
     probe.write_text(json.dumps({"seconds": [1, 2], "projected_hours": 0}))
     assert common.probe_seconds(probe) == c.STAGE_STEPS + 2 * (c.TRAIN_STEPS - c.STAGE_STEPS)
-    monkeypatch.setattr(c, "GLOBAL_BATCH", 8)
+    with pytest.raises(RuntimeError, match="another workload"):
+        common.probe_seconds(probe, num_gpus=1)
+    monkeypatch.setattr(config, field, changed)
     with pytest.raises(RuntimeError, match="another workload"):
         common.probe_seconds(probe)
