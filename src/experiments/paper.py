@@ -1,6 +1,6 @@
 """Named recipes for the paper training, evaluation and generation commands."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -13,6 +13,7 @@ class PaperRun:
     hidden_size: int = 768
     intermediate_size: int = 2304
     micro_batch_size: int = 6
+    block_size: int = 4096
     window_size: int | None = None
     max_tokens: int = 20_000_000_000
     eval_interval_tokens: int = 40_000_000
@@ -676,3 +677,15 @@ experiment_configs = [
 ]
 
 recipes = {run.name: run for run in experiment_configs}
+
+# Keep the paper training settings at each scale and isolate reproduction outputs.
+for scale in ("s", "m", "xl"):
+    source = recipes[f"{scale}_sps_w64_20b"]
+    run = replace(
+        source,
+        name=f"repro_{scale}_sps_w0_20b",
+        window_size=0,
+        tags=tuple("w0" if tag == "w64" else tag for tag in source.tags),
+    )
+    experiment_configs.append(run)
+    recipes[run.name] = run
