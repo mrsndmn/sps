@@ -75,3 +75,18 @@ def test_schedule_skips_existing_output(tmp_path,monkeypatch,capsys):
     marker.write_text(json.dumps({'design_signature':'old'}))
     r.submit(args)
     assert 'Skip existing output' in capsys.readouterr().out
+
+
+def test_rerun_allocation_matches_selected_row_and_budget(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from experiments.instruct_config import experiment_configs
+    from workloads.instruction.sched_run import _runner
+
+    exp = replace(next(row for row in experiment_configs if row.trainable), num_gpus=8)
+    monkeypatch.setattr(_runner.sc, "root", lambda variant: tmp_path)
+    for phase, workload, gpus in (("train", None, 8), ("eval", "quality", 1)):
+        payload = _runner.payload("cosine", phase, exp, workload, tmp_path, "author", "nick")
+        assert payload["instance_type"] == f"a100.{gpus}gpu"
+        _runner.reserve("cosine", phase, exp.name, workload, exp)
+        last = json.loads((tmp_path / "budget.json").read_text())["attempts"][-1]
+        assert last["gpu_hours"] == gpus * _runner.hours(phase, workload)

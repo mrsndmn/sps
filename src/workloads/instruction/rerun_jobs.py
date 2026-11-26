@@ -28,7 +28,7 @@ class Rerun:
         return matching_runs((x for x in self.sc.e.collect_experiments() if x.trainable), pattern)
 
     def payload(self, variant, phase, exp, workload, staged, author, nick):
-        body = launch.payload(phase, exp.name, staged, author, nick)
+        body = launch.payload(phase, exp.name, staged, author, nick, training_gpus=exp.num_gpus)
         command = [
             str(self.sc.e.PYTHON),
             self.script,
@@ -54,10 +54,10 @@ class Rerun:
             self.c.TRAIN_HOURS if phase == "train" else self.c.WORKLOAD_HOURS[workload]
         )
 
-    def reserve(self, variant, phase, name, workload):
+    def reserve(self, variant, phase, name, workload, exp):
         path = self.sc.root(variant) / "budget.json"
         ledger = json.loads(path.read_text()) if path.exists() else {"attempts": []}
-        cost = self.hours(phase, workload) * (4 if phase == "train" else 1)
+        cost = self.hours(phase, workload) * (exp.num_gpus if phase == "train" else launch.EVAL_NUM_GPUS)
         if (
             sum(x["gpu_hours"] for x in ledger["attempts"]) + cost
             > self.c.BUDGETS[variant]
@@ -145,8 +145,10 @@ class Rerun:
                     launch.print_preview(body, marker.parent, staged, args.phase)
                     continue
                 body["region"] = extra["region"]
-                self.reserve(args.variant, args.phase, name, workload)
-                job = launch.submit_payload(client, body, args.phase, name, commit, output_dir=marker.parent)
+                job = launch.submit_payload(
+                    client, body, args.phase, name, commit, output_dir=marker.parent,
+                    before_send=lambda: self.reserve(args.variant, args.phase, name, workload, exp),
+                )
                 jobs.append(job)
                 if job.get("job_name"):
                     active[identity] = job["job_name"]
