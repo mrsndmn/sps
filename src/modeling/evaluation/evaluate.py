@@ -24,8 +24,8 @@ import tempfile
 from pathlib import Path
 import traceback
 
-import hydra
-from hydra.utils import instantiate
+from experiments.worker_args import worker_cli
+from experiments.worker_args import instantiate
 from omegaconf import DictConfig, OmegaConf
 import torch
 try:
@@ -458,7 +458,7 @@ def _apply_eval_checkpoint_model_args(
         )
 
 
-@hydra.main(version_base=None, config_path=str(Path(__file__).resolve().parents[3] / "conf"), config_name="config")
+@worker_cli("eval")
 def main(cfg: DictConfig):
     # Temporarily disable struct mode to add evaluation options if needed
     OmegaConf.set_struct(cfg, False)

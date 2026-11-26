@@ -1,4 +1,0 @@
-# Constant learning rate (no decay)
-
-decay_lr: false
-min_lr: 6e-5

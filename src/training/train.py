@@ -28,8 +28,8 @@ from dataclasses import asdict
 import math
 import random
 
-import hydra
-from hydra.utils import instantiate
+from experiments.worker_args import worker_cli
+from experiments.worker_args import instantiate
 from omegaconf import DictConfig, OmegaConf
 import numpy as np
 import torch
@@ -50,7 +50,7 @@ from tqdm import trange
 from training.sampler import initial_sampler_offset
 
 
-@hydra.main(version_base=None, config_path=str(Path(__file__).resolve().parents[2] / "conf"), config_name="config")
+@worker_cli("train")
 def main(cfg: DictConfig):
     # Print config for debugging
     if int(os.environ.get('RANK', -1)) <= 0:
@@ -61,7 +61,7 @@ def main(cfg: DictConfig):
 
     # Determine output directory from wandb run name
     dir_name = cfg.logging.wandb_run_name
-    out_dir = os.path.join(cfg.system.data_root, "out", dir_name)
+    out_dir = cfg.get("out_dir") or os.path.join(cfg.system.data_root, "out", dir_name)
 
     started_at = time.perf_counter()
 

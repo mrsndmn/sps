@@ -34,13 +34,13 @@ tokenized with the GPT-2 tokenizer and packed across document boundaries:
 ```bash
 # writes train/val memmap bins under <DATA_ROOT>/data
 # (downloads FineWeb-Edu to <DATA_ROOT>/.hf_cache on first run)
-uv run python src/data/prepare.py system.data_root=<DATA_ROOT>
+uv run python src/data/prepare.py --data_root <DATA_ROOT>
 ```
 
 ## Training
 
-Training is configured with [Hydra](https://hydra.cc/). Experiment recipes live under
-`conf/experiment/` and follow the naming convention
+Training uses typed CLI arguments. Paper recipes live in
+`src/experiments/paper.py` and follow the naming convention
 `{scale}_{family}[_w{window}]_{tokens}b`, where:
 
 - **scale** ∈ `{xs, s, m, l, xl}` (53M / 131M / 379M / 831M / 1.678B parameters),
@@ -48,39 +48,39 @@ Training is configured with [Hydra](https://hydra.cc/). Experiment recipes live 
 - **window** is the sliding `<predict>`-window size `w` (e.g. `w64`; the paper uses `w=64`),
 - **tokens** is the pre-decay training budget (`10b` / `20b`).
 
-> **Every `train.py` / `evaluate.py` command needs `system.data_root=<DATA_ROOT>`** — the same
-> directory you used for data prep. It has no default (Hydra errors if it is missing); the
+> **Every `train.py` / `evaluate.py` command needs `--data_root <DATA_ROOT>`** — the same
+> directory you used for data prep. It is required; the
 > examples show it on the first command of each block, so append it to the variants too.
 
 ```bash
 # STANDARD baseline (xs, 20B tokens)
-uv run python scripts/train.py +experiment=xs_full_attention_20b system.data_root=<DATA_ROOT>
+uv run python scripts/train.py --recipe xs_full_attention_20b --data_root <DATA_ROOT>
 
 # SPS (s, w=64, 20B tokens)
-uv run python scripts/train.py +experiment=s_sps_w64_20b
+uv run python scripts/train.py --recipe s_sps_w64_20b
 
 # 2X MEMORY ablation is SPS with a full window (w=4096)
-uv run python scripts/train.py +experiment=s_sps_w4096_20b
+uv run python scripts/train.py --recipe s_sps_w4096_20b
 
 # DELAYED STATE and REVERSE SPS baselines
-uv run python scripts/train.py +experiment=s_delayed_state_w64_20b
-uv run python scripts/train.py +experiment=s_reverse_sps_w64_20b
+uv run python scripts/train.py --recipe s_delayed_state_w64_20b
+uv run python scripts/train.py --recipe s_reverse_sps_w64_20b
 ```
 
 The available model families are `standard`, `sps`, `reverse_sps`, and `delayed_state`
-(`conf/model/`). See `conf/README.md` for the full config surface. For distributed data
+(`--architecture`). Run `python scripts/train.py --help` for all fields. For distributed data
 parallel:
 
 ```bash
-torchrun --standalone --nproc_per_node=4 scripts/train.py +experiment=xs_full_attention_20b system.data_root=<DATA_ROOT>
+torchrun --standalone --nproc_per_node=4 scripts/train.py --recipe xs_full_attention_20b --data_root <DATA_ROOT>
 ```
 
 ### Runtime and logging overrides
 
 - **Weights & Biases** logging is on by default and writes to your default W&B entity. Turn it
-  off with `logging.wandb_log=false`, or point it somewhere specific with
-  `logging.wandb_entity=<entity> logging.wandb_project=<project>`.
-- **Device / compile** — add `system.device=cpu` or `system.compile=false` to any command to
+  off with `--wandb_log false`, or point it somewhere specific with
+  `--wandb_entity <entity> --wandb_project <project>`.
+- **Device / compile** — add `--device cpu` or `--compile false` to any command to
   run on CPU or skip `torch.compile`.
 
 ## Evaluation
@@ -90,7 +90,7 @@ loss, out-of-distribution corpus NLL (WikiText, C4, Pile-Books3, GovReport — s
 `lm_eval_tasks/`), and zero-shot accuracy on ARC-Easy, HellaSwag, PIQA, SciQ, and LAMBADA:
 
 ```bash
-uv run python scripts/evaluate.py +experiment=s_sps_w64_20b +checkpoint=final system.data_root=<DATA_ROOT>
+uv run python scripts/evaluate.py --recipe s_sps_w64_20b --checkpoint final --tasks piqa --data_root <DATA_ROOT>
 ```
 
 ## Reproducing the paper's figures and tables
@@ -131,7 +131,7 @@ There are two kinds of input:
 
 - **W&B history.** The validation-history, accuracy-gain, window-ablation, seed-variance and
   loss-vs-compute figures read your own runs. They take `--entity` / `--project` and default to
-  `$WANDB_ENTITY` and the project in `conf/logging/default.yaml`, so runs trained with the
+  `$WANDB_ENTITY` and the project in `src/experiments/worker_args.py`, so runs trained with the
   shipped recipes (each sets `wandb_run_name: ${experiment.name}`) resolve with no flags.
   `plot_loss_vs_compute.py` caches its pull to JSON, so re-renders need no network.
 - **Local analysis outputs.** The Δ-NLL, gradient-ratio and multi-token-probe figures read
@@ -148,7 +148,7 @@ function and records results and conclusions. The implementation defines the run
 
 | Where to look | What lives there |
 | --- | --- |
-| `conf/`, `scripts/train.py`, `scripts/evaluate.py` | Hydra recipes and entry points for direct training and evaluation. |
+| `src/experiments/paper.py`, `scripts/train.py`, `scripts/evaluate.py` | Typed recipes and entry points for direct training and evaluation. |
 | `src/`, `lm_eval_tasks/` | Model implementations, data preparation, training utilities, and evaluation tasks. |
 | `scripts/run_train_jobs.py`, `scripts/run_eval.py` | Shared MLSpace launchers. Use `--list` for the family catalog and `--list FAMILY` for run names. |
 | `src/experiments/` | Typed experiment definitions and numeric settings. |
@@ -234,7 +234,7 @@ candidate payloads until the validation artifacts identify the winner.
 Historical IFEval and schedule workers require a pinned instruct source.
 A real submission stops if the current checkout and the archived source differ.
 
-The pilot family in `src/experiments/pilot.py` shares training settings
+The pilot families in `src/experiments/pilot_1b.py` and `src/experiments/pilot_10b.py` share training settings
 between its named variants. `src/orchestration/named/registry.py` collects the families
 served by the common worker. `src/orchestration/named/special_families.py` registers the
 families with dedicated submission protocols.
@@ -249,15 +249,13 @@ missing pilot shards, tokenizes them, and measures both methods with four-GPU DD
 Inspect `prepared.json`, then `python scripts/run_train_jobs.py` submits training.
 `python scripts/run_eval.py` submits the downstream tasks after training succeeds.
 
-Pilot workers write directly to the shared NFS target in `src/experiments/environment.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
-checkpoints and evaluation outputs, `sanity` holds throughput probes, `code` holds
-immutable committed snapshots, `hf` holds downloaded HF shards, and `submissions`
-holds full job-ID receipts. The existing project venv is reused; do not mutate its
-dependencies while jobs are running. Local metrics are always saved as JSONL.
-
-Preparation and downstream evaluation have separate timeouts from the main
-training limit. Queue time is not included in runtime estimates. A failed job has
-no success marker and can be resubmitted; successful and active jobs are skipped.
+Each pilot config declares its final training and evaluation directories. The
+launcher skips any existing destination. Before sending a job, it reserves the
+path under the shared `in_progress/` tree. The worker writes partial results
+there and publishes the final directory by rename. Failed attempts are
+preserved under `failed/`. Use a new destination to rerun a completed phase.
+A pending submission with an unknown outcome keeps its reservation until
+MLSpace confirms its status. Shared input memmaps remain under `runs/data`.
 
 ### Longer training
 

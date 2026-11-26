@@ -27,8 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
-import hydra
-from hydra.utils import instantiate
+from experiments.worker_args import worker_cli
+from experiments.worker_args import instantiate
 from omegaconf import DictConfig, ListConfig, OmegaConf
 import torch
 from torch import Tensor
@@ -386,7 +386,7 @@ def _write_output_records(output_path: str, records: list[dict]) -> None:
     print(f"Wrote {len(records)} generation records to {output_path}")
 
 
-@hydra.main(version_base=None, config_path=str(Path(__file__).resolve().parents[2] / "conf"), config_name="config")
+@worker_cli("generate")
 def main(cfg: DictConfig):
     OmegaConf.set_struct(cfg, False)
     if "checkpoint" not in cfg:

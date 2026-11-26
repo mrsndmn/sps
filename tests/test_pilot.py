@@ -87,8 +87,8 @@ def test_eval_invokes_exactly_one_task_per_process():
     exp = config.collect_experiments()[0]
     for task in config.TASKS:
         cmd = config.eval_command(exp, task)
-        assert [x for x in cmd if x.startswith('+tasks=')] == ['+tasks=' + task]
-        assert '+checkpoint=final' in cmd
+        assert cmd[cmd.index('--tasks') + 1] == task
+        assert cmd[cmd.index('--checkpoint') + 1] == 'final'
 
 
 def test_estimator_excludes_startup_and_rejects_incomplete_probe(tmp_path, monkeypatch):
@@ -195,19 +195,12 @@ def test_receipt_blocks_duplicate_when_list_api_lags(tmp_path, monkeypatch, pend
         mlspace_launch.reconcile_receipts(client, {})
 
 
-def test_changed_design_cannot_resume_partial_checkpoint(tmp_path, monkeypatch):
-    monkeypatch.setattr(pilot_run, 'ARTIFACTS_ROOT', tmp_path)
-    monkeypatch.setattr(pilot_run, 'output_dir', lambda e: tmp_path / e.name)
-    exp = config.collect_experiments()[0]
-    dest = tmp_path / exp.name
-    dest.mkdir()
-    (tmp_path / 'prepared.json').write_text(json.dumps(dict(
-        design_signature=config.design_signature(), estimates={exp.name: dict(
-            token_budget=config.TRAIN_TOKENS, projected_training_hours=1)})))
-    (dest / 'run-config.json').write_text(json.dumps(dict(design_signature='old')))
-    (dest / 'ckpt.pt').touch()
-    with pytest.raises(RuntimeError, match='Partial checkpoints'):
-        pilot_run.train(exp)
+def test_existing_output_skips_even_if_empty(tmp_path):
+    from orchestration.run_directory import RunDirectory
+    directory = RunDirectory(tmp_path, tmp_path / "result")
+    directory.output.mkdir()
+    assert not directory.reserve()
+    assert not directory.reservation.exists()
 
 
 def test_lost_submission_response_blocks_retry_until_reconciled(tmp_path, monkeypatch):
@@ -329,13 +322,13 @@ assert e.design_signature() != before
     subprocess.run([sys.executable, '-c', script], env=env, check=True)
 
 
-def test_launcher_rejects_marker_after_worker_change(tmp_path, monkeypatch, capsys):
-    marker = tmp_path / 'prepared.json'
-    marker.write_text(json.dumps({'design_signature': config.design_signature()}))
+def test_existing_pilot_outputs_skip_before_api(monkeypatch, tmp_path, capsys):
+    from orchestration import pilot_launch
+    from orchestration.run_directory import RunDirectory
+    directory = RunDirectory(tmp_path, tmp_path / "results")
+    directory.output.mkdir()
+    monkeypatch.setattr(pilot_launch, 'destination', lambda *args: directory)
     monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
-    monkeypatch.setattr(sys, 'argv', ['launcher', '--dry', '--phase', 'prepare'])
+    monkeypatch.setattr(sys, 'argv', ['launcher'])
     assert mlspace_launch.main() == 0
-    assert 'Skip completed: data-and-probes' in capsys.readouterr().out
-    monkeypatch.setitem(config.WORKER_SCRIPTS, '1b', 'scripts/speculative/mtp_run.py')
-    with pytest.raises(RuntimeError, match='Stale completion marker'):
-        mlspace_launch.main()
+    assert 'Skip existing output' in capsys.readouterr().out

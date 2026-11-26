@@ -1,6 +1,6 @@
 """Token-matched Standard and zero-window SPS experiments at S scale."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -69,6 +69,8 @@ class Pilot:
     name: str
     model: Model
     training: Training
+    output_dir: Path
+    eval_output_dir: Path
     reference_name: str | None = None
     num_gpus: int = 4
     trainable: bool = True
@@ -81,6 +83,16 @@ class Pilot:
             if self.model.window is None
             else f"s_sps_w{self.model.window}_20b"
         )
+
+    def arguments(self, data_root, *, probe=False):
+        # Flatten the resolved groups into the typed CLI namespace.
+        cfg = self.config(data_root, probe=probe)
+        model = dict(cfg["model"]["config"])
+        del model["_target_"]
+        return dict(**model, architecture="standard" if self.model.window is None else "sps",
+                    **cfg["experiment"], **cfg["data"], **cfg["training"], **cfg["scheduler"],
+                    **cfg["optimizer"], **cfg["system"], **cfg["logging"],
+                    total_tokens=cfg["eval"]["total_tokens"], validation_seed=cfg["eval"]["seed"])
 
     def config(self, data_root, *, probe=False):
         t = self.training
@@ -155,41 +167,13 @@ class Pilot:
 
 
 def zero_window_pilot():
-    training = Training(
-        max_tokens=1_000_341_504,
-        warmup_tokens=10_000_000,
-        decay_tokens=100_000_000,
-        eval_interval=50_000_000,
-        save_interval=250_000_000,
-        rolling_interval=100_000_000,
-    )
-    standard = Pilot(name="s_standard_pilot_1b", model=Model(), training=training)
-    return [
-        standard,
-        replace(
-            standard, name="s_sps_w0_pilot_1b", model=replace(standard.model, window=0)
-        ),
-    ]
+    from experiments.pilot_1b import experiment_configs
+    return list(experiment_configs)
 
 
 def zero_window_longer_training():
-    training = Training(
-        max_tokens=10_003_415_040,
-        warmup_tokens=100_000_000,
-        decay_tokens=1_000_000_000,
-        eval_interval=250_000_000,
-        save_interval=1_000_000_000,
-        rolling_interval=250_000_000,
-    )
-    return [
-        replace(
-            run,
-            name=run.name.replace("pilot_1b", "10b"),
-            training=training,
-            reference_name=run.name,
-        )
-        for run in zero_window_pilot()
-    ]
+    from experiments.pilot_10b import experiment_configs
+    return list(experiment_configs)
 
 
 DATASET_REPO = "HuggingFaceFW/fineweb-edu"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Resolve a benchmark config (conf/benchmark/<name>.yaml) into driver arguments.
+"""Resolve a benchmark config (src/experiments/speed.py) into driver arguments.
 
-This is the bridge between the cluster-independent YAML configs and the argparse-based
+This is the bridge between the typed benchmark definitions and the argparse-based
 benchmark_generation_speed.py driver. It reads the named config, substitutes the
 cluster-specific checkpoint root / filename, and emits either:
 
@@ -18,27 +18,21 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
+from dataclasses import asdict
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_CONF_DIR = _REPO_ROOT / "conf" / "benchmark"
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from experiments.speed import experiment_configs
 
 
-def _load_config(config_name: str) -> dict:
-    named_path = _CONF_DIR / f"{config_name}.yaml"
-    if not named_path.is_file():
-        available = sorted(
-            p.stem for p in _CONF_DIR.glob("*.yaml") if not p.stem.startswith("_")
-        )
-        raise SystemExit(
-            f"Unknown benchmark config {config_name!r}. "
-            f"Available: {', '.join(available)}"
-        )
-    return yaml.safe_load(named_path.read_text()) or {}
+def _load_config(config_name):
+    for config in experiment_configs:
+        if config.name == config_name:
+            return asdict(config)
+    raise SystemExit(f"Unknown benchmark config {config_name!r}")
 
 
 def _as_list(value) -> list:
-    return value if isinstance(value, list) else [value]
+    return value if isinstance(value, (list, tuple)) else [value]
 
 
 def _resolve_specs(cfg: dict, out_root: str, ckpt_name: str, scales: list[str], method_labels=None):

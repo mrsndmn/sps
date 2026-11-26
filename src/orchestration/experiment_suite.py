@@ -105,7 +105,7 @@ def overrides(exp, *, probe=False):
     return args
 
 
-def train_command(exp, *, probe=False):
+def train_command(exp, *, probe=False, data_root=None, dest=None):
     if SUITE == INSTRUCT_SUITE:
         if not exp.trainable:
             raise ValueError("The original instruct model does not require training")
@@ -164,23 +164,23 @@ def train_command(exp, *, probe=False):
         "torch.distributed.run",
         "--standalone",
         f"--nproc_per_node={exp.num_gpus}",
-        "scripts/pilot/named_worker.py",
-        "train",
-        exp.name,
-        *(["--probe"] if probe else []),
+        "scripts/train.py",
+        *pilot_cli(exp, data_root or (SANITY_ROOT if probe else RUN_ROOT), probe=probe),
+        "--out_dir", str(dest or ((data_root or SANITY_ROOT) / "out" / exp.name if probe else exp.output_dir)),
     ]
 
 
-def eval_command(exp, task):
+def pilot_cli(exp, root, *, probe=False):
+    from experiments.worker_args import cli_args
+    return cli_args(exp.arguments(root, probe=probe))
+
+
+def eval_command(exp, task, *, result=None):
     return [
-        str(PYTHON),
-        "scripts/pilot/named_worker.py",
-        "eval",
-        exp.name,
-        "+checkpoint=final",
-        f"+tasks={task}",
-        "+eval_batch_size=6",
-        "+num_fewshot=0",
+        str(PYTHON), "scripts/evaluate.py", *pilot_cli(exp, RUN_ROOT),
+        "--out_dir", str(exp.output_dir), "--checkpoint", "final", "--tasks", task,
+        "--eval_batch_size", "6", "--num_fewshot", "0",
+        *(["--output_path", str(result)] if result else []),
     ]
 
 
@@ -261,8 +261,6 @@ def design_signature():
         repo / worker_script,
         repo / "src/workloads" / worker_script.relative_to("scripts"),
     ]
-    if SUITE in {"1b", "10b"}:
-        inputs.append(scripts / "pilot/named_worker.py")
     sources = {
         str(path.relative_to(repo)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in inputs
@@ -290,11 +288,6 @@ def design_signature():
             (exp.config(RUN_ROOT), exp.config(SANITY_ROOT, probe=True))
             for exp in experiment_configs
         ]
-        worker_path = repo / "src/workloads/pilot/named_worker.py"
-        if worker_path.exists():
-            design["pilot_worker"] = hashlib.sha256(
-                worker_path.read_bytes()
-            ).hexdigest()
     if SUITE in LARGE_AR_SPS_SUITES:
         from experiments import ar_sps_config as c
 

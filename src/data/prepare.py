@@ -18,7 +18,9 @@ import numpy as np
 import tiktoken
 from tqdm import tqdm
 import multiprocessing as mp
-import hydra
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from experiments.worker_args import worker_cli
 from omegaconf import DictConfig, OmegaConf
 
 import math
@@ -418,7 +420,7 @@ def _write_tokens(val_seed, val_fraction, source_files, source_file_rows,
 # Main
 # ---------------------------------------------------------------------------
 
-@hydra.main(version_base=None, config_path="../../conf", config_name="config")
+@worker_cli("prepare")
 def main(cfg: DictConfig):
     mp.set_start_method("spawn", force=True)
     global NUM_PROC

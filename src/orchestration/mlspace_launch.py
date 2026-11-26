@@ -133,6 +133,13 @@ def reconcile_intents(active_by_desc):
         path.unlink()
 
 
+def valid_job_name(result):
+    name = result.get('job_name') if isinstance(result, dict) else None
+    if isinstance(name, str) and re.fullmatch(r'lm-mpi-job-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', name):
+        return name
+    return None
+
+
 def submit_payload(client, body, phase, name, commit):
     identity = normalize(body['job_desc'])
     intent = ARTIFACTS_ROOT / 'submission-intents' / (
@@ -187,10 +194,13 @@ def main(default_phase='train', *, named=None):
     parser.add_argument('--dry', action='store_true')
     args = parser.parse_args()
     args.named = named
+    launch = submit
+    if SUITE in {"1b", "10b"}:
+        from orchestration.pilot_launch import submit as launch
     if args.dry:
-        return submit(args)
+        return launch(args)
     with submission_lock():
-        return submit(args)
+        return launch(args)
 
 
 def submit(args):
