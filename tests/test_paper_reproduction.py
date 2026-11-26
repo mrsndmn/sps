@@ -95,3 +95,33 @@ def test_merge_orders_parts_and_checks_each_split(tmp_path):
     (parts[1][0] / "val.bin").write_bytes(b"")
     with pytest.raises(RuntimeError, match="Incomplete val"):
         prepare_memmaps(tmp_path / "partial", files, 0, 3, parts=parts)
+
+
+def test_merge_retry_removes_restored_private_prefix(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    import sys
+    from orchestration import paper_reproduction as worker
+    from data import pilot_data
+
+    shared = tmp_path / "pilot"
+    shared.mkdir()
+    (shared / "manifest.json").touch()
+    corpus = replace(study.PaperSPS.experiment_configs()[0], data_root=tmp_path, prefix=shared)
+    training = replace(study.TrainSPS.experiment_configs()[-1], corpus=corpus)
+    work = tmp_path / "reserved"
+    (work / "prefix").mkdir(parents=True)
+    def merge(*args, **kwargs):
+        assert kwargs["prefix_dir"] == shared
+
+    monkeypatch.setattr(study.PaperSPS, "experiment_configs", classmethod(lambda cls: [corpus, training]))
+    monkeypatch.setattr(worker, "RunDirectory", lambda *args: SimpleNamespace(work=work))
+    monkeypatch.setattr(worker, "check_data", lambda *args: {})
+    monkeypatch.setattr(worker, "tokenized_parts", lambda *args: [])
+    monkeypatch.setattr(pilot_data, "prepare_memmaps", merge)
+    monkeypatch.setenv("SPS_JOB_OUTPUT", str(corpus.output))
+    monkeypatch.setenv("SPS_JOB_WORK", str(work))
+    monkeypatch.setattr(sys, "argv", ["paper_reproduction", "data", "--worker"])
+    worker.main()
+    assert not (work / "prefix").exists()
+    assert (shared / "manifest.json").exists()

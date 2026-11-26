@@ -99,8 +99,8 @@ def main():
                             max(r.recipe.max_tokens for r in training_runs),
                             prefix_dir=prefix, prefix_files=corpus.prefix_files, parts=parts)
             print(check_data(work, corpus, training_runs))
-            if prefix == work / "prefix":
-                shutil.rmtree(prefix)
+            if (work / "prefix").is_dir():
+                shutil.rmtree(work / "prefix")
         return
     commit = jobs.git("rev-parse", "HEAD")
     staged = jobs.STAGING_ROOT / commit
