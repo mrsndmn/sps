@@ -34,28 +34,34 @@ travels as CLI arguments, including when launched directly.
 
 ## Idempotent submission
 
-Before submitting, resolve the effective configuration and inputs for the phase.
-Associate the family, run, phase and design signature with its artifacts and
-submission receipt. Include inputs that can change the result, such as the
-dataset revision, training checkpoint, evaluation cohort and generation
-settings. Changing an unrelated run must preserve this run's identity.
+Each independently submitted run or phase declares its final absolute
+`output_dir` in its Python config. This path is its submission identity. To
+request another result, choose a new path. Existing output directories are
+skipped on existence alone, including after changes to code or arguments.
 
-- Return the existing full MLSpace job name for a matching queued or running job.
-- Skip submission when the matching completion marker and required artifacts
-  establish that the phase succeeded.
-- Surface an incompatible signature at an existing artifact destination. A
-  changed design needs a distinct destination before it can run.
-- Allow a retry after confirmed failure or cancellation. Reconcile a pending
-  submission intent with MLSpace after a crash. If acceptance is uncertain,
-  report the ambiguity and hold submission until it is resolved.
-- Serialize competing submissions using the existing lock and durable intent
-  and receipt protocol. Apply the same guarantees to specialized launchers.
+Keep a shared `in_progress/` tree on the same artifact filesystem. Mirror the
+final path relative to the artifacts root so equal basenames under different
+parents have independent reservations. For each submission:
+
+1. Skip if the final directory exists or its corresponding reservation exists.
+2. Atomically create the reservation directory before calling MLSpace. If
+   another launcher wins the mkdir, skip. Recheck the final path after acquiring
+   the reservation to cover a concurrent completion. Dry runs only inspect.
+3. Record the full MLSpace job name in the reservation once available. Write
+   intermediate results under the reservation. On success, atomically rename
+   its result subdirectory to the final path, then release the reservation.
+4. Release the reservation after a confirmed submission rejection, failure or
+   cancellation, preserving any partial results separately. After an ambiguous
+   submission or a launcher crash, keep the reservation until reconciliation.
+   Use the recorded job name or the scaffold's active-job lookup by normalized
+   description to identify the job. An unresolved reservation continues to
+   block submission.
 
 ## Migration checks
 
 Compare old and new effective settings and worker inputs for each migrated
 phase. Round-trip launcher argv through the actual worker parser, covering
-optional values, booleans and lists. Verify reuse of compatible historical
-receipts, checkpoints and completion markers. Exercise sequential and concurrent
-duplicate submissions, failures, ambiguous submission outcomes and signature
-mismatches with a fake MLSpace client before relying on each launcher route.
+optional values, booleans and lists. Map existing results and active jobs to
+their configured destinations before enabling the new submission path. Exercise
+existing outputs, concurrent reservations, successful publication, confirmed
+failures and ambiguous submission outcomes with a fake MLSpace client.
