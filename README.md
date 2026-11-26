@@ -167,14 +167,19 @@ also resolve to the grouped sources.
 | `instruction/`, `evaluation/` | Instruct training, schedules, continuation and IFEval; MMLU generation, teacher probes and paper diagnostics. |
 | `speculative/`, `distillation/` | MTP training and verification, speculative baselines, Qwen drafters and DFlash experiments. |
 | `readout/`, `provenance/` | Native versus SPS readout experiments and paired response-provenance controls. |
-| `serving/` | Runtime setup, graph benchmarks and sampling diagnostics. |
+| `serving/` | Qwen3 SPS-MTP training and vLLM evaluation, draft-length sweep, runtime setup, graph benchmarks and sampling diagnostics. |
 | `analysis/`, `figures/`, `tables/`, `benchmark/` | Analysis, plots, table exports and performance measurements for the original paper. |
 
-The top level holds the direct commands, shared launcher and registry. The
-vLLM SPS pilot, draft sweep and several shared protocol sources also remain
-there because their historical manifests read those exact files. Relative
-links inside `readout/` and `distillation/` provide the sibling source files
-used to verify archived evaluations.
+The top level holds the direct commands, shared launcher, registry and shared
+protocol sources. Start the Qwen3 vLLM pilot from `scripts/serving/vllm_sps_run.py`
+and the draft-length sweep from `scripts/serving/draft_sweep.py`.
+
+SPS-MTP training and its native-readout control use checkpoint metadata and
+SHA-256 checksums instead of a hash of the training scripts. Existing checkpoints
+can still be used in new evaluations. For archived evaluations that validate
+the exact worker source, use the staged checkout from the original submission
+receipt. Graph and draft-sweep reports can also be regenerated with the current
+scripts, which check agreement with the recorded audit protocol.
 
 ### Following an experiment into storage
 

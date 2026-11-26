@@ -105,13 +105,8 @@ def evaluate(exp):
         split_response,
     )
 
-    signature = common.signature()
-    trained = json.loads((c.ROOT / "runs/out/qwen3_sps_mtp/trained.json").read_text())
-    if trained["design_signature"] != signature:
-        raise RuntimeError("Training design does not match evaluation")
-    checkpoint = Path(trained["checkpoint"])
-    if common.file_hash(checkpoint) != trained["checkpoint_sha256"]:
-        raise RuntimeError("Trained checkpoint changed")
+    trained = common.trained()
+    common.checked_checkpoint(trained)
     tokenizer = AutoTokenizer.from_pretrained(c.MODEL, revision=c.REVISION)
     rows = list(
         load_dataset(
@@ -140,7 +135,6 @@ def evaluate(exp):
                 "Native/vLLM SPS greedy parity failed; inspect greedy_audit.json before benchmarking"
             )
     manifest = {
-        "design_signature": signature,
         "experiment": exp.__dict__,
         "indices": selected,
         "arguments": arguments,
@@ -248,7 +242,7 @@ def evaluate(exp):
     store_json(
         root / "evaluated.json",
         {
-            "design_signature": signature,
+            "checkpoint_sha256": trained["checkpoint_sha256"],
             "experiment": exp.__dict__,
             "trials": result,
             "acceptance_counters_including_warmup": counters,

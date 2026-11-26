@@ -83,9 +83,9 @@ External artifacts root:
   `trained.json`, `metrics.jsonl` and the final weights/export. AR/EAGLE use the
   original Qwen verifier; SPS/SPS-MTP share this final, jointly adapted verifier.
 
-Serving definitions live in `scripts/vllm_sps_config.py`, `instruct_config.py`
-(sampling), `vllm_sps_train.py`, `vllm_sps_evaluate.py`, `scripts/serving/serving_benchmark.py`
-and `scripts/serving/serving_graphs.py`. The report formula is in `vllm_sps_report.py`.
+Serving definitions live in `scripts/serving/vllm_sps_config.py`, `instruct_config.py`
+(sampling), `scripts/serving/vllm_sps_train.py`, `scripts/serving/vllm_sps_evaluate.py`, `scripts/serving/serving_benchmark.py`
+and `scripts/serving/serving_graphs.py`. The report formula is in `scripts/serving/vllm_sps_report.py`.
 The 100-question STEM pilot is separate from the ordered partial-MMLU analysis.
 Its three timing repeats reuse the same seeds, not independent quality samples.
 No training or evaluation job is needed to rebuild the paper.

@@ -12,12 +12,9 @@ from scripts.mlspace_launch import store_json
 def report():
     results = {}
     manifests = {}
+    checkpoint = common.trained()["checkpoint_sha256"]
     for exp in c.collect_experiments("eval"):
-        root = c.ROOT / "runs/out" / exp.name
-        results[exp.name] = json.loads((root / "evaluated.json").read_text())
-        manifests[exp.name] = json.loads((root / "manifest.json").read_text())
-        if results[exp.name]["design_signature"] != common.signature():
-            raise RuntimeError("Cannot combine results from a different design")
+        results[exp.name], manifests[exp.name] = common.evaluation_record(exp, checkpoint)
     first = next(iter(manifests.values()))
     for manifest in manifests.values():
         for key in (
@@ -70,7 +67,7 @@ def report():
     store_json(
         target / "results.json",
         {
-            "design_signature": common.signature(),
+            "checkpoint_sha256": checkpoint,
             "rows": table,
             "accuracy_scope": "first timed trial on fixed held-out STEM pilot; other trials remain in per-arm files",
             "speedup": "decode tokens/s divided by matched-verifier baseline tokens/s, paired by trial",

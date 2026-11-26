@@ -79,7 +79,6 @@ def main():
         raise RuntimeError("Insufficient instruction training data")
     root = c.ROOT / ("sanity" if args.probe else "runs") / "out" / "qwen3_sps_mtp"
     root.mkdir(parents=True, exist_ok=True)
-    signature = common.signature()
     model = common.load_model(device)
     start = 0
     best = float("inf")
@@ -88,7 +87,7 @@ def main():
         state = torch.load(
             root / "latest.pt", map_location="cpu", mmap=True, weights_only=False
         )
-        if state["design_signature"] != signature or state["parent"] != str(c.PARENT):
+        if not common.matches_training_input(state) or not 0 <= state["step"] <= steps:
             raise RuntimeError("Resume provenance mismatch")
         model.load_state_dict(state["model"])
         start, best = state["step"], state["best"]
@@ -111,7 +110,6 @@ def main():
                 "best": best,
                 "frozen": frozen,
                 "parent": str(c.PARENT),
-                "design_signature": signature,
                 "horizons": c.HORIZONS,
                 "source": c.MODEL,
                 "revision": c.REVISION,
@@ -206,7 +204,6 @@ def main():
         dist.all_reduce(measured, op=dist.ReduceOp.MAX)
         if rank == 0:
             probe = {
-                "design_signature": signature,
                 "embedding": measured[0].item(),
                 "full": measured[1].item(),
                 "peak_memory_bytes": torch.cuda.max_memory_allocated(device),
@@ -220,7 +217,6 @@ def main():
         store_json(
             root / "trained.json",
             {
-                "design_signature": signature,
                 "checkpoint": str(root / "final.pt"),
                 "export": str(root / "hf"),
                 "parent": str(c.PARENT),

@@ -1,12 +1,10 @@
 """Submit the native-readout arm of the paired Qwen MTP experiment."""
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import shlex
 
 from scripts import mlspace_launch as launch
-from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 
 ROOT = c.ROOT.parent / "qwen3-instruct-real-readout-mtp"
@@ -17,10 +15,18 @@ ARM = experiment_configs[0]
 OUT = ROOT / "runs/out" / ARM.name
 
 
-def signature():
-    files = ("real_readout_model.py", "real_readout_train.py", "real_readout_run.py")
-    hashes = [common.file_hash(Path(__file__).with_name(name)) for name in files]
-    return hashlib.sha256(json.dumps([*hashes, common.signature()]).encode()).hexdigest()
+def trained():
+    marker = json.loads((OUT / "trained.json").read_text())
+    if (marker["checkpoint"] != str(OUT / "final.pt") or marker["parent"] != str(PARENT)
+            or marker["step"] != c.TRAIN_STEPS or not marker["checkpoint_sha256"]):
+        raise ValueError("Native readout checkpoint does not match the configured run")
+    return marker
+
+
+def check_probe():
+    projected = json.loads((ROOT / "prepared.json").read_text())["projected_hours"]
+    if not 0 < projected < c.TRAIN_HOURS:
+        raise RuntimeError("Training projection exceeds allocation or probe timings are invalid")
 
 
 def submit(phase, dry):
@@ -28,8 +34,10 @@ def submit(phase, dry):
     staged = launch.STAGING_ROOT / commit
     marker = ROOT / "prepared.json" if phase == "probe" else OUT / "trained.json"
     if marker.exists():
-        if json.loads(marker.read_text())["design_signature"] != signature():
-            raise ValueError(f"Stale result {marker}")
+        if phase == "probe":
+            check_probe()
+        else:
+            trained()
         print(f"Completed {phase}")
         return
     script = ["timeout", f"{c.PROBE_HOURS if phase == 'probe' else c.TRAIN_HOURS}h",
@@ -45,11 +53,7 @@ def submit(phase, dry):
         print(json.dumps(body))
         return
     if phase == "train":
-        probe = json.loads((ROOT / "prepared.json").read_text())
-        if probe["design_signature"] != signature():
-            raise ValueError("Probe design mismatch")
-        if probe["projected_hours"] >= c.TRAIN_HOURS:
-            raise RuntimeError("Training projection exceeds allocation")
+        check_probe()
     from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
 
     client, extra = training_job_api_from_profile("default")

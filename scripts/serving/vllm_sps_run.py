@@ -26,7 +26,7 @@ def payload(phase, exp, staged, author, nick):
         [
             str(launch.PYTHON),
             "-m",
-            "scripts.vllm_sps_run",
+            "scripts.serving.vllm_sps_run",
             "--worker",
             "--phase",
             phase,
@@ -106,11 +106,7 @@ def submit(args):
     client = None
     if not args.dry:
         if args.phase == "eval":
-            trained = json.loads(
-                (c.ROOT / "runs/out/qwen3_sps_mtp/trained.json").read_text()
-            )
-            if trained["design_signature"] != common.signature():
-                raise RuntimeError("Training design mismatch")
+            common.trained()
             # Do not consume a GPU reservation with an incompatible runtime.
             import sys
 
@@ -136,19 +132,9 @@ def submit(args):
             Path(launch.git("rev-parse", "--show-toplevel")), commit
         )
         if args.phase == "train":
-            probe = json.loads(
-                (c.ROOT / "sanity/out/qwen3_sps_mtp/probe.json").read_text()
-            )
-            estimate = probe["embedding"] * c.STAGE_STEPS + probe["full"] * (
-                c.TRAIN_STEPS - c.STAGE_STEPS
-            )
-            if (
-                probe["design_signature"] != common.signature()
-                or estimate * 2 > c.TRAIN_HOURS * 3600
-            ):
-                raise RuntimeError(
-                    "Probe is stale or training exceeds bounded reservation"
-                )
+            estimate = common.probe_seconds(c.ROOT / "sanity/out/qwen3_sps_mtp/probe.json")
+            if estimate * 2 > c.TRAIN_HOURS * 3600:
+                raise RuntimeError("Training exceeds bounded reservation")
     jobs = []
     for exp in experiments:
         root = (
@@ -165,8 +151,12 @@ def submit(args):
             )
         )
         if marker.exists():
-            if json.loads(marker.read_text())["design_signature"] != common.signature():
-                raise RuntimeError(f"Stale marker: {marker}")
+            if args.phase == "probe":
+                common.probe_seconds(marker)
+            elif args.phase == "train":
+                common.trained()
+            else:
+                common.evaluation_record(exp, common.trained()["checkpoint_sha256"])
             print("Skip completed:", exp.name)
             continue
         body = payload(args.phase, exp, staged, args.author_name, args.telegram_nick)
@@ -206,7 +196,7 @@ def worker(args):
         command = [
             str(launch.PYTHON),
             "-m",
-            "scripts.vllm_sps_run",
+            "scripts.serving.vllm_sps_run",
             "--internal-eval",
             "--phase",
             "eval",
@@ -223,7 +213,7 @@ def worker(args):
             "--standalone",
             f"--nproc_per_node={matches[0].num_gpus}",
             "-m",
-            "scripts.vllm_sps_train",
+            "scripts.serving.vllm_sps_train",
         ]
     if args.phase == "probe":
         command += ["--probe"]

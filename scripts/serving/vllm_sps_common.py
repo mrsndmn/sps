@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 from scripts import vllm_sps_config as c
@@ -15,19 +16,59 @@ def file_hash(path):
     return h.hexdigest()
 
 
-def signature():
-    repo = Path(__file__).resolve().parents[1]
-    files = sorted((repo / "scripts").glob("vllm_sps_*.py"))
-    files += [
-        repo / "src/modeling/models/sps/pretrained.py",
-        repo / "scripts/instruct_common.py",
-        repo / "scripts/instruct_config.py",
-    ]
-    return hashlib.sha256(
-        json.dumps(
-            {str(p.relative_to(repo)): file_hash(p) for p in files}, sort_keys=True
-        ).encode()
-    ).hexdigest()
+def trained():
+    marker = c.ROOT / "runs/out/qwen3_sps_mtp/trained.json"
+    record = json.loads(marker.read_text())
+    checkpoint = Path(record["checkpoint"])
+    if (
+        record["steps"] != c.TRAIN_STEPS
+        or record["horizons"] != c.HORIZONS
+        or record["parent"] != str(c.PARENT)
+        or checkpoint.name != "final.pt"
+        or Path(record["export"]) != checkpoint.with_name("hf")
+        or not record["checkpoint_sha256"]
+    ):
+        raise RuntimeError(f"Training checkpoint does not match the configured run: {marker}")
+    return record
+
+
+def checked_checkpoint(record):
+    checkpoint = Path(record["checkpoint"])
+    if file_hash(checkpoint) != record["checkpoint_sha256"]:
+        raise RuntimeError(f"Trained checkpoint changed: {checkpoint}")
+    return checkpoint
+
+
+def matches_training_input(state):
+    return (
+        state["source"] == c.MODEL
+        and state["revision"] == c.REVISION
+        and state["parent"] == str(c.PARENT)
+        and state["horizons"] == c.HORIZONS
+    )
+
+
+def probe_seconds(path):
+    probe = json.loads(path.read_text())
+    embedding, full = probe["embedding"], probe["full"]
+    if any(not math.isfinite(value) or value <= 0 for value in (embedding, full)):
+        raise RuntimeError(f"Invalid training probe timings: {path}")
+    return embedding * c.STAGE_STEPS + full * (c.TRAIN_STEPS - c.STAGE_STEPS)
+
+
+def evaluation_record(exp, checkpoint_sha256):
+    root = c.ROOT / "runs/out" / exp.name
+    record = json.loads((root / "evaluated.json").read_text())
+    manifest = json.loads((root / "manifest.json").read_text())
+    if record["experiment"] != vars(exp) or manifest["experiment"] != vars(exp):
+        raise RuntimeError(f"Evaluation used another experiment: {root}")
+    recorded_checksum = manifest["checkpoint_sha256"]
+    if (
+        recorded_checksum != checkpoint_sha256
+        or record.get("checkpoint_sha256", recorded_checksum) != checkpoint_sha256
+    ):
+        raise RuntimeError(f"Evaluation used another checkpoint: {root}")
+    return record, manifest
 
 
 def data(split):

@@ -9,12 +9,12 @@ def reference(trained):
 
     import torch
 
-    model = common.load_model("cpu", backend="sdpa")
     state = torch.load(
-        trained["checkpoint"], map_location="cpu", mmap=True, weights_only=False
+        common.checked_checkpoint(trained), map_location="cpu", mmap=True, weights_only=False
     )
-    if state["design_signature"] != common.signature():
+    if not common.matches_training_input(state) or state["step"] != c.TRAIN_STEPS:
         raise RuntimeError("Audit checkpoint identity mismatch")
+    model = common.load_model("cpu", backend="sdpa")
     model.load_state_dict(state["model"])
     del state
     model = model.cuda().to(torch.bfloat16).eval()

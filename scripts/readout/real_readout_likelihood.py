@@ -33,8 +33,7 @@ def inputs(exp, marker):
     if (manifest["checkpoint"]["size"] != stat.st_size
             or manifest["checkpoint"]["mtime_ns"] != stat.st_mtime_ns):
         raise ValueError("Parent checkpoint changed since its evaluation")
-    identity = dict(arm=exp.arm, endpoint=marker["checkpoint_sha256"],
-                    training=marker["design_signature"], parent=str(parent),
+    identity = dict(arm=exp.arm, endpoint=marker["checkpoint_sha256"], parent=str(parent),
                     parents={t: common.file_hash(folder / f"{t}.json") for t in source.LIKELIHOOD_TASKS},
                     files={p: common.file_hash(Path(__file__).with_name(p + ".py"))
                            for p in ("real_readout_eval", "real_readout_likelihood", "instruct_evaluate")},

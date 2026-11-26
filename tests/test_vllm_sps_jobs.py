@@ -1,10 +1,12 @@
 """Isolation and model identity in the four-arm vLLM job design."""
 
+import json
 from pathlib import Path
 
 import pytest
 
 from scripts import vllm_sps_config as c
+from scripts.serving import vllm_sps_common as common
 from scripts.vllm_sps_evaluate import engine_arguments, select_examples
 from scripts.vllm_sps_run import payload
 
@@ -42,3 +44,27 @@ def test_unpinned_eagle_is_rejected():
     exp = next(x for x in c.collect_experiments("eval") if x.arm == "eagle3")
     with pytest.raises(ValueError, match="pinned"):
         engine_arguments(exp, "/hf", None)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_trained_checkpoint_is_verified_by_its_bytes(tmp_path, monkeypatch, legacy):
+    monkeypatch.setattr(c, "ROOT", tmp_path)
+    folder = tmp_path / "runs/out/qwen3_sps_mtp"
+    folder.mkdir(parents=True)
+    checkpoint = folder / "final.pt"
+    checkpoint.write_bytes(b"trained model")
+    marker = {
+        "checkpoint": str(checkpoint),
+        "export": str(folder / "hf"),
+        "checkpoint_sha256": common.file_hash(checkpoint),
+        "parent": str(c.PARENT),
+        "steps": c.TRAIN_STEPS,
+        "horizons": c.HORIZONS,
+    }
+    if legacy:
+        marker["design_signature"] = "historical code hash"
+    (folder / "trained.json").write_text(json.dumps(marker))
+    assert common.checked_checkpoint(common.trained()) == checkpoint
+    checkpoint.write_bytes(b"other model")
+    with pytest.raises(RuntimeError, match="checkpoint changed"):
+        common.checked_checkpoint(common.trained())

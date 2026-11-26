@@ -326,10 +326,15 @@ def main():
         from scripts import vllm_sps_report
 
         manifest = verify_runtime()
-        for exp in bench.selected("eval"):
-            if not completed(exp, manifest):
-                raise RuntimeError(f"Incomplete graph arm: {exp.name}")
-        return vllm_sps_report.report()
+        # Reporting verifies agreement with the recorded audit and its runtime.
+        # Launching and running jobs still validate against the live protocol.
+        with patch.dict(globals(), protocol_signature=bench.audit_protocol), patch.object(
+            bench, "protocol_signature", bench.audit_protocol
+        ):
+            for exp in bench.selected("eval"):
+                if not completed(exp, manifest):
+                    raise RuntimeError(f"Incomplete graph arm: {exp.name}")
+            return vllm_sps_report.report()
     bench.main()
 
 

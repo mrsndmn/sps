@@ -19,13 +19,7 @@ experiment_configs = [c.Experiment(f"{arm}-{mode}", arm, mode)
 
 
 def endpoint(exp):
-    folder = train.OUT if exp.arm == "A" else c.ROOT / "runs/out/qwen3_sps_mtp"
-    marker = json.loads((folder / "trained.json").read_text())
-    expected = train.signature() if exp.arm == "A" else common.signature()
-    if (marker["design_signature"] != expected or marker["checkpoint"] != str(folder / "final.pt")
-            or marker.get("step", marker.get("steps")) != c.TRAIN_STEPS):
-        raise ValueError("Endpoint provenance mismatch")
-    return marker
+    return train.trained() if exp.arm == "A" else common.trained()
 
 
 def identity(exp, marker=None):
@@ -33,7 +27,7 @@ def identity(exp, marker=None):
         marker = endpoint(exp)
     sources = ("real_readout_eval", "instruct_evaluate", "instruct_generation", "mmlu_generation",
                "provenance_evaluate", "ifeval_config")
-    return dict(checkpoint=marker["checkpoint_sha256"], training=marker["design_signature"],
+    return dict(checkpoint=marker["checkpoint_sha256"],
                 arm=exp.arm, mode=exp.mode, generation=source.GENERATION[exp.mode],
                 files={s: common.file_hash(Path(__file__).with_name(s + ".py")) for s in sources})
 
@@ -44,12 +38,12 @@ def load_endpoint(exp, marker):
     from scripts.real_readout_model import RealReadoutMTP
     from scripts.vllm_sps_model import QwenSPSMTP
 
-    path = marker["checkpoint"]
-    if common.file_hash(path) != marker["checkpoint_sha256"]:
-        raise ValueError("Endpoint checksum mismatch")
+    path = common.checked_checkpoint(marker)
     state = torch.load(path, mmap=True, map_location="cpu", weights_only=False)
-    if state["step"] != c.TRAIN_STEPS or state["design_signature"] != marker["design_signature"]:
-        raise ValueError("Checkpoint step or signature mismatch")
+    if state["step"] != c.TRAIN_STEPS or state["parent"] != marker["parent"]:
+        raise ValueError("Checkpoint step or parent mismatch")
+    if exp.arm == "B" and not common.matches_training_input(state):
+        raise ValueError("SPS checkpoint does not match the configured model")
     native = load_model("continued_ar" if exp.arm == "A" else "staged_sps", "cpu")
     packed = (RealReadoutMTP(native.backbone, c.HORIZONS) if exp.arm == "A"
               else QwenSPSMTP(native, c.HORIZONS))

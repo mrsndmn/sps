@@ -143,8 +143,10 @@ def native_worker():
     saved=json.loads((output_dir()/'identity.json').read_text())
     cases=json.loads((output_dir()/'cases.json').read_text())
     model=audit.common.load_model('cpu',backend='sdpa')
-    state=torch.load(saved['audit']['checkpoint']['checkpoint'],map_location='cpu',mmap=True,weights_only=False)
-    if state['design_signature'] != audit.common.signature():raise RuntimeError('Checkpoint identity mismatch')
+    checkpoint = audit.common.checked_checkpoint(saved['audit']['checkpoint'])
+    state=torch.load(checkpoint,map_location='cpu',mmap=True,weights_only=False)
+    if not audit.common.matches_training_input(state) or state['step'] != audit.source.TRAIN_STEPS:
+        raise RuntimeError('Checkpoint identity mismatch')
     model.load_state_dict(state['model']);del state
     single=PretrainedSPS(model.backbone,sps=True);single.prediction=model.prediction
     model=model.cuda().eval().requires_grad_(False)

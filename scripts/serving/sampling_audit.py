@@ -47,7 +47,7 @@ experiment_configs = [Experiment()]
 
 def signature():
     return hashlib.sha256(json.dumps(dict(code=common.file_hash(Path(__file__)),
-        graph_protocol=graphs.protocol_signature(), source=common.signature()), sort_keys=True).encode()).hexdigest()
+        graph_protocol=graphs.protocol_signature()), sort_keys=True).encode()).hexdigest()
 
 
 def input_identity():

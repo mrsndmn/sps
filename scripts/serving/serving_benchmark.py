@@ -19,6 +19,7 @@ from scripts import serving_runtime as runtime
 from scripts import vllm_sps_audit as native_audit
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
+from scripts.serving import vllm_sps_evaluate as evaluator
 from scripts.vllm_sps_run import reserve
 
 AUDIT_NAME = "vllm-greedy-audit"
@@ -31,9 +32,11 @@ def protocol_signature():
     return hashlib.sha256(
         json.dumps(
             [
-                common.signature(),
                 common.file_hash(Path(__file__)),
                 common.file_hash(Path(runtime.__file__)),
+                common.file_hash(Path(c.__file__)),
+                common.file_hash(Path(evaluator.__file__)),
+                common.file_hash(Path(native_audit.__file__)),
             ]
         ).encode()
     ).hexdigest()
@@ -84,17 +87,18 @@ def verify_runtime():
 
 
 def trained():
-    value = json.loads((c.ROOT / "runs/out/qwen3_sps_mtp/trained.json").read_text())
-    if value["design_signature"] != common.signature():
-        raise RuntimeError("Training provenance mismatch")
-    return value
+    return common.trained()
+
+
+def audit_protocol():
+    root = c.ROOT / "runs/out" / AUDIT_NAME
+    return json.loads((root / "serving-protocol.json").read_text())["protocol_signature"]
 
 
 def reference_tokens(checkpoint):
     data = json.loads(reference_path().read_text())
     if (
-        data["design_signature"] != common.signature()
-        or data["checkpoint_sha256"] != checkpoint["checkpoint_sha256"]
+        data["checkpoint_sha256"] != checkpoint["checkpoint_sha256"]
         or data["protocol_signature"] != protocol_signature()
     ):
         raise RuntimeError("Greedy oracle provenance mismatch")
@@ -113,13 +117,10 @@ def make_reference():
     import transformers
 
     checkpoint = trained()
-    if common.file_hash(checkpoint["checkpoint"]) != checkpoint["checkpoint_sha256"]:
-        raise RuntimeError("Trained checkpoint changed")
     samples = native_audit.reference(checkpoint)
     launch.store_json(
         reference_path(),
         {
-            "design_signature": common.signature(),
             "checkpoint_sha256": checkpoint["checkpoint_sha256"],
             "torch_version": torch.__version__,
             "transformers_version": transformers.__version__,
@@ -228,7 +229,6 @@ def worker(exp):
         launch.store_json(
             root_for(exp) / "evaluated.json",
             {
-                "design_signature": common.signature(),
                 "runtime_signature": runtime.signature(),
                 "checkpoint_sha256": trained()["checkpoint_sha256"],
                 "arms": ["sps", "sps_mtp"],
@@ -282,8 +282,7 @@ def payload(exp, staged, phase):
 def check_gate(manifest):
     data = json.loads((c.ROOT / "runs/out" / AUDIT_NAME / "evaluated.json").read_text())
     if (
-        data["design_signature"] != common.signature()
-        or data["runtime_signature"] != runtime.signature()
+        data["runtime_signature"] != runtime.signature()
         or data["checkpoint_sha256"] != trained()["checkpoint_sha256"]
     ):
         raise RuntimeError("Greedy audit does not match this model and runtime")
@@ -292,10 +291,7 @@ def check_gate(manifest):
     )
     if recorded != manifest:
         raise RuntimeError("Greedy audit runtime manifest changed")
-    context = json.loads(
-        (c.ROOT / "runs/out" / AUDIT_NAME / "serving-protocol.json").read_text()
-    )
-    if context["protocol_signature"] != protocol_signature():
+    if audit_protocol() != protocol_signature():
         raise RuntimeError("Greedy audit serving protocol changed")
 
 
@@ -303,17 +299,13 @@ def completed(exp, manifest):
     marker = root_for(exp) / "evaluated.json"
     if not marker.exists():
         return False
-    if json.loads(marker.read_text())["design_signature"] != common.signature():
-        raise RuntimeError("Stale evaluation marker")
     if json.loads((root_for(exp) / "serving-runtime.json").read_text()) != manifest:
         raise RuntimeError("Completed evaluation used another runtime")
     context = json.loads((root_for(exp) / "serving-protocol.json").read_text())
     if context["protocol_signature"] != protocol_signature():
         raise RuntimeError("Completed evaluation used another serving protocol")
     if exp.arm != "audit":
-        measured = json.loads((root_for(exp) / "manifest.json").read_text())
-        if measured["checkpoint_sha256"] != trained()["checkpoint_sha256"]:
-            raise RuntimeError("Completed evaluation used another checkpoint")
+        common.evaluation_record(exp, trained()["checkpoint_sha256"])
     check_gate(manifest)
     return True
 

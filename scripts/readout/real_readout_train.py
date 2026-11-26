@@ -93,7 +93,6 @@ def main():
     steps = c.PROBE_STEPS if probe else c.TRAIN_STEPS
     split = steps // 2 if probe else c.STAGE_STEPS
     model = parent().to(device)
-    sig = run.signature()
     root = run.ROOT / "probe" if probe else run.OUT
     root.mkdir(parents=True, exist_ok=True)
     start = 0
@@ -101,8 +100,8 @@ def main():
     latest = root / "latest.pt"
     if not probe and latest.exists():
         state = torch.load(latest, map_location="cpu", mmap=True, weights_only=False)
-        if state["design_signature"] != sig:
-            raise ValueError("Resume signature mismatch")
+        if state["parent"] != str(run.PARENT) or not 0 <= state["step"] <= steps:
+            raise ValueError("Resume checkpoint does not match the configured run")
         model.load_state_dict(state["model"])
         start = state["step"]
     audit = resume_audit(state, split)
@@ -152,7 +151,7 @@ def main():
                 if rank == 0:
                     score = validation(model, heldout, device)
                     record = dict(model=model.state_dict(), optimizer=optimizer.state_dict(),
-                                  step=step+1, frozen=frozen, design_signature=sig,
+                                  step=step+1, frozen=frozen,
                                   parent=str(run.PARENT), readout_audit=dict(audit), val_horizon_ce=score)
                     if step+1 == end:
                         atomic_save(root / ("stage_endpoint.pt" if frozen else "final.pt"), record)
@@ -167,10 +166,10 @@ def main():
         dist.all_reduce(measured, op=dist.ReduceOp.MAX)
         if rank == 0:
             projected = (measured[0]*c.STAGE_STEPS + measured[1]*(c.TRAIN_STEPS-c.STAGE_STEPS))/3600
-            store_json(run.ROOT / "prepared.json", dict(design_signature=sig,
+            store_json(run.ROOT / "prepared.json", dict(
                        seconds=measured.tolist(), projected_hours=projected.item()))
     elif rank == 0:
-        store_json(root / "trained.json", dict(design_signature=sig, parent=str(run.PARENT),
+        store_json(root / "trained.json", dict(parent=str(run.PARENT),
                    checkpoint=str(root/"final.pt"), step=steps,
                    checkpoint_sha256=common.file_hash(root/"final.pt")))
     dist.destroy_process_group()

@@ -23,7 +23,7 @@ from scripts import vllm_sps_config as c
 from scripts import vllm_sps_run as run
 
 ROOT = training.ROOT
-LAUNCHER = "scripts.draft_sweep"
+LAUNCHER = "scripts.serving.draft_sweep"
 DRAFT_LENGTHS = (4, 8)
 HORIZONS = training.HORIZONS
 PHASES = ("probe", "train", "audit", "eval")
@@ -52,22 +52,19 @@ AUDIT_ARMS = {"sps": 0, **{f"sps_mtp-{n}": n for n in DRAFT_LENGTHS}}
 
 
 def protocol_signature():
+    scripts = Path(__file__).resolve().parents[1]
     sources = (
         Path(__file__),
         Path(bench.__file__),
         Path(graph.__file__),
-        *(
-            Path(__file__).with_name(name)
-            for name in (
-                "vllm_sps_evaluate.py",
-                "vllm_sps_audit.py",
-                "instruct_generation.py",
-                "report_mmlu_stem.py",
-            )
-        ),
+        Path(c.__file__),
+        Path(bench.evaluator.__file__),
+        Path(native_audit.__file__),
+        scripts / "instruct_generation.py",
+        scripts / "report_mmlu_stem.py",
     )
     parts = (
-        training.signature(),
+        HORIZONS,
         {path.name: common.file_hash(path) for path in sources},
         runtime.signature(),
         graph.IMPLEMENTATION,
@@ -294,7 +291,6 @@ def audit_worker(manifest):
     bench.launch.store_json(
         root / "evaluated.json",
         {
-            "design_signature": training.signature(),
             "runtime_signature": runtime.signature(),
             "checkpoint_sha256": checkpoint["checkpoint_sha256"],
             "arms": list(AUDIT_ARMS),
@@ -327,7 +323,7 @@ def worker(phase, exp):
             "--standalone",
             f"--nproc_per_node={exp.num_gpus}",
             "-m",
-            "scripts.draft_sweep_train",
+            "scripts.serving.draft_sweep_train",
         ]
         if phase == "probe":
             command.append("--probe")
@@ -362,8 +358,10 @@ def complete(phase, exp, manifest=None):
         )
         if not marker.exists():
             return False
-        if json.loads(marker.read_text())["design_signature"] != training.signature():
-            raise RuntimeError(f"Stale marker: {marker}")
+        if phase == "probe":
+            common.probe_seconds(marker)
+        else:
+            bench.trained()
         return True
     if not bench.completed(exp, manifest):
         return False
@@ -387,9 +385,7 @@ def payload(phase, exp, staged):
         if phase in {"probe", "train"}
         else bench.payload(exp, staged, phase)
     )
-    identity = (
-        training.signature() if phase in {"probe", "train"} else protocol_signature()
-    )[:16]
+    identity = f"h{HORIZONS}" if phase in {"probe", "train"} else protocol_signature()[:16]
     body["job_desc"] = (
         f"sps-draft-sweep {phase} {exp.name} {identity} #d.tarasov @mrsndmn"
     )
@@ -421,14 +417,7 @@ def submit(args, choices):
     if phase == "train":
         if not complete("probe", TRAINER):
             raise RuntimeError("Finish the 9-position probe first")
-        probe = json.loads((ROOT / "prepared.json").read_text())
-        seconds = probe["embedding"] * c.STAGE_STEPS + probe["full"] * (
-            c.TRAIN_STEPS - c.STAGE_STEPS
-        )
-        if (
-            min(probe["embedding"], probe["full"]) <= 0
-            or 2 * seconds > c.TRAIN_HOURS * 3600
-        ):
+        if 2 * common.probe_seconds(ROOT / "prepared.json") > c.TRAIN_HOURS * 3600:
             raise RuntimeError("Probe does not fit the reserved training time")
     if phase in {"audit", "eval"}:
         bench.trained()
@@ -545,7 +534,8 @@ def counter_metrics(result, draft, untimed=()):
 def report():
     manifest = graph.verify_runtime()
     results = {}
-    export = bench.trained()["export"]
+    checkpoint = bench.trained()
+    export = checkpoint["export"]
     identity = None
     for exp in experiment_configs:
         if not complete("eval", exp, manifest):
@@ -616,11 +606,11 @@ def report():
     bench.launch.store_json(
         target / "results.json",
         {
-            "design_signature": training.signature(),
+            "checkpoint_sha256": checkpoint["checkpoint_sha256"],
             "protocol_signature": protocol_signature(),
             "rows": rows,
             "acceptance_scope": "Timed requests only. Per-position denominator is all timed drafts.",
-            "greedy_diagnostics": audit_evidence(bench.trained()),
+            "greedy_diagnostics": audit_evidence(checkpoint),
         },
     )
     with (target / "summary.csv").open("w", newline="") as stream:
@@ -643,7 +633,12 @@ def main():
     args = parser.parse_args()
     configure()
     if args.report:
-        return report()
+        with (
+            patch.dict(globals(), protocol_signature=bench.audit_protocol),
+            patch.object(bench, "protocol_signature", bench.audit_protocol),
+            patch.object(graph, "protocol_signature", bench.audit_protocol),
+        ):
+            return report()
     if args.reference_worker:
         prepare_short_export(bench.trained()["export"])
         return bench.make_reference()

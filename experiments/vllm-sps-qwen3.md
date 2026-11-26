@@ -6,9 +6,7 @@ sampling distribution.
 
 ## Setup
 
-Training function: `scripts.vllm_sps_train.main`. Executable design:
-`scripts.vllm_sps_config.experiment_configs`. Evaluation function:
-`scripts.vllm_sps_evaluate.evaluate`.
+`scripts.serving.vllm_sps_train.main`
 
 ## Results
 

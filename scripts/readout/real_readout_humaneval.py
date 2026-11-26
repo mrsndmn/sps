@@ -62,7 +62,7 @@ def solution(final_text):
 
 def identity(exp, marker):
     return dict(arm=exp.arm, mode=exp.mode, checkpoint=marker["checkpoint_sha256"],
-                training=marker["design_signature"], prompts= PROMPT_SHA, release=RELEASE,
+                prompts=PROMPT_SHA, release=RELEASE,
                 settings=SETTINGS[exp.mode], seed=c.SEED, request=REQUEST,
                 code={s: common.file_hash(Path(__file__).with_name(s+".py")) for s in
                       ("real_readout_humaneval", "real_readout_eval", "instruct_generation", "mmlu_generation")})
