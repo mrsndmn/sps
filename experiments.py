@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 
+from scripts.design_compatibility import canonical_signature
 from scripts.suite_registry import (AR_SPS_SUITES, INSTRUCT_SUITE, LARGE_AR_SPS_SUITES,
                                     MMLU_SUITES, WORKER_MODULES)
 
@@ -208,7 +209,7 @@ def design_signature():
                    repo / 'requirements-instruct.txt']
     sources = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest()
                for p in inputs}
-    design = dict(repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
+    design = dict(worker=WORKER_MODULES[SUITE], repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES,
                   val_fraction=VAL_FRACTION, val_seed=VAL_SEED,
                   commands=[train_command(e) for e in experiment_configs if e.trainable],
                   probes=[train_command(e, probe=True) for e in experiment_configs if e.trainable],
@@ -220,7 +221,8 @@ def design_signature():
     if SUITE == INSTRUCT_SUITE:
         from scripts import instruct_config as c
         design['instruct'] = dict(suite=SUITE, model=c.MODEL, revision=c.REVISION)
-    return hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
+    return canonical_signature(digest)
 
 
 def training_marker(exp):

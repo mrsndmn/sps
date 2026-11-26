@@ -304,3 +304,18 @@ def test_staging_uses_linked_worktree_commit(tmp_path, monkeypatch):
     assert (staged / "tracked").read_text() == "experiment"
     assert (main / "tracked").read_text() == "dirty main"
     assert not (staged / ".git" / "worktrees").exists()
+
+
+def test_routing_refactor_accepts_parent_marker_and_rejects_worker_change(tmp_path, monkeypatch, capsys):
+    # Prepared by the default pilot design at 98fb926.
+    marker = tmp_path / 'prepared.json'
+    marker.write_text(json.dumps({
+        'design_signature': '344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f',
+    }))
+    monkeypatch.setattr(mlspace_launch, 'ARTIFACTS_ROOT', tmp_path)
+    monkeypatch.setattr(sys, 'argv', ['launcher', '--dry', '--phase', 'prepare'])
+    assert mlspace_launch.main() == 0
+    assert 'Skip completed: data-and-probes' in capsys.readouterr().out
+    monkeypatch.setitem(config.WORKER_MODULES, '1b', 'scripts.mtp_run')
+    with pytest.raises(RuntimeError, match='Stale completion marker'):
+        mlspace_launch.main()
