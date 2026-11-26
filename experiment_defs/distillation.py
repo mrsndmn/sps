@@ -5,6 +5,9 @@ from experiment_defs.standalone import job, load
 
 def dflash(kd):
     module = load("dflash_kd" if kd else "dflash_repro")
+    hard = load("dflash_repro_train")
+    training = (hard.reference, hard.prepared, hard, module.training)
+    eval_settings = (*training, module.evaluation)
     for phase in ("probe", "train", "eval"):
         yield job(
             module,
@@ -12,9 +15,8 @@ def dflash(kd):
             module.training.EXPERIMENT,
             "--phase",
             phase,
-            config=module.training,
+            config=eval_settings if phase == "eval" else training,
         )
-    hard = load("dflash_repro_train")
     for step in hard.MILESTONES:
         yield job(
             module,
@@ -25,7 +27,7 @@ def dflash(kd):
             "--step",
             step,
             name=f"{module.training.EXPERIMENT.name}-step-{step}",
-            config=module.training,
+            config=eval_settings,
         )
 
 
@@ -48,7 +50,11 @@ def qwen4b():
                         "--filter",
                         run.name,
                         name=f"{dataset}-{run.name}",
-                        config=module.training,
+                        config=(
+                            module.training.reference,
+                            module.prepared,
+                            module.training,
+                        ),
                     )
             else:
                 yield job(

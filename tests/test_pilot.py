@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 import shlex
 import subprocess
@@ -41,7 +42,7 @@ print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),cache=str(e.HF_HOME),
 def test_runtime_forecast_uses_completed_reference_as_floor(tmp_path, monkeypatch):
     monkeypatch.setattr(pilot_run, 'COMMON_ROOT', tmp_path)
     monkeypatch.setattr(pilot_run, 'SANITY_ROOT', tmp_path / 'probe')
-    exp = config.ExperimentConfig('new', 's_full_attention_20b', reference_name='old')
+    exp = replace(config.collect_experiments()[0], name='new', reference_name='old')
     probe = tmp_path / 'probe/out/new'
     probe.mkdir(parents=True)
     (probe/'metrics.jsonl').write_text('\n'.join(json.dumps(dict(event='train',step_seconds=2)) for _ in range(8)))

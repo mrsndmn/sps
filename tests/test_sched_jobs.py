@@ -34,8 +34,15 @@ def test_mode_filter_and_invalid_worker_routes():
     assert run('--variant','step384','--phase','eval','--worker','--filter','qwen3_instruct_staged_sps_ce').returncode!=0
 
 
-def test_legacy_signature_and_old_eval_routes_unchanged():
-    p=subprocess.run([sys.executable,'-c','from scripts import sched_common as s; assert s.e.design_signature()==s.c.SOURCE_SIGNATURE; s.signature()'],
+def test_schedule_still_requires_its_archived_source():
+    p=subprocess.run([sys.executable,'-c',"""from scripts import sched_common as s
+try:
+    s.signature()
+except RuntimeError as error:
+    assert 'Pinned instruct source design changed' in str(error)
+else:
+    raise AssertionError('Accepted an incompatible historical source')
+"""],
         env=dict(os.environ,SPS_EXPERIMENT_SUITE=c.SOURCE_SUITE),capture_output=True,text=True)
     assert p.returncode==0,p.stderr
 

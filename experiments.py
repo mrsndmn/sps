@@ -127,6 +127,8 @@ def design_signature():
     from experiment_defs.registry import CONFIGURATIONS
     if SUITE in CONFIGURATIONS:
         inputs.append(Path(inspect.getfile(CONFIGURATIONS[SUITE])))
+    if SUITE in {'mtp', 'mtp-unfreeze', 'mtp-parallel', 'mtp-unified', 'spec-baselines'}:
+        inputs.extend([repo / 'experiment_defs/mtp.py', repo / 'experiment_defs/speculative_run.py'])
     if SUITE in MMLU_SUITES or SUITE == INSTRUCT_SUITE:
         inputs.append(repo / 'experiment_defs/mmlu.py')
     # Keep the logical filenames used in historical design manifests.

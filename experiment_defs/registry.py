@@ -37,9 +37,27 @@ FAMILIES = {
 }
 
 
-def effective_settings(family, run, root, probe=False):
+def effective_settings(family, run, root, phase):
     if family in {"1b", "10b"}:
-        return run.config(root, probe=probe)
+        from experiments import (
+            TASKS,
+            DATASET_REPO,
+            DATASET_REVISION,
+            DATA_FILES,
+            eval_command,
+            train_command,
+        )
+
+        probe = phase == "prepare"
+        result = run.config(root, probe=probe)
+        result["data_source"] = dict(
+            repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES
+        )
+        if phase == "eval":
+            result["worker_commands"] = [eval_command(run, task) for task in TASKS]
+        else:
+            result["worker_commands"] = [train_command(run, probe=probe)]
+        return result
     if family in CONFIGURATIONS:
         common = settings(CONFIGURATIONS[family](family))
         if family in {"spec-baselines", "mtp-unified"}:

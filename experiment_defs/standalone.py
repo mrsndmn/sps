@@ -12,6 +12,7 @@ class Job:
     module: str
     args: tuple
     settings: dict
+    submit_flag: str | None = None
 
 
 def values(module):
@@ -23,13 +24,17 @@ def values(module):
     }
 
 
-def job(module, phase, run, *args, config=None, name=None):
+def job(
+    module, phase, run, *args, config=None, name=None, submit_flag=None, parameters=None
+):
     sources = config if isinstance(config, tuple) else (config or module,)
     settings = {}
     for source in sources:
         settings.update(values(source))
     # The launcher can own phase-specific timeouts and benchmark settings.
     settings.update(values(module))
+    if parameters:
+        settings.update(parameters)
     if is_dataclass(run):
         settings["run"] = asdict(run)
     return Job(
@@ -38,6 +43,7 @@ def job(module, phase, run, *args, config=None, name=None):
         module.__name__,
         tuple(map(str, args)),
         settings,
+        submit_flag,
     )
 
 

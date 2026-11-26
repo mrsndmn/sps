@@ -228,6 +228,8 @@ family and the historical run name. Existing workers keep their checkpoint paths
 and completion checks. A named dry run previews settings before those checks.
 For an evaluation that selects a winner after training, the preview shows the
 candidate payloads until the validation artifacts identify the winner.
+Historical IFEval and schedule workers require a pinned instruct source.
+A real submission stops if the current checkout and the archived source differ.
 
 The pilot family in `experiment_defs/zero_window.py` shares training settings
 between its named variants. `experiment_defs/registry.py` collects the families

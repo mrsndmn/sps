@@ -6,7 +6,7 @@ import shutil
 
 from experiments import (DATASET_REPO, DATASET_REVISION, DATA_FILES,
                         EXISTING_HF_CACHES, HF_HOME, RUN_ROOT, VAL_FRACTION, VAL_SEED,
-                        TRAIN_TOKENS, MIN_FREE_BYTES)
+                        collect_experiments, MIN_FREE_BYTES)
 
 
 def prepare():
@@ -69,7 +69,7 @@ def prepare():
     finally:
         for handle in handles.values():
             handle.close()
-    if counts['train'] < TRAIN_TOKENS or counts['val'] < 1048576:
+    if counts['train'] < max(run.training.max_tokens for run in collect_experiments()) or counts['val'] < 1048576:
         raise RuntimeError(f'Insufficient unique pilot data: {counts}')
     for split in counts:
         os.replace(dest / f'{split}.bin.tmp', dest / f'{split}.bin')

@@ -53,14 +53,27 @@ def sampling():
 
 def mask_ablation():
     module = load("dflash_mask_ablation")
-    yield job(module, "eval", "paired-masks")
+    yield job(
+        module,
+        "eval",
+        "paired-masks",
+        submit_flag="--submit",
+        parameters={"conditions": [vars(run) for run in module.experiment_configs]},
+    )
 
 
 def cap_probe():
     from experiment_defs import cap_jobs
 
+    module = load("teacher_cap_probe")
+    (probe,) = module.experiment_configs
     yield job(
-        cap_jobs, "eval", "continuations", "teacher", config=load("teacher_cap_probe")
+        cap_jobs,
+        "eval",
+        probe,
+        "teacher",
+        name="continuations",
+        config=(module.c, module),
     )
 
 
@@ -69,7 +82,16 @@ def cap_compare():
 
     module = load("qwen35_cap_compare")
     for arm in module.experiment_configs:
-        yield job(cap_jobs, "eval", arm, "compare", arm, config=module)
+        model, revision = module.experiment_configs[arm]
+        yield job(
+            cap_jobs,
+            "eval",
+            arm,
+            "compare",
+            arm,
+            config=(module.c, module),
+            parameters={"MODEL": model, "REVISION": revision},
+        )
 
 
 FAMILIES = {

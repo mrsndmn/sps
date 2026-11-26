@@ -8,11 +8,9 @@ import math
 import subprocess
 import time
 
-from experiments import (ARTIFACTS_ROOT, RUN_ROOT, SANITY_ROOT, TRAIN_TOKENS,
-                        TOKENS_PER_STEP, MAX_HOURS, TASKS, collect_experiments,
+from experiments import (ARTIFACTS_ROOT, RUN_ROOT, SANITY_ROOT, MAX_HOURS, TASKS, collect_experiments,
                         train_command, eval_command, output_dir, design_signature,
-                        COMMON_ROOT, RUNTIME_SAFETY_FACTOR, GLOBAL_BATCH_SIZE, BLOCK_SIZE,
-                        CHUNK_SIZE_UNITS, TRAINING_SEED)
+                        COMMON_ROOT, RUNTIME_SAFETY_FACTOR)
 
 
 def run_logged(command, log, *, timeout):
@@ -44,6 +42,8 @@ def write_json(path, data):
 
 
 def estimate(exp):
+    training = exp.training
+    tokens_per_step = training.global_batch_size * training.block_size
     records = [json.loads(line) for line in
         (SANITY_ROOT / 'out' / exp.name / 'metrics.jsonl').read_text().splitlines()]
     steps = [r['step_seconds'] for r in records if r['event'] == 'train'][-8:]
@@ -59,28 +59,30 @@ def estimate(exp):
         final = next(r for r in reversed(prior_rows) if r['event'] == 'final')
         # Include all observed validation/checkpoint overhead from the completed
         # reference run; never replace a slower fresh probe by a faster history.
-        prior_step = prior['seconds'] / (final['tokens'] / TOKENS_PER_STEP)
+        prior_step = prior['seconds'] / (final['tokens'] / tokens_per_step)
         seconds = max(seconds, prior_step)
         reference = dict(name=exp.reference_name, seconds_per_step=prior_step)
-    projected = seconds * (TRAIN_TOKENS / TOKENS_PER_STEP) * RUNTIME_SAFETY_FACTOR + 3600
-    return dict(step_seconds=seconds, tokens_per_second=TOKENS_PER_STEP / seconds,
+    projected = seconds * (training.max_tokens / tokens_per_step) * RUNTIME_SAFETY_FACTOR + 3600
+    return dict(step_seconds=seconds, tokens_per_second=tokens_per_step / seconds,
                 projected_training_hours=projected / 3600,
-                token_budget=TRAIN_TOKENS, max_hours=MAX_HOURS,
+                token_budget=training.max_tokens, max_hours=MAX_HOURS,
                 safety_factor=RUNTIME_SAFETY_FACTOR, reference=reference)
 
 
 def validate_training_coverage(manifest):
     from training.sampler import FixedRandomChunkDistributedSampler, initial_sampler_offset
-    dataset_len = manifest['tokens']['train'] - BLOCK_SIZE
-    offset = initial_sampler_offset(dataset_len, TRAINING_SEED)
     coverage = {}
     for exp in collect_experiments():
-        required = math.ceil(TRAIN_TOKENS / TOKENS_PER_STEP) * GLOBAL_BATCH_SIZE // exp.num_gpus
+        training = exp.training
+        dataset_len = manifest['tokens']['train'] - training.block_size
+        offset = initial_sampler_offset(dataset_len, training.seed)
+        tokens_per_step = training.global_batch_size * training.block_size
+        required = math.ceil(training.max_tokens / tokens_per_step) * training.global_batch_size // exp.num_gpus
         capacities = []
         for rank in range(exp.num_gpus):
             sampler = FixedRandomChunkDistributedSampler(dataset_len, exp.num_gpus,
-                rank, BLOCK_SIZE, chunk_size_units=CHUNK_SIZE_UNITS,
-                seed=TRAINING_SEED, start_offset=offset)
+                rank, training.block_size, chunk_size_units=training.chunk_size_units,
+                seed=training.seed, start_offset=offset)
             if len(sampler) < required:
                 raise RuntimeError(f'Insufficient unique training data for rank {rank}: '
                                    f'{len(sampler)} sequence starts, need {required}')
@@ -91,8 +93,9 @@ def validate_training_coverage(manifest):
 
 def prepare():
     import torch
-    if torch.cuda.device_count() != 4:
-        raise RuntimeError('Preparation/probe job requires exactly four visible GPUs')
+    required_gpus = max(exp.num_gpus for exp in collect_experiments())
+    if torch.cuda.device_count() != required_gpus:
+        raise RuntimeError(f'Preparation/probe job requires {required_gpus} visible GPUs')
     from scripts.pilot_headers import prepare as prepare_headers
     prepare_headers()
     from experiments import PYTHON
@@ -126,7 +129,7 @@ def train(exp):
     if prepared['design_signature'] != design_signature():
         raise RuntimeError('Stale preparation; rerun probes for the current design')
     prediction = prepared['estimates'][exp.name]
-    if prediction['token_budget'] != TRAIN_TOKENS or prediction['projected_training_hours'] > MAX_HOURS:
+    if prediction['token_budget'] != exp.training.max_tokens or prediction['projected_training_hours'] > MAX_HOURS:
         raise RuntimeError('Run preparation again for the current experiment budget')
     dest = output_dir(exp)
     identity = dest / 'run-config.json'

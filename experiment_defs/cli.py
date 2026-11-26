@@ -58,7 +58,10 @@ def main(default_phase="train"):
             from experiment_defs.preview import preview
 
             return preview(plan)
-        return subprocess.call([sys.executable, "-m", plan.module, *plan.args])
+        cmd = [sys.executable, "-m", plan.module, *plan.args]
+        if plan.submit_flag:
+            cmd.append(plan.submit_flag)
+        return subprocess.call(cmd)
     try:
         family, run = resolve(args.experiment, named_runs())
     except ValueError as error:

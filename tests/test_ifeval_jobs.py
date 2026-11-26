@@ -7,14 +7,26 @@ from types import SimpleNamespace
 import pytest
 
 
-def test_separate_ifeval_dry_plan_keeps_original_signature(tmp_path):
+def test_separate_ifeval_dry_plan_preserves_pre_migration_design(tmp_path):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE='ar-sps-qwen3-1.7b-instruct')
     result = subprocess.run([sys.executable, '-c', 'from pathlib import Path; import sys; from scripts import ifeval_run as r; r.RUN_ROOT=Path(sys.argv[1]); sys.argv=["ifeval","--dry"]; r.main()', str(tmp_path)], env=env,
                             capture_output=True, text=True, check=True)
     assert result.stdout.count('"instance_type": "a100.1gpu"') == 10
     assert result.stdout.count('scripts.ifeval_run --worker --filter') == 10
     assert 'scripts.instruct_run' not in result.stdout
-    code = 'import experiments as e; from scripts.ifeval_config import SOURCE_SIGNATURE; assert e.design_signature()==SOURCE_SIGNATURE'
+    # The parent of the catalog migration already differed from the archived
+    # instruct run. Preserve its actual signature and the source-identity gate.
+    code = """
+import experiments as e
+from scripts import ifeval_run
+assert e.design_signature() == '8386a4caf4ed6ac6c20a8eff5c71e01b5f72b5abeb5c5ac6d67158125e3a30b1'
+try:
+    ifeval_run.source_check(e.collect_experiments()[0])
+except RuntimeError as error:
+    assert 'pinned instruct design' in str(error)
+else:
+    raise AssertionError('Accepted an incompatible historical source')
+"""
     subprocess.run([sys.executable, '-c', code], env=env, check=True)
 
 

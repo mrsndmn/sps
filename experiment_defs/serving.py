@@ -5,6 +5,8 @@ from experiment_defs.standalone import job, load
 
 def serving(family):
     module = load(family)
+    if family in {"draft_sweep", "serving_graphs"}:
+        module.configure()
     if family == "draft_sweep":
         phases = module.PHASES
         collect = module.candidates

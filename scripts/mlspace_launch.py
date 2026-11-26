@@ -154,7 +154,7 @@ def submit_payload(client, body, phase, name, commit):
     return dict(name=name, job_name=job_name, commit=commit)
 
 
-def payload(phase, name, staged, author, nick):
+def payload(phase, name, staged, author, nick, *, training_gpus=4):
     command = [str(PYTHON), '-m', WORKER_MODULES[SUITE], phase]
     if phase != 'prepare':
         command += ['--filter', name]
@@ -171,7 +171,7 @@ def payload(phase, name, staged, author, nick):
                        'CPLUS_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
                        'C_INCLUDE_PATH': f'{HEADER_ROOT}/usr/include/python3.10:{HEADER_ROOT}/usr/include',
                        'OMP_NUM_THREADS': '8', 'TOKENIZERS_PARALLELISM': 'false'},
-        instance_type=INSTANCE_TYPES_BY_NUM_GPUS[EVAL_NUM_GPUS if phase == 'eval' else 4], region='SR004',
+        instance_type=INSTANCE_TYPES_BY_NUM_GPUS[EVAL_NUM_GPUS if phase == 'eval' else training_gpus], region='SR004',
         type='binary_exp', shm_size_class='large', base_image=BASE_IMAGE,
         n_workers=1, processes_per_worker=1)
 
@@ -228,16 +228,21 @@ def submit(args):
         active_by_desc = {}
     jobs = []
     for name, marker in candidates:
+        resources = {}
+        if SUITE in {'1b', '10b'} and args.phase != 'eval':
+            pool = collect_experiments(None if args.phase == 'prepare' else name)
+            resources['training_gpus'] = max(e.num_gpus for e in pool
+                                             if args.phase == 'prepare' or e.name == name)
         if args.dry and getattr(args, 'named', None):
             # A named dry run previews the worker even when a historical run
             # has finished or its artifact tree is not mounted locally.
             runs = collect_experiments() if args.phase == 'prepare' else [
                 run for run in collect_experiments() if run.name == name]
-            preview = payload(args.phase, name, staged, args.author_name, args.telegram_nick)
+            preview = payload(args.phase, name, staged, args.author_name, args.telegram_nick, **resources)
             from experiments import SANITY_ROOT
             from experiment_defs.registry import effective_settings
             probe = args.phase == 'prepare'
-            settings = {run.name: effective_settings(SUITE, run, SANITY_ROOT if probe else RUN_ROOT, probe)
+            settings = {run.name: effective_settings(SUITE, run, SANITY_ROOT if probe else RUN_ROOT, args.phase)
                         for run in runs}
             print(json.dumps(dict(payload=preview, settings=settings, marker=str(marker)), indent=2, default=str))
             continue
@@ -250,7 +255,7 @@ def submit(args):
         if args.phase == 'eval' and train_marker is not None and not train_marker.exists():
             print(f'Skip evaluation without trained checkpoint: {name}')
             continue
-        body = payload(args.phase, name, staged, args.author_name, args.telegram_nick)
+        body = payload(args.phase, name, staged, args.author_name, args.telegram_nick, **resources)
         body['region'] = extra['region']
         identity = normalize(body['job_desc'])
         if identity in active_by_desc:
