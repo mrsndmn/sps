@@ -18,7 +18,6 @@ class Job:
     output_dir: Path | None = None
 
     schemas: tuple[str, ...] = ()
-    selected_run: str | None = None
 
     @property
     def script(self):
@@ -67,7 +66,6 @@ def job(
         submit_flag,
         output_dir,
         schemas(module.__name__.split(".")[-1], phase),
-        run if isinstance(run, str) else getattr(run, "name", name),
     )
 
 

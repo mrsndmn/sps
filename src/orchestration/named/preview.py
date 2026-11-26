@@ -21,7 +21,6 @@ def prepared_payload(body, plan, staged, output=None):
         output,
         staged,
         plan.schemas,
-        selected=plan.selected_run or plan.name,
     )
     return body
 

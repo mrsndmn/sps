@@ -5,6 +5,7 @@ import hashlib
 import json
 import shlex
 from pathlib import Path
+from uuid import uuid4
 
 from experiments.phase_outputs import families as phase_outputs
 from experiments.evaluation_outputs import families as evaluation_outputs
@@ -215,9 +216,10 @@ def submit(args):
 
             client, extra = training_job_api_from_profile(args.profile)
             launch.disable_submission_retries(client)
+            listed = list(get_in_progress_jobs(client_profile=args.profile))
             active = {
                 launch.normalize(j["job_desc"]): j["job_name"]
-                for j in get_in_progress_jobs(client_profile=args.profile)
+                for j in listed
             }
             identity = launch.normalize(body["job_desc"])
             # Historic descriptions lacked a destination. Match only the original layout.
@@ -241,7 +243,19 @@ def submit(args):
             if historic and not job:
                 job = historical_job(suite.ARTIFACTS_ROOT, old_identity, client, active)
             if directory.reservation.exists():
-                job = job or directory.job_name()
+                attempt_file = directory.reservation / "attempt.json"
+                if attempt_file.is_file():
+                    attempt = json.loads(attempt_file.read_text())["attempt"]
+                    job = next(
+                        (
+                            row["job_name"]
+                            for row in listed
+                            if launch.normalize(row["job_desc"]) == identity
+                            and f"#attempt-{attempt}" in row["job_desc"].split()
+                        ),
+                        None,
+                    )
+                job = directory.job_name() or job
                 if job and not directory.job_name():
                     directory.record(job)
                 if job:
@@ -305,6 +319,9 @@ def submit(args):
             if not directory.reserve():
                 continue
             try:
+                attempt = uuid4().hex
+                body["job_desc"] += f" #attempt-{attempt}"
+                launch.store_json(directory.reservation / "attempt.json", {"attempt": attempt})
                 if suite.SUITE in suite.AR_SPS_SUITES:
                     from workloads.adaptation.ar_sps_run import reserve
 

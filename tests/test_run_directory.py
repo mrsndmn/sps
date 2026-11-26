@@ -55,8 +55,21 @@ def test_submission_lifecycle(tmp_path, monkeypatch):
     assert pilot_launch.submit(args) == pilot_launch.submit(args) == 0
     assert len(states) == 1 and run.job_name() == job
     client.status = "Cancelled"
-    assert pilot_launch.submit(args) == 0
+    def lost(body):
+        states.append(body)
+        raise TimeoutError("response lost")
+    client.run_job = lost
+    with pytest.raises(TimeoutError):
+        pilot_launch.submit(args)
     assert len(states) == 2
+    api.get_in_progress_jobs = lambda **_: [dict(job_name=job, job_desc=states[0]["job_desc"])]
+    assert pilot_launch.submit(args) == 0
+    assert len(states) == 2 and run.job_name() is None
+    retry = "lm-mpi-job-22222222-2222-4222-8222-222222222222"
+    api.get_in_progress_jobs = lambda **_: [dict(job_name=retry, job_desc=states[1]["job_desc"])]
+    client.status = "Running"
+    assert pilot_launch.submit(args) == 0
+    assert len(states) == 2 and run.job_name() == retry
     run.work.mkdir()
     run.finish()
     assert pilot_launch.submit(args) == 0 and len(states) == 2

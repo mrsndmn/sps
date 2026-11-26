@@ -123,7 +123,7 @@ def pending_output(output, profile="default"):
         return ready and retryable(directory, profile)
 
 
-def published_command(command, output, staged, schemas, original=None, selected=None):
+def published_command(command, output, staged, schemas, original=None):
     from experiments.family_cli import worker_command
 
     words = shlex.split(command)
