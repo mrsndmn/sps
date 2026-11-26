@@ -5,6 +5,7 @@ from importlib import import_module
 from orchestration.suite_registry import WORKER_SCRIPTS
 
 FAMILIES = {
+    "paper-sps": "paper_reproduction",
     **dict.fromkeys(WORKER_SCRIPTS, "shared"),
     "qwen3-base-long-ce": "base50",
     "qwen3-base-sps-adapters": "qwen_adapter_run",

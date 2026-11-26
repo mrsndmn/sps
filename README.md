@@ -248,6 +248,29 @@ Preview the soft-KD temperature comparison with
 `python scripts/run_train_jobs.py --experiment dflash-soft-kd/higher-temperature --dry`.
 The registry in `src/orchestration/named/registry.py` holds one entry per family.
 
+### Zero-window SPS reproductions
+
+List the scales and prepare the shared FineWeb-Edu corpus once:
+
+```bash
+python scripts/run_train_jobs.py --list paper-sps
+python scripts/run_train_jobs.py --experiment paper-sps/data --phase prepare
+```
+
+Preparation reuses the verified pilot memmaps when available, tokenizes the
+additional pinned shards, and checks that each distributed sampler has enough
+sequences for the full run. The published corpus lives under
+`sps-artifacts/paper-sps-scale-reproduction/data/fineweb-edu/`.
+
+Preview one training job after selecting a scale (`s`, `m`, or `xl`):
+
+```bash
+python scripts/run_train_jobs.py --experiment paper-sps/xl --dry
+```
+
+Omit `--dry` to submit the selected job once the corpus is ready.
+Checkpoints are published under `sps-artifacts/paper-sps-scale-reproduction/out/`.
+
 ## MLSpace pilot artifacts
 
 `python scripts/run_train_jobs.py --dry` and `python scripts/run_eval.py --dry` print plans without

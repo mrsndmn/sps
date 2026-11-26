@@ -18,7 +18,24 @@ def prepare():
         return _prepare(dest)
 
 
+def checked_manifest(dest, files):
+    manifest = json.loads((dest / 'manifest.json').read_text())
+    expected = dict(revision=DATASET_REVISION, files=list(files), tokenizer='gpt2',
+                    dtype='uint16', repo=DATASET_REPO, val_seed=VAL_SEED, val_fraction=VAL_FRACTION)
+    if any(manifest.get(key) != value for key, value in expected.items()):
+        raise RuntimeError(f'Unexpected corpus manifest at {dest}')
+    for split in ('train', 'val'):
+        if (dest / f'{split}.bin').stat().st_size != manifest['tokens'][split] * 2:
+            raise RuntimeError(f'Incomplete {split} memmap at {dest}')
+    return manifest
+
+
 def _prepare(dest):
+    return prepare_memmaps(dest, DATA_FILES, MIN_FREE_BYTES,
+                           max(run.training.max_tokens for run in collect_experiments()))
+
+
+def prepare_memmaps(dest, files, required, train_tokens, *, prefix_dir=None, prefix_files=()):
     from huggingface_hub import hf_hub_download, try_to_load_from_cache
     import numpy as np
     import pyarrow.parquet as pq
@@ -27,20 +44,12 @@ def _prepare(dest):
 
     marker = dest / 'manifest.json'
     if marker.exists():
-        manifest = json.loads(marker.read_text())
-        if (manifest['revision'] != DATASET_REVISION or manifest['files'] != list(DATA_FILES)
-                or manifest['tokenizer'] != 'gpt2' or manifest['repo'] != DATASET_REPO
-                or manifest['val_seed'] != VAL_SEED or manifest['val_fraction'] != VAL_FRACTION):
-            raise RuntimeError('Existing data manifest differs from the pilot configuration')
-        for split in ('train', 'val'):
-            if (dest / f'{split}.bin').stat().st_size != manifest['tokens'][split] * 2:
-                raise RuntimeError(f'Incomplete {split} memmap')
-        return manifest
-
+        return checked_manifest(dest, files)
+    if tuple(files[:len(prefix_files)]) != tuple(prefix_files) or len(set(files)) != len(files):
+        raise ValueError('Expected distinct shards starting with the cached prefix')
     dest.mkdir(parents=True, exist_ok=True)
     # Deliberately conservative: source shards, uint16 output, temporary files,
     # checkpoints and downstream caches. No full 350BT download is attempted.
-    required = MIN_FREE_BYTES
     free = shutil.disk_usage(dest).free
     if free < required:
         raise RuntimeError(f'Need {required / 1e9:.0f} GB free; have {free / 1e9:.1f} GB')
@@ -49,7 +58,14 @@ def _prepare(dest):
     sources = []
     handles = {s: (dest / f'{s}.bin.tmp').open('wb') for s in counts}
     try:
-        for filename in DATA_FILES:
+        if prefix_dir is not None:
+            prefix = checked_manifest(prefix_dir, prefix_files)
+            for split, handle in handles.items():
+                with (prefix_dir / f'{split}.bin').open('rb') as source_bin:
+                    shutil.copyfileobj(source_bin, handle, length=8 << 20)
+                counts[split] = prefix['tokens'][split]
+            sources.extend(prefix['sources'])
+        for filename in files[len(prefix_files) if prefix_dir is not None else 0:]:
             source = None
             for cache in EXISTING_HF_CACHES:
                 candidate = try_to_load_from_cache(DATASET_REPO, filename,
@@ -77,11 +93,11 @@ def _prepare(dest):
     finally:
         for handle in handles.values():
             handle.close()
-    if counts['train'] < max(run.training.max_tokens for run in collect_experiments()) or counts['val'] < 1048576:
+    if counts['train'] < train_tokens or counts['val'] < 1048576:
         raise RuntimeError(f'Insufficient unique pilot data: {counts}')
     for split in counts:
         os.replace(dest / f'{split}.bin.tmp', dest / f'{split}.bin')
-    manifest = dict(repo=DATASET_REPO, revision=DATASET_REVISION, files=list(DATA_FILES),
+    manifest = dict(repo=DATASET_REPO, revision=DATASET_REVISION, files=list(files),
                     tokenizer='gpt2', dtype='uint16', tokens=counts, sources=sources,
                     val_fraction=VAL_FRACTION, val_seed=VAL_SEED,
                     ordering='source-file then source-row; training sampler randomizes chunks')

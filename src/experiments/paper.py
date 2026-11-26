@@ -1,6 +1,6 @@
 """Named recipes for the paper training, evaluation and generation commands."""
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -58,6 +58,34 @@ class XSRun(PaperRun):
     n_head: int = 8
     hidden_size: int = 512
     intermediate_size: int = 1536
+
+
+@dataclass(frozen=True)
+class ZeroWindowReproduction:
+    scale: str
+    model: type[PaperRun]
+    warmup_tokens: int
+    micro_batch_size: int
+    num_gpus: int = 4
+
+    @classmethod
+    def experiment_configs(cls) -> list["ZeroWindowReproduction"]:
+        return [
+            cls("s", PaperRun, warmup_tokens=50_000_000, micro_batch_size=6),
+            cls("m", MRun, warmup_tokens=100_000_000, micro_batch_size=2),
+            cls("xl", XLRun, warmup_tokens=100_000_000, micro_batch_size=1),
+        ]
+
+    @property
+    def recipe(self) -> PaperRun:
+        return self.model(
+            name=f"repro_{self.scale}_sps_w0_20b",
+            architecture="sps",
+            tags=(self.scale, "sps", "w0", "20b", "triton"),
+            window_size=0,
+            warmup_tokens=self.warmup_tokens,
+            micro_batch_size=self.micro_batch_size,
+        )
 
 
 experiment_configs = [
@@ -674,18 +702,7 @@ experiment_configs = [
         ),
         window_size=64,
     ),
+    *(run.recipe for run in ZeroWindowReproduction.experiment_configs()),
 ]
 
 recipes = {run.name: run for run in experiment_configs}
-
-# Keep the paper training settings at each scale and isolate reproduction outputs.
-for scale in ("s", "m", "xl"):
-    source = recipes[f"{scale}_sps_w64_20b"]
-    run = replace(
-        source,
-        name=f"repro_{scale}_sps_w0_20b",
-        window_size=0,
-        tags=tuple("w0" if tag == "w64" else tag for tag in source.tags),
-    )
-    experiment_configs.append(run)
-    recipes[run.name] = run
