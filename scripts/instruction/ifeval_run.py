@@ -11,9 +11,10 @@ import signal
 import subprocess
 import time
 
+from scripts.source_compatibility import source_hash
 from scripts import ifeval_config as c
 os.environ.setdefault('SPS_EXPERIMENT_SUITE', c.SOURCE_SUITE)
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import mlspace_launch as launch
 
 ROOT = e.COMMON_ROOT / c.ARTIFACT_NAME
@@ -37,8 +38,7 @@ def source_check(exp, *, checkpoint=False):
 
 
 def signature():
-    sources = {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-               for name in ('ifeval_run.py', 'ifeval_config.py')}
+    sources = {'ifeval_run.py': source_hash(__file__), 'ifeval_config.py': source_hash(c.__file__)}
     return hashlib.sha256(json.dumps(dict(source=e.design_signature(), files=sources), sort_keys=True).encode()).hexdigest()
 
 

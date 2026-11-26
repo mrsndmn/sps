@@ -10,35 +10,24 @@ import shlex
 import time
 from unittest.mock import patch
 
-from experiments import COMMON_ROOT
+from src.experiments.environment import COMMON_ROOT
+from scripts.source_compatibility import source_hash
 from scripts import instruct_config as data_config
 from scripts import mlspace_launch as launch
 from scripts.instruct_generation import mmlu_messages
 from scripts.vllm_sps_evaluate import select_examples
-
-TARGET = "Qwen/Qwen3-4B"
-TARGET_REVISION = "1cfa9a7208912126459214e8b04321603b3df60c"
-DRAFT = "z-lab/Qwen3-4B-DFlash-b16"
-DRAFT_REVISION = "b74e3a329c4d963783143b1e970d95b002be72bd"
-ROOT = COMMON_ROOT / "dflash-mask-ablation"
-PROMPTS = 24
-MAX_NEW_TOKENS = 128
-REPEATS = 2
-
-
-@dataclass(frozen=True)
-class Experiment:
-    mask: str
-    draft_tokens: int
-
-    @property
-    def name(self):
-        return f"{self.mask}-{self.draft_tokens}"
-
-
-experiment_configs = [
-    Experiment(mask, width) for width in (4, 8) for mask in ("bidirectional", "causal")
-]
+from src.experiments.dflash_mask_ablation import (
+    TARGET,
+    TARGET_REVISION,
+    DRAFT,
+    DRAFT_REVISION,
+    ROOT,
+    PROMPTS,
+    MAX_NEW_TOKENS,
+    REPEATS,
+    Experiment,
+    experiment_configs,
+)
 
 
 def signature():
@@ -51,7 +40,7 @@ def signature():
         Path(__file__).with_name("vllm_sps_config.py"),
     ]
     return sha256(
-        b"".join(sha256(path.read_bytes()).digest() for path in sources)
+        b"".join(bytes.fromhex(source_hash(path)) for path in sources)
     ).hexdigest()
 
 

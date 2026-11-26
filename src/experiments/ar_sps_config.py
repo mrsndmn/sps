@@ -1,5 +1,5 @@
 """Executable design for the bounded pretrained AR-to-SPS pilot."""
-from dataclasses import dataclass
+from .types import ARExperiment
 import os
 
 MODEL = 'HuggingFaceTB/SmolLM2-135M'
@@ -44,13 +44,6 @@ VAL_BOUNDARY = .99
 MAX_DATA_ROWS = MAX_STEPS * GLOBAL_BATCH
 
 
-@dataclass(frozen=True)
-class ARExperiment:
-    name: str
-    recipe: str
-    num_gpus: int = 4
-    trainable: bool = True
-    distillation_weight: float = 0.0
 
 
 experiment_configs = [

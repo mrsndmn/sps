@@ -34,7 +34,7 @@ jobs:
       - run: SPS_EXPERIMENT_SUITE=spec-baselines python run_train_jobs.py --phase prepare --dry
       - run: SPS_EXPERIMENT_SUITE=spec-baselines python run_train_jobs.py --dry
       - run: SPS_EXPERIMENT_SUITE=spec-baselines python run_eval.py --dry
-      - run: python -m compileall -q scripts experiments.py run_train_jobs.py run_eval.py
+      - run: python -m compileall -q scripts src/experiments run_train_jobs.py run_eval.py
   mtp-cpu:
     runs-on: ubuntu-latest
     env:

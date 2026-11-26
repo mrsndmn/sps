@@ -1,7 +1,8 @@
 """Matched target-first speculative benchmarks for history lookup, heads, AR and MTP."""
 import json,time
 import torch
-import experiments as e
+from src.experiments import mtp, spec_baselines
+from scripts import experiment_suite as e
 from modeling.models.sps.parallel_verify import ParallelPrefixVerifier
 from modeling.mtp_speculative import speculative_generate
 from modeling.spec_baselines import lookup_proposal
@@ -19,7 +20,7 @@ class Proposal:
 
     def independent(self,prefix):
         if self.kind=='ngram':return lookup_proposal(prefix,self.horizons,
-            self.reference.config.vocab_size,max_match=e.BASELINE_LOOKUP_MATCH)[1]
+            self.reference.config.vocab_size,max_match=spec_baselines.BASELINE_LOOKUP_MATCH)[1]
         if self.kind=='medusa':
             # The final token is the target anchor/correction/bonus. Features of
             # its preceding prefix already exist in the verified KV branch.
@@ -41,7 +42,7 @@ class Proposal:
 @torch.inference_mode()
 def benchmark(kind,model,reference,prefix,horizons,mode,seed):
     torch.cuda.synchronize();started=time.perf_counter()
-    verifier=ParallelPrefixVerifier(reference,e.BASELINE_NEW_TOKENS)
+    verifier=ParallelPrefixVerifier(reference,spec_baselines.BASELINE_NEW_TOKENS)
     first=probabilities(verifier.ensure(prefix),reference.config)
     generator=torch.Generator(device=prefix.device).manual_seed(seed)
     anchor=first.argmax() if mode=='greedy' else torch.multinomial(first,1,generator=generator)[0]
@@ -50,14 +51,14 @@ def benchmark(kind,model,reference,prefix,horizons,mode,seed):
     def timed(name,fn,*args):
         start=torch.cuda.Event(enable_timing=True);end=torch.cuda.Event(enable_timing=True)
         start.record();result=fn(*args);end.record();events.append((name,start,end));return result
-    if int(anchor)==reference.config.eos_token_id or e.BASELINE_NEW_TOKENS==1:
+    if int(anchor)==reference.config.eos_token_id or spec_baselines.BASELINE_NEW_TOKENS==1:
         ids=anchor[None];accepted=proposed=reached=[0]*horizons;rounds=0
     else:
         def verify(history,draft):
             return timed('verification',lambda:probabilities(verifier.verify_logits(history,draft),reference.config))
         result=speculative_generate(extended,
             lambda history:timed('proposal',proposal.independent,history),verify,
-            max_new_tokens=e.BASELINE_NEW_TOKENS-1,mode=mode,
+            max_new_tokens=spec_baselines.BASELINE_NEW_TOKENS-1,mode=mode,
             eos_token_id=reference.config.eos_token_id,generator=generator,
             draft_proposal=(lambda *args:timed('proposal',proposal.conditional,*args)) if kind=='ar_tiny' else None)
         ids=torch.cat((anchor[None],result.token_ids));accepted=result.accepted_by_horizon
@@ -95,49 +96,49 @@ def summarize(rows,baseline,horizons,mode):
 @torch.inference_mode()
 def evaluate(exp):
     if not torch.cuda.is_available():raise RuntimeError('CUDA required for timing')
-    torch.manual_seed(e.MTP_SEED)
+    torch.manual_seed(mtp.MTP_SEED)
     reference=load_reference('cuda').eval().requires_grad_(False)
     trained=None;checkpoint=None
     if exp.trainable or exp.recipe=='existing_mtp':
         trained,state=checked_state(exp);checkpoint=trained['checkpoint']
     if exp.recipe=='medusa':
         from modeling.spec_baselines import MedusaHeads
-        model=MedusaHeads(reference.config.hidden_size,e.BASELINE_MEDUSA_HEADS).cuda().eval()
+        model=MedusaHeads(reference.config.hidden_size,spec_baselines.BASELINE_MEDUSA_HEADS).cuda().eval()
         model.load_state_dict(state['model'])
     elif exp.recipe=='ar_tiny':
         model=construct(exp,'cuda').eval();restore(model,state,exp)
-    elif exp.recipe=='existing_mtp':model=load_mtp(exp.horizons,'cuda',checkpoint,backend=e.MTP_INFERENCE_BACKEND).eval()
+    elif exp.recipe=='existing_mtp':model=load_mtp(exp.horizons,'cuda',checkpoint,backend=mtp.MTP_INFERENCE_BACKEND).eval()
     else:model=None
     if trained is not None:del state
-    data=TokenSequences('val',e.BASELINE_PROMPT_TOKENS,e.BASELINE_RESERVE_HORIZONS)
-    starts=validation_starts(len(data.tokens),e.BASELINE_PROMPT_TOKENS,e.BASELINE_EVAL_PROMPTS)
-    prompts=[data[i][:e.BASELINE_PROMPT_TOKENS].cuda() for i in starts]
+    data=TokenSequences('val',spec_baselines.BASELINE_PROMPT_TOKENS,spec_baselines.BASELINE_RESERVE_HORIZONS)
+    starts=validation_starts(len(data.tokens),spec_baselines.BASELINE_PROMPT_TOKENS,spec_baselines.BASELINE_EVAL_PROMPTS)
+    prompts=[data[i][:spec_baselines.BASELINE_PROMPT_TOKENS].cuda() for i in starts]
     report=dict(name=exp.name,recipe=exp.recipe,**identities(),checkpoint=checkpoint,
         checkpoint_sha256=file_sha256(checkpoint) if checkpoint else None,
         numerical_audit=audit(reference,prompts),baseline={},variants={},
-        settings=dict(prompts=len(prompts),input_tokens=e.BASELINE_PROMPT_TOKENS,
-            new_tokens=e.BASELINE_NEW_TOKENS,seed=e.MTP_SEED,temperature=e.MTP_TEMPERATURE,
+        settings=dict(prompts=len(prompts),input_tokens=spec_baselines.BASELINE_PROMPT_TOKENS,
+            new_tokens=spec_baselines.BASELINE_NEW_TOKENS,seed=mtp.MTP_SEED,temperature=mtp.MTP_TEMPERATURE,
             anchor_policy='one initial original-target token; heads predict offsets 2..K+1',
-            warmup_full_workload_passes=e.BASELINE_WARMUP_PASSES,
+            warmup_full_workload_passes=spec_baselines.BASELINE_WARMUP_PASSES,
             precision='FP32 weights; BF16 target attention; original native generator baseline'),
         limitations=['Block/native floating point differences are audited; native greedy equality is reported, not assumed.',
             'Conditional acceptance divides by actually reached slots. Emitted/round excludes initial target anchor.',
             'Additional-input budget is matched; Medusa inherits pretrained frozen SPS features, AR is trained from scratch.'])
     for mode in ('greedy','sample'):
-        for _ in range(e.BASELINE_WARMUP_PASSES):
-            for i,p in enumerate(prompts):benchmark_reference(reference,p,mode=mode,seed=e.MTP_SEED+i,
-                max_new_tokens=e.BASELINE_NEW_TOKENS)
-        report['baseline'][mode]=[benchmark_reference(reference,p,mode=mode,seed=e.MTP_SEED+i,
-            max_new_tokens=e.BASELINE_NEW_TOKENS) for i,p in enumerate(prompts)]
-    horizons=(exp.horizons,) if exp.recipe=='existing_mtp' else e.BASELINE_EVAL_HORIZONS
+        for _ in range(spec_baselines.BASELINE_WARMUP_PASSES):
+            for i,p in enumerate(prompts):benchmark_reference(reference,p,mode=mode,seed=mtp.MTP_SEED+i,
+                max_new_tokens=spec_baselines.BASELINE_NEW_TOKENS)
+        report['baseline'][mode]=[benchmark_reference(reference,p,mode=mode,seed=mtp.MTP_SEED+i,
+            max_new_tokens=spec_baselines.BASELINE_NEW_TOKENS) for i,p in enumerate(prompts)]
+    horizons=(exp.horizons,) if exp.recipe=='existing_mtp' else spec_baselines.BASELINE_EVAL_HORIZONS
     for n in horizons:
         report['variants'][str(n)]={}
         for mode in ('greedy','sample'):
             warm=time.monotonic()
-            for _ in range(e.BASELINE_WARMUP_PASSES):
-                for i,p in enumerate(prompts):benchmark(exp.recipe,model,reference,p,n,mode,e.MTP_SEED+i)
+            for _ in range(spec_baselines.BASELINE_WARMUP_PASSES):
+                for i,p in enumerate(prompts):benchmark(exp.recipe,model,reference,p,n,mode,mtp.MTP_SEED+i)
             warm_seconds=time.monotonic()-warm
-            rows=[benchmark(exp.recipe,model,reference,p,n,mode,e.MTP_SEED+i) for i,p in enumerate(prompts)]
+            rows=[benchmark(exp.recipe,model,reference,p,n,mode,mtp.MTP_SEED+i) for i,p in enumerate(prompts)]
             result=summarize(rows,report['baseline'][mode],n,mode);result['warmup_seconds']=warm_seconds
             report['variants'][str(n)][mode]=result
             print(json.dumps(dict(name=exp.name,horizons=n,mode=mode,speedup=result['speedup'],

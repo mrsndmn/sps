@@ -7,14 +7,14 @@ import os
 
 import pytest
 
-import experiments as config
+from scripts import experiment_suite as config
 from scripts import mlspace_launch, pilot_run
 
 
 def test_long_suite_is_tenfold_and_preserves_pilot_paths():
     script = '''
 import json
-import experiments as e
+from scripts import experiment_suite as e
 from scripts.mlspace_launch import payload
 print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),cache=str(e.HF_HOME),
  names=[x.name for x in e.collect_experiments()],budget=e.TRAIN_TOKENS,
@@ -135,9 +135,10 @@ def test_payload_quotes_staging_path():
 
 
 def test_design_signature_tracks_inherited_configs(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, '__file__', str(tmp_path / 'experiments.py'))
+    monkeypatch.setattr(config, 'REPO_ROOT', tmp_path)
     for name in ('scripts/train.py', 'scripts/evaluate.py', 'conf/model/sps.yaml',
-                 'conf/optimizer/adamw.yaml'):
+                 'conf/optimizer/adamw.yaml', 'scripts/experiment_suite.py', 'scripts/suite_registry.py',
+                 'src/experiments/environment.py', 'src/experiments/pilot.py', 'src/experiments/types.py', 'src/experiments/suite.py'):
         p = tmp_path / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text('initial')
@@ -269,7 +270,8 @@ def test_submission_transport_never_retries_post():
 def test_all_evaluation_payloads_use_one_gpu_without_changing_training(suite):
     import subprocess,json,os
     code="""
-import json,experiments as e
+import json
+from scripts import experiment_suite as e
 from scripts.mlspace_launch import payload
 x=e.collect_experiments()[0]
 print(json.dumps({phase:payload(phase,x.name,e.STAGING_ROOT,'a','b')['instance_type'] for phase in ['prepare','train','eval']}))
@@ -315,7 +317,7 @@ def test_routing_refactor_preserves_known_pilot_design():
 
 def test_parallel_marker_rejects_unfreeze_worker():
     script = '''
-import experiments as e
+from scripts import experiment_suite as e
 before = e.design_signature()
 e.WORKER_MODULES[e.SUITE] = e.WORKER_MODULES['mtp-unfreeze']
 assert e.design_signature() != before

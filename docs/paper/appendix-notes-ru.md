@@ -66,9 +66,9 @@ AR-контроли также теряют non-thinking качество: AR CE
 
 ## Источники результатов и воспроизводимость
 
-- Base-адаптация: `scripts/adaptation/ar_sps_config.py`, `scripts/adaptation/ar_sps_train.py`; результаты и ссылки на парные отчёты в `experiments/pretrained-ar-to-sps*.md` и `experiments/pretrained-qwen3-to-sps.md`.
-- Instruct: `scripts/instruct_config.py`, `scripts/instruction/instruct_data.py`, `scripts/instruction/instruct_train.py`, `scripts/instruction/instruct_evaluate.py`; отдельная IFEval-оценка — `scripts/instruction/ifeval_config.py`, `scripts/instruction/ifeval_run.py`.
-- Расписания и продолжение: `scripts/instruction/sched_config.py`, `scripts/instruction/sched_train.py`, `scripts/instruction/sched_eval.py`, `scripts/instruction/extend_config.py`, `scripts/instruction/extend_train.py`, `scripts/instruction/extend_eval.py`.
+- Base-адаптация: `src/experiments/ar_sps_config.py`, `scripts/adaptation/ar_sps_train.py`; результаты и ссылки на парные отчёты в `experiments/pretrained-ar-to-sps*.md` и `experiments/pretrained-qwen3-to-sps.md`.
+- Instruct: `src/experiments/instruct_config.py`, `scripts/instruction/instruct_data.py`, `scripts/instruction/instruct_train.py`, `scripts/instruction/instruct_evaluate.py`; отдельная IFEval-оценка — `src/experiments/ifeval_config.py`, `scripts/instruction/ifeval_run.py`.
+- Расписания и продолжение: `src/experiments/sched_config.py`, `scripts/instruction/sched_train.py`, `scripts/instruction/sched_eval.py`, `src/experiments/extend_config.py`, `scripts/instruction/extend_train.py`, `scripts/instruction/extend_eval.py`.
 - Артефакты IFEval: `../sps-artifacts/qwen3-instruct-ifeval/`, `../sps-artifacts/qwen3-instruct-step384/`, `../sps-artifacts/qwen3-instruct-cosine/`, `../sps-artifacts/qwen3-instruct-extended-2048/` относительно корня репозитория.
 - Частичный MMLU: `../sps-artifacts/reports/instruct-mmlu-partial-20261109/report.json`, `metrics.csv`, `aggregate.py`. Отчёт содержит исходные пути, manifests, индексы пересечения, распределение предметов и метрики всех вариантов.
 

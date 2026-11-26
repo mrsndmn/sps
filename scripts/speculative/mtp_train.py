@@ -12,7 +12,8 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 
-import experiments as e
+from src.experiments import mtp
+from scripts import experiment_suite as e
 from scripts.mtp_common import TokenSequences, load_mtp, shifted_targets, sequence_starts
 from scripts.pilot_run import write_json
 
@@ -31,16 +32,16 @@ def adaptation_loss(logits, targets, *, all_horizons=False):
 
 
 def optimizer_groups(model):
-    if not e.MTP_UNFREEZE:
-        return [dict(params=[model.new_embeddings],lr=e.MTP_LR,base_lr=e.MTP_LR,
-                     weight_decay=e.MTP_WEIGHT_DECAY)]
+    if not mtp.MTP_UNFREEZE:
+        return [dict(params=[model.new_embeddings],lr=mtp.MTP_LR,base_lr=mtp.MTP_LR,
+                     weight_decay=mtp.MTP_WEIGHT_DECAY)]
     shared=model.reference.transformer.wte.weight
     groups={}
     for name,p in model.named_parameters():
         if not p.requires_grad:continue
         embedding=p is shared or p is model.new_embeddings
-        lr=e.MTP_EMBED_LR if embedding else e.MTP_LR
-        decay=0.0 if embedding or p.ndim<2 else e.MTP_WEIGHT_DECAY
+        lr=mtp.MTP_EMBED_LR if embedding else mtp.MTP_LR
+        decay=0.0 if embedding or p.ndim<2 else mtp.MTP_WEIGHT_DECAY
         groups.setdefault((lr,decay),[]).append(p)
     return [dict(params=params,lr=lr,base_lr=lr,weight_decay=decay)
             for (lr,decay),params in groups.items()]
@@ -49,9 +50,9 @@ def optimizer_groups(model):
 def save_checkpoint(path, model, optimizer, step, signature):
     temporary=path.with_suffix('.tmp')
     state=dict(new_embeddings=model.new_embeddings.detach().cpu(), optimizer=optimizer.state_dict(),
-        step=step, tokens=step*e.MTP_STEP_TOKENS,horizons=model.horizons,
-        source=str(e.MTP_SOURCE),design_signature=signature,train_backbone=e.MTP_UNFREEZE)
-    if e.MTP_UNFREEZE:state['backbone']=model.reference.state_dict()
+        step=step, tokens=step*mtp.MTP_STEP_TOKENS,horizons=model.horizons,
+        source=str(mtp.MTP_SOURCE),design_signature=signature,train_backbone=mtp.MTP_UNFREEZE)
+    if mtp.MTP_UNFREEZE:state['backbone']=model.reference.state_dict()
     torch.save(state,temporary)
     temporary.replace(path)
 
@@ -69,17 +70,17 @@ def main():
     if world!=exp.num_gpus:raise RuntimeError('Expected four ranks')
     torch.cuda.set_device(local); device=torch.device('cuda',local)
     dist.init_process_group('nccl')
-    torch.manual_seed(e.MTP_SEED)
-    model=load_mtp(exp.horizons,device,backend=e.MTP_BACKEND,train_backbone=e.MTP_UNFREEZE)
-    if e.MTP_UNFREEZE:
+    torch.manual_seed(mtp.MTP_SEED)
+    model=load_mtp(exp.horizons,device,backend=mtp.MTP_BACKEND,train_backbone=mtp.MTP_UNFREEZE)
+    if mtp.MTP_UNFREEZE:
         if not all(p.requires_grad for p in model.parameters()):raise RuntimeError('All draft parameters must train')
     elif {n for n,p in model.named_parameters() if p.requires_grad}!={'new_embeddings'}:
         raise RuntimeError('Only new embeddings may train')
     groups=optimizer_groups(model)
-    optimizer=torch.optim.AdamW(groups,betas=e.MTP_BETAS)
+    optimizer=torch.optim.AdamW(groups,betas=mtp.MTP_BETAS)
     trainable=[p for p in model.parameters() if p.requires_grad]
     parent_samples=0
-    if e.MTP_UNFREEZE:
+    if mtp.MTP_UNFREEZE:
         from scripts.mtp_common import warmstart_metadata
         parent_samples=warmstart_metadata(exp.horizons,world_size=world)['parent_samples_per_rank']
     dest=(e.SANITY_ROOT if args.probe else e.RUN_ROOT)/'out'/exp.name
@@ -93,16 +94,16 @@ def main():
         from scripts.mtp_common import restore_draft
         restore_draft(model,state)
         optimizer.load_state_dict(state['optimizer']); start_step=state['step']
-    data=TokenSequences('train',e.MTP_CONTEXT)
-    sampler=sequence_starts(len(data.tokens),e.MTP_CONTEXT,world,rank,
-        resume=parent_samples+start_step*e.MTP_GLOBAL_BATCH//world)
-    steps=e.MTP_PROBE_STEPS if args.probe else e.MTP_TRAIN_STEPS
-    if len(sampler)<(steps-start_step)*e.MTP_GLOBAL_BATCH//world:
+    data=TokenSequences('train',mtp.MTP_CONTEXT)
+    sampler=sequence_starts(len(data.tokens),mtp.MTP_CONTEXT,world,rank,
+        resume=parent_samples+start_step*mtp.MTP_GLOBAL_BATCH//world)
+    steps=mtp.MTP_PROBE_STEPS if args.probe else mtp.MTP_TRAIN_STEPS
+    if len(sampler)<(steps-start_step)*mtp.MTP_GLOBAL_BATCH//world:
         raise RuntimeError('Insufficient unique sequences for this rank')
-    batches=iter(DataLoader(data,batch_size=e.MTP_MICRO_BATCH,sampler=sampler,drop_last=True))
+    batches=iter(DataLoader(data,batch_size=mtp.MTP_MICRO_BATCH,sampler=sampler,drop_last=True))
     ddp=DistributedDataParallel(model,device_ids=[local],broadcast_buffers=False)
-    accumulation=e.MTP_GLOBAL_BATCH//(world*e.MTP_MICRO_BATCH)
-    if accumulation*world*e.MTP_MICRO_BATCH!=e.MTP_GLOBAL_BATCH:raise ValueError('Invalid accumulation')
+    accumulation=mtp.MTP_GLOBAL_BATCH//(world*mtp.MTP_MICRO_BATCH)
+    if accumulation*world*mtp.MTP_MICRO_BATCH!=mtp.MTP_GLOBAL_BATCH:raise ValueError('Invalid accumulation')
     def record(row):
         if rank==0:
             with (dest/'metrics.jsonl').open('a') as f:f.write(json.dumps(row)+'\n')
@@ -117,35 +118,35 @@ def main():
     model.train()
     for step in range(start_step,steps):
         torch.cuda.synchronize(); started=time.monotonic()
-        warmup=min(1.0,(step+1)/e.MTP_WARMUP_STEPS)
-        progress=max(0,(step-e.MTP_WARMUP_STEPS)/max(1,e.MTP_TRAIN_STEPS-e.MTP_WARMUP_STEPS))
+        warmup=min(1.0,(step+1)/mtp.MTP_WARMUP_STEPS)
+        progress=max(0,(step-mtp.MTP_WARMUP_STEPS)/max(1,mtp.MTP_TRAIN_STEPS-mtp.MTP_WARMUP_STEPS))
         factor=warmup*(0.1+0.9*(1+math.cos(math.pi*progress))/2)
-        lr=e.MTP_LR*factor
+        lr=mtp.MTP_LR*factor
         for group in optimizer.param_groups:group['lr']=group['base_lr']*factor
         optimizer.zero_grad(set_to_none=True)
         total=0.0
         for micro in range(accumulation):
             tokens=next(batches).to(device)
-            labels=shifted_targets(tokens,e.MTP_CONTEXT,exp.horizons,
+            labels=shifted_targets(tokens,mtp.MTP_CONTEXT,exp.horizons,
                 eos=model.config.eos_token_id,pad=model.config.pad_token_id)
             sync=contextlib.nullcontext() if micro==accumulation-1 else ddp.no_sync()
             with sync, torch.autocast('cuda',dtype=torch.bfloat16):
-                logits=ddp(tokens[:,:e.MTP_CONTEXT])
-                loss=adaptation_loss(logits,labels,all_horizons=e.MTP_UNFREEZE)/accumulation
+                logits=ddp(tokens[:,:mtp.MTP_CONTEXT])
+                loss=adaptation_loss(logits,labels,all_horizons=mtp.MTP_UNFREEZE)/accumulation
                 loss.backward()
             total+=float(loss.detach()); del logits,loss
-        norm=torch.nn.utils.clip_grad_norm_(trainable,e.MTP_GRAD_CLIP)
+        norm=torch.nn.utils.clip_grad_norm_(trainable,mtp.MTP_GRAD_CLIP)
         if not torch.isfinite(norm):raise RuntimeError('Nonfinite draft gradient')
         optimizer.step()
         torch.cuda.synchronize()
-        record(dict(event='train',step=step+1,tokens=(step+1)*e.MTP_STEP_TOKENS,
-            step_seconds=time.monotonic()-started,loss=total,lr=lr,embedding_lr=e.MTP_EMBED_LR*factor,gradient_norm=float(norm)))
-        if not args.probe and ((step+1)%e.MTP_EVAL_INTERVAL==0 or step+1==steps):
+        record(dict(event='train',step=step+1,tokens=(step+1)*mtp.MTP_STEP_TOKENS,
+            step_seconds=time.monotonic()-started,loss=total,lr=lr,embedding_lr=mtp.MTP_EMBED_LR*factor,gradient_norm=float(norm)))
+        if not args.probe and ((step+1)%mtp.MTP_EVAL_INTERVAL==0 or step+1==steps):
             dist.barrier()
             if rank==0:
                 from scripts.mtp_evaluate import horizon_metrics
                 with torch.no_grad(): metrics=horizon_metrics(model,device)
-                record(dict(event='validation',step=step+1,tokens=(step+1)*e.MTP_STEP_TOKENS,metrics=metrics))
+                record(dict(event='validation',step=step+1,tokens=(step+1)*mtp.MTP_STEP_TOKENS,metrics=metrics))
                 save_checkpoint(checkpoint,model,optimizer,step+1,signature)
                 if step+1==steps:
                     save_checkpoint(dest/'adaptation_final.pt',model,optimizer,step+1,signature)

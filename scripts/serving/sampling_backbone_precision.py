@@ -6,7 +6,6 @@ an arithmetic-only intervention. FP16 has a smaller exponent range; nonfinite
 distributions fail validation. Original failed-gate evidence stays immutable.
 """
 import argparse
-from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -14,30 +13,23 @@ import shlex
 import time
 from unittest.mock import patch
 
+from scripts.source_compatibility import source_hash
 from scripts import sampling_precision as precision
 from scripts import sampling_cache_trace as cache
 from scripts import sampling_audit as audit
 from scripts import sampling_trace as trace
 from scripts import mlspace_launch as launch
 
+from src.experiments.sampling_backbone_precision import (
+    Experiment,
+    experiment_configs,
+    Job,
+    job_configs,
+)
+
 ROOT = precision.ROOT.parent / 'sps-sampling-backbone-precision'
 SOURCE = precision.root()
 BASE_IDENTITY = precision.recorded_identity
-
-@dataclass(frozen=True)
-class Experiment(precision.Experiment):
-    dtype: str = 'float16'
-
-experiment_configs = [Experiment('fp16-four', 'sps_four_slots', True),
-                      Experiment('fp16-mtp', 'sps_mtp', True)]
-
-@dataclass(frozen=True)
-class Job:
-    name: str = 'fp16-backbone'
-    num_gpus: int = 1
-    hours: int = 2
-
-job_configs = [Job()]
 
 
 def root():
@@ -53,7 +45,7 @@ def identity():
         files.append(SOURCE / name / 'decode' / f'{arm}-eager.json')
         dist_arm = 'sps_four_slots' if arm == 'sps' else arm
         files += [SOURCE / name / 'distributions' / f'{dist_arm}.{s}' for s in ('json', 'npz')]
-    return dict(audit=prior['audit'], precision=prior, code=audit.common.file_hash(Path(__file__)),
+    return dict(audit=prior['audit'], precision=prior, code=source_hash(__file__),
                 evidence={str(p): audit.common.file_hash(p) for p in files})
 
 

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 import socket
 import time
 
-from experiments import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
+from scripts.experiment_suite import (ARTIFACTS_ROOT, RUN_ROOT, STAGING_ROOT, HF_HOME,
                         PYTHON, BASE_IMAGE, INSTANCE_TYPES_BY_NUM_GPUS,
                         collect_experiments, output_dir, design_signature, SUITE, training_marker, EVAL_NUM_GPUS)
 from scripts.pilot_headers import HEADER_ROOT

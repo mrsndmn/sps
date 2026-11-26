@@ -1,6 +1,5 @@
 """Train a five-layer block drafter on a frozen Qwen3-4B."""
 
-from dataclasses import dataclass
 from hashlib import sha256
 from inspect import getsource
 import json
@@ -13,44 +12,31 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from experiments import COMMON_ROOT
+from src.experiments.environment import COMMON_ROOT
+from scripts.source_compatibility import source_hash
 from scripts import dflash_mask_ablation as reference
 from scripts import instruct_data, mlspace_launch as launch, qwen4b_drafter_data as prepared
 from scripts.vllm_sps_config import SOURCE_ROOT
-
-ROOT = COMMON_ROOT / "qwen4b-drafter"
-DATA = SOURCE_ROOT / "runs" / "data"
-LENGTHS = (4, 8)
-TARGET_LAYERS = (1, 9, 17, 25, 33)
-CONTEXT = 3072
-DEFAULT_DATASET = "smoltalk"
-DATASETS = (DEFAULT_DATASET, prepared.NAME)
-ROWS = {"train": 3072, "val": 64}
-ANCHORS = 16
-EPOCHS = 3
-ACCUMULATION = 8
-LR = 6e-4
-WARMUP = 0.04
-GAMMA = 4.0
-SEED = 1337
-PROBE_STEPS = 3
-
-
-@dataclass(frozen=True)
-class Experiment:
-    mask: str
-    embeddings: str
-
-    @property
-    def name(self):
-        return f"{self.mask}-{self.embeddings}"
-
-
-experiment_configs = [
-    Experiment(mask, embeddings)
-    for mask in ("bidirectional", "causal")
-    for embeddings in ("shared", "per-position")
-]
+from src.experiments.qwen4b_drafter_train import (
+    ROOT,
+    DATA,
+    LENGTHS,
+    TARGET_LAYERS,
+    CONTEXT,
+    DEFAULT_DATASET,
+    DATASETS,
+    ROWS,
+    ANCHORS,
+    EPOCHS,
+    ACCUMULATION,
+    LR,
+    WARMUP,
+    GAMMA,
+    SEED,
+    PROBE_STEPS,
+    Experiment,
+    experiment_configs,
+)
 
 
 def prepared_settings():
@@ -84,7 +70,7 @@ def signature(dataset=DEFAULT_DATASET):
     digest = sha256()
     digest.update(dataset.encode())
     for path in paths:
-        digest.update(sha256(path.read_bytes()).digest())
+        digest.update(bytes.fromhex(source_hash(path)))
     digest.update((reference.TARGET_REVISION + reference.DRAFT_REVISION).encode())
     digest.update(getsource(reference.context_features).encode())
     return digest.hexdigest()

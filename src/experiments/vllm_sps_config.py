@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts import instruct_config as source
+from . import instruct_config as source
 
 ROOT = Path(
     "/mnt/virtual_ai0001053-00054_SR004-nfs2/d.tarasov/sps-artifacts/vllm-sps-qwen3"

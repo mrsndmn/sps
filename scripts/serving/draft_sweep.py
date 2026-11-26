@@ -8,11 +8,12 @@ import os
 import shlex
 import tempfile
 import time
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from statistics import median
 from unittest.mock import patch
 
+from scripts.source_compatibility import source_hash
 from scripts import draft_sweep_train as training
 from scripts import serving_benchmark as bench
 from scripts import serving_graphs as graph
@@ -22,41 +23,29 @@ from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts import vllm_sps_run as run
 
+from src.experiments.draft_sweep import (
+    DRAFT_LENGTHS,
+    EVAL_HOURS,
+    AUDIT_TOKENS,
+    Evaluation,
+    experiment_configs,
+    AUDIT_ARMS,
+)
+
 ROOT = training.ROOT
 LAUNCHER = "scripts.serving.draft_sweep"
-DRAFT_LENGTHS = (4, 8)
 HORIZONS = training.HORIZONS
 PHASES = ("probe", "train", "audit", "eval")
-EVAL_HOURS = 2
-AUDIT_TOKENS = 32
 TRAINER = training.EXPERIMENT
 AUDIT = c.Experiment(bench.AUDIT_NAME, "audit")
-
-
-@dataclass(frozen=True)
-class Evaluation(c.Experiment):
-    draft_tokens: int = 0
-
-
-experiment_configs = [
-    Evaluation(f"{arm}-{mode}", arm, mode)
-    for mode in c.GENERATION
-    for arm in ("ar", "sps")
-] + [
-    Evaluation(f"{arm}-{length}-{mode}", arm, mode, draft_tokens=length)
-    for length in DRAFT_LENGTHS
-    for mode in c.GENERATION
-    for arm in ("eagle3", "sps_mtp")
-]
-AUDIT_ARMS = {"sps": 0, **{f"sps_mtp-{n}": n for n in DRAFT_LENGTHS}}
 
 
 def protocol_signature():
     parts = (
         HORIZONS,
         graph.BASE_PROTOCOL(),
-        common.file_hash(Path(__file__)),
-        common.file_hash(Path(graph.__file__)),
+        source_hash(__file__),
+        source_hash(graph.__file__),
         runtime.signature(),
         graph.IMPLEMENTATION,
     )

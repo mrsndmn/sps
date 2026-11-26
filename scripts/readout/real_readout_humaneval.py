@@ -10,6 +10,7 @@ import shlex
 import tempfile
 from urllib.request import urlopen
 
+from scripts.source_compatibility import source_hash
 from scripts import mlspace_launch as launch
 from scripts import real_readout_eval as quality
 from scripts import real_readout_run as train
@@ -17,18 +18,20 @@ from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts.mmlu_results import recover_samples
 from scripts.readout.readout_archive import compatible_identity
+from src.experiments.real_readout_humaneval import (
+    ROOT,
+    PROMPTS,
+    RELEASE,
+    URL,
+    ARCHIVE_SHA,
+    PROMPT_SHA,
+    REQUEST,
+    SETTINGS,
+    experiment_configs,
+    HOURS,
+)
 
-ROOT = train.ROOT / "humaneval-plus"
-PROMPTS = ROOT / "input/prompts.jsonl"
-RELEASE = "v0.1.10"
-URL = f"https://github.com/evalplus/humanevalplus_release/releases/download/{RELEASE}/HumanEvalPlus.jsonl.gz"
-ARCHIVE_SHA = "272720b90ac375502c8ed23cd791c2a93dfb22a911641a494da74a426c09f101"
-PROMPT_SHA = "2daaf2edc5a3dc6a68316a89800b61af7d534bca5f6230a5e6b6773411576c0a"
-REQUEST = ("Implement the Python function described below. Include its signature, all required "
-           "imports and any helper functions. Return the complete solution in one Python code block.")
-SETTINGS = {mode: dict(settings, max_new_tokens=4096) for mode, settings in c.GENERATION.items()}
-experiment_configs = [c.Experiment(f"{arm}-{mode}", arm, mode) for arm in ("A", "B") for mode in SETTINGS]
-HOURS = 16
+
 FENCE = re.compile(r"^[ \t]*```(?:python|py)?[ \t]*\r?\n(.*?)(?:^[ \t]*```[ \t]*\r?$|\Z)",
                    re.IGNORECASE | re.MULTILINE | re.DOTALL)
 
@@ -66,7 +69,7 @@ def identity(exp, marker):
                 model_sources=quality.model_sources(exp),
                 prompts=PROMPT_SHA, release=RELEASE,
                 settings=SETTINGS[exp.mode], seed=c.SEED, request=REQUEST,
-                code={s: common.file_hash(Path(__file__).with_name(s+".py")) for s in
+                code={s: source_hash(Path(__file__).with_name(s+".py")) for s in
                       ("real_readout_humaneval", "real_readout_eval", "instruct_generation", "mmlu_generation")})
 
 

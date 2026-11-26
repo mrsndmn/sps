@@ -7,7 +7,6 @@ benchmark score selects this training recipe or its endpoint.
 """
 import argparse
 from contextlib import contextmanager
-from dataclasses import dataclass
 import json
 from pathlib import Path
 import shlex
@@ -15,26 +14,19 @@ import sys
 import time
 from unittest.mock import patch
 
+from scripts.source_compatibility import source_hash
 from scripts import provenance_prepare as prep
 from scripts import instruct_config as c
 from scripts import instruct_common as common
 from scripts import instruct_train as trainer
 from scripts import mlspace_launch as launch
 
+from src.experiments.provenance_train import (
+    Experiment,
+    experiment_configs,
+)
+
 ROOT = prep.ROOT.parent / 'instruct-provenance-controls'
-
-@dataclass(frozen=True)
-class Experiment:
-    name: str
-    recipe: str
-    condition: str
-    num_gpus: int = 4
-    hours: int = c.TRAIN_HOURS
-    trainable: bool = True
-    distillation_weight: float = 0.
-
-experiment_configs = [Experiment(f'{recipe}-{condition}', recipe, condition)
-                      for recipe in ('continued_ar', 'staged_sps') for condition in ('corpus', 'teacher')]
 
 
 def output_dir(exp):
@@ -105,7 +97,7 @@ def identity(exp, report, plan):
     files = [Path(__file__), Path(trainer.__file__), Path(common.__file__), Path(c.__file__),
              Path(prep.__file__), Path('src/modeling/models/sps/pretrained.py')]
     return dict(experiment=exp.__dict__, preparation=report, plan=plan,
-                code={p.name: prep.common.file_hash(p) for p in files})
+                code={p.name: source_hash(p) for p in files})
 
 
 @contextmanager

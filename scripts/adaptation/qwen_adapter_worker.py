@@ -13,7 +13,7 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import ar_sps_common as common
 from scripts import ar_sps_config as c
 from scripts import qwen_adapter_run as cfg

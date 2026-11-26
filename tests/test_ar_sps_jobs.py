@@ -12,7 +12,7 @@ def test_dry_routing(suite, tmp_path):
     for entry, args in [('run_train_jobs.py', ['--phase', 'prepare']),
                         ('run_train_jobs.py', []), ('run_eval.py', [])]:
         # Isolate orchestration from real completed/stale experiment artifacts.
-        code = ("import sys; from pathlib import Path; import experiments as e; "
+        code = ("import sys; from pathlib import Path; from scripts import experiment_suite as e; "
                 "e.ARTIFACTS_ROOT=Path(sys.argv[1]); e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs'; "
                 "from scripts.mlspace_launch import main; "
                 "phase=sys.argv[2]; sys.argv=['launcher', '--dry', *sys.argv[3:]]; main(phase)")
@@ -53,7 +53,7 @@ def test_large_ce_matched_exposure(suite, model, micro):
 import sys
 from scripts import ar_sps_config as c
 from scripts.ar_sps_run import calibrated_plan
-import experiments as e
+from scripts import experiment_suite as e
 assert c.MODEL == sys.argv[1] and c.MICRO_BATCH == int(sys.argv[2])
 assert not c.DISTILLATION and c.LARGE_CE
 assert c.GLOBAL_BATCH % (4*c.MICRO_BATCH) == 0
@@ -84,7 +84,7 @@ import sys,json
 from pathlib import Path
 from scripts import ar_sps_config as c
 from scripts.ar_sps_run import calibrated_plan
-import experiments as e
+from scripts import experiment_suite as e
 assert c.DISTILLATION and not c.LARGE_CE
 assert (c.REFERENCE_SUITE,c.MODEL,c.MICRO_BATCH)==(sys.argv[1],sys.argv[2],int(sys.argv[3]))
 assert c.REFERENCE_CONTROLS == ('smollm2_staged_sps',)
@@ -112,7 +112,7 @@ def test_qwen_paired_registry(suite):
     code = '''
 from scripts import ar_sps_config as c
 from scripts.ar_sps_run import calibrated_plan
-import experiments as e
+from scripts import experiment_suite as e
 assert c.QWEN and not c.DISTILLATION
 assert c.MODEL.startswith('Qwen/Qwen3-') and c.MODEL.endswith('-Base')
 assert c.MICRO_BATCH==c.EVAL_BATCH==1
@@ -138,7 +138,7 @@ def test_mmlu_generation_dry_registry(tmp_path, suite):
     code = """
 import sys
 from pathlib import Path
-import experiments as e
+from scripts import experiment_suite as e
 e.COMMON_ROOT = Path(sys.argv[1])
 e.ARTIFACTS_ROOT = e.COMMON_ROOT / 'mmlu-generation'
 e.RUN_ROOT = e.ARTIFACTS_ROOT / 'runs'

@@ -7,14 +7,14 @@ import shlex
 from scripts import mlspace_launch as launch
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
-
-ROOT = c.ROOT.parent / "qwen3-instruct-real-readout-mtp"
-PARENT = c.PARENT.parents[1] / "qwen3_instruct_continued_ar_ce" / "final.pt"
-experiment_configs = [c.Experiment("qwen3_real_readout_mtp", "train",
-                                    num_gpus=c.experiment_configs[0].num_gpus)]
-ARM = experiment_configs[0]
-OUT = ROOT / "runs/out" / ARM.name
-LEGACY_HORIZONS = 4
+from src.experiments.real_readout_run import (
+    ROOT,
+    PARENT,
+    experiment_configs,
+    ARM,
+    OUT,
+    LEGACY_HORIZONS,
+)
 
 
 def trained():

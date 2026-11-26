@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
-import experiments as e
+from scripts import experiment_suite as e
 from modeling.models.sps.pretrained import PretrainedSPS
 from scripts import mmlu_config as c
 from scripts.mmlu_results import recover_samples

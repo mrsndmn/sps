@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+from scripts.source_compatibility import source_hash
 from scripts import instruct_config as source
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
@@ -22,13 +23,13 @@ def protocol_signature():
         Path(common.__file__),
         Path(__file__).with_name("vllm_sps_audit.py"),
         Path(__file__).with_name("vllm_sps_model.py"),
-        repo / "scripts/instruct_config.py",
+        Path(source.__file__),
         repo / "scripts/instruct_common.py",
         repo / "scripts/instruct_generation.py",
         repo / "scripts/report_mmlu_stem.py",
         repo / "src/modeling/models/sps/pretrained.py",
     )
-    hashes = [common.file_hash(path) for path in files]
+    hashes = [source_hash(path) for path in files]
     return hashlib.sha256(json.dumps(hashes).encode()).hexdigest()
 
 

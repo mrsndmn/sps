@@ -11,6 +11,15 @@ def test_flat_and_grouped_imports_share_state():
         assert import_module(f'scripts.{original}') is import_module(f'scripts.{grouped}')
 
 
+def test_moved_config_imports_use_the_canonical_dataclass_definitions():
+    from dataclasses import is_dataclass
+
+    for name in ('ar_sps_config', 'instruct_config', 'mmlu_config', 'vllm_sps_config'):
+        config = import_module(f'src.experiments.{name}')
+        assert config is import_module(f'scripts.{name}')
+        assert all(is_dataclass(experiment) for experiment in config.experiment_configs)
+
+
 def test_flat_and_grouped_worker_cli():
     for module in ('scripts.real_readout_gsm8k', 'scripts.readout.real_readout_gsm8k'):
         result = subprocess.check_output([sys.executable, '-m', module, '--help'], text=True)

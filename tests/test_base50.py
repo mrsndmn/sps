@@ -26,7 +26,7 @@ def test_schedule_and_resume():
 
 def test_isolation_and_dry_payload(tmp_path):
     env={**os.environ,'SPS_EXPERIMENT_SUITE':c.SOURCE_SUITE}
-    code='''import experiments as e
+    code='''from scripts import experiment_suite as e
 from scripts import base50_config as c
 old_root=str(e.ARTIFACTS_ROOT); old_sig=e.design_signature()
 e, source=c.configure()

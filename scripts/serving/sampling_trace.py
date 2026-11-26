@@ -5,7 +5,6 @@ FP32/BF16 and vLLM BF16. The four-slot non-speculative arm is a diagnostic eager
 intervention, not a benchmark. Existing audit outputs and runtimes stay immutable.
 """
 import argparse
-from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -15,23 +14,21 @@ from unittest.mock import patch
 
 import numpy as np
 
+from scripts.source_compatibility import source_hash
 from scripts import sampling_audit as audit
 from scripts import mlspace_launch as launch
+
+from src.experiments.sampling_trace import (
+    ARMS,
+    NATIVE_ARMS,
+    Experiment,
+    experiment_configs,
+)
 
 ROOT = audit.ROOT.parent/'sps-sampling-trace'
 SOURCE = audit.output_dir()
 FILES = ('identity.json','prefixes.json','kernel.json','report.json',
          'sps-eager.json','sps_mtp-eager.json','sps-graphs.json','sps_mtp-graphs.json')
-ARMS = ('sps','sps_four_slots','sps_mtp')
-NATIVE_ARMS = ('native-fp32-one','native-fp32-four','native-bf16-one','native-bf16-four')
-
-@dataclass(frozen=True)
-class Experiment:
-    name: str = 'divergence-distributions'
-    num_gpus: int = 1
-    hours: int = 2
-
-experiment_configs = [Experiment()]
 
 
 def output_dir():
@@ -40,7 +37,7 @@ def output_dir():
 
 def identity():
     return dict(audit=audit.recorded_input_identity(SOURCE),
-                code_sha256=audit.common.file_hash(Path(__file__)),
+                code_sha256=source_hash(__file__),
                 evidence={name:audit.common.file_hash(SOURCE/name) for name in FILES})
 
 

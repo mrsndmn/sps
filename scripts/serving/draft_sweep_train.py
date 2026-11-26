@@ -6,11 +6,12 @@ from functools import partial
 from unittest.mock import patch
 
 from scripts import vllm_sps_config as c
-
-ROOT = c.ROOT.parent / "vllm-sps-draft-sweep"
-LEGACY_HORIZONS = 9
-HORIZONS = LEGACY_HORIZONS
-EXPERIMENT = c.experiment_configs[0]
+from src.experiments.draft_sweep_train import (
+    ROOT,
+    LEGACY_HORIZONS,
+    HORIZONS,
+    EXPERIMENT,
+)
 
 
 def configure():

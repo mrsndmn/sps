@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import mtp_common as common
 from modeling.models.sps.core import SPSConfig, SPSModelBase
 from modeling.models.sps.mtp import SPSMTP
@@ -35,10 +35,10 @@ def parent(tmp_path, monkeypatch):
     (directory/'trained.json').write_text(json.dumps(marker))
     monkeypatch.setattr(common, 'MTP_SOURCE', source)
     monkeypatch.setattr(common, 'MTP_DATA', data)
-    monkeypatch.setattr(e, 'MTP_PARENT_ROOT', root, raising=False)
-    monkeypatch.setattr(e, 'MTP_PARENT_INPUT_TOKENS', 128, raising=False)
-    monkeypatch.setattr(e, 'MTP_PARENT_CONTEXT', 4, raising=False)
-    monkeypatch.setattr(e, 'MTP_PARENT_STEP_TOKENS', 16, raising=False)
+    monkeypatch.setattr(e.mtp, 'MTP_PARENT_ROOT', root, raising=False)
+    monkeypatch.setattr(e.mtp, 'MTP_PARENT_INPUT_TOKENS', 128, raising=False)
+    monkeypatch.setattr(e.mtp, 'MTP_PARENT_CONTEXT', 4, raising=False)
+    monkeypatch.setattr(e.mtp, 'MTP_PARENT_STEP_TOKENS', 16, raising=False)
     return SimpleNamespace(path=path, state=state, marker=marker, directory=directory)
 
 
@@ -107,7 +107,7 @@ def test_parent_rejects_wrong_embedding_width(parent):
 
 
 def test_new_suite_default_loads_parent_and_explicit_checkpoint_restores_full(parent, monkeypatch):
-    monkeypatch.setattr(e, 'MTP_UNFREEZE', True, raising=False)
+    monkeypatch.setattr(e.mtp, 'MTP_UNFREEZE', True, raising=False)
     monkeypatch.setattr(common, 'load_reference', lambda device: tiny().reference.to(device))
     draft = common.load_mtp(3, 'cpu', backend='sdpa', train_backbone=True)
     torch.testing.assert_close(draft.new_embeddings, parent.state['new_embeddings'])
@@ -125,7 +125,7 @@ def test_new_suite_default_loads_parent_and_explicit_checkpoint_restores_full(pa
 
 
 def test_existing_suite_keeps_fresh_embeddings_and_frozen_backbone(parent, monkeypatch):
-    monkeypatch.setattr(e, 'MTP_UNFREEZE', False, raising=False)
+    monkeypatch.setattr(e.mtp, 'MTP_UNFREEZE', False, raising=False)
     monkeypatch.setattr(common, 'load_reference', lambda device: tiny().reference.to(device))
     monkeypatch.setattr(common, 'warmstart_metadata', lambda *a: pytest.fail('Old suite must not warmstart'))
     draft = common.load_mtp(3, 'cpu', backend='sdpa')

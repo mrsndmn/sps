@@ -1,10 +1,10 @@
-"""Lightweight proposal models; data and experiment settings live in experiments.py."""
+"""Lightweight proposal models; data and experiment settings live in src/experiments."""
 from collections import Counter
-from types import SimpleNamespace
+from dataclasses import dataclass
 import torch
 from torch import nn
 from torch.nn import functional as F
-from modeling.models.model import RMSNorm, MLP, precompute_freqs_cis, apply_rotary_emb
+from modeling.models.model import ModelConfig, RMSNorm, MLP, precompute_freqs_cis, apply_rotary_emb
 from modeling.models.sps.mtp import MTPCache
 
 
@@ -20,9 +20,14 @@ class MedusaHeads(nn.Module):
         return lm_head(hidden)
 
 
+@dataclass
+class TinyARConfig(ModelConfig):
+    predict_token_id: int = 50302
+
+
 class TinyAR(nn.Module):
     """Causal RoPE Transformer with document-safe SDPA and reusable real-token KV."""
-    def __init__(self,config):
+    def __init__(self, config: TinyARConfig):
         super().__init__();self.config=config;self.horizons=1
         self.wte=nn.Embedding(config.vocab_size,config.hidden_size)
         self.layers=nn.ModuleList([nn.ModuleDict(dict(norm=RMSNorm(config),

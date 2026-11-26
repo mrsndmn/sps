@@ -6,16 +6,17 @@ from pathlib import Path
 import shlex
 import time
 
+from scripts.source_compatibility import source_hash
 from scripts import ifeval_config as ic
 from scripts import instruct_config as source
 from scripts import mlspace_launch as launch
 from scripts import real_readout_run as train
 from scripts.serving import vllm_sps_common as common
 from scripts import vllm_sps_config as c
-
-ROOT = train.ROOT / "endpoint-eval"
-experiment_configs = [c.Experiment(f"{arm}-{mode}", arm, mode)
-                      for arm in ("A", "B") for mode in ic.MODES]
+from src.experiments.real_readout_eval import (
+    ROOT,
+    experiment_configs,
+)
 
 
 def endpoint(exp):
@@ -31,14 +32,14 @@ def model_sources(exp):
     repo = Path(__file__).resolve().parents[2]
     paths = [
         Path(c.__file__),
-        repo / "scripts/instruct_config.py",
+        Path(source.__file__),
         repo / "scripts/instruct_common.py",
         repo / "scripts/serving/vllm_sps_model.py",
         repo / "src/modeling/models/sps/pretrained.py",
     ]
     if exp.arm == "A":
         paths.append(Path(__file__).with_name("real_readout_model.py"))
-    return {path.name: common.file_hash(path) for path in paths}
+    return {path.name: source_hash(path) for path in paths}
 
 
 def identity(exp, marker=None):
@@ -46,8 +47,8 @@ def identity(exp, marker=None):
         marker = endpoint(exp)
     sources = ("real_readout_eval", "instruct_evaluate", "instruct_generation", "mmlu_generation",
                "provenance_evaluate", "ifeval_config")
-    files = {s: common.file_hash(Path(__file__).with_name(s + ".py")) for s in sources}
-    files["vllm_sps_common"] = common.file_hash(common.__file__)
+    files = {s: source_hash(Path(__file__).with_name(s + ".py")) for s in sources}
+    files["vllm_sps_common"] = source_hash(common.__file__)
     return dict(checkpoint=marker["checkpoint_sha256"], model_sources=model_sources(exp),
                 arm=exp.arm, mode=exp.mode, generation=source.GENERATION[exp.mode],
                 files=files)

@@ -14,6 +14,7 @@ from functools import partial
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.source_compatibility import source_hash
 from scripts import mlspace_launch as launch
 from scripts import serving_runtime as runtime
 from scripts import vllm_sps_audit as native_audit
@@ -21,18 +22,19 @@ from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts.serving import vllm_sps_evaluate as evaluator
 from scripts.vllm_sps_run import reserve
-
-AUDIT_NAME = "vllm-greedy-audit"
-AUDIT_HOURS = 2
-MAX_ACTIVE_JOBS = 2
-experiment_configs = [c.Experiment(AUDIT_NAME, "audit")] + c.collect_experiments("eval")
+from src.experiments.serving_benchmark import (
+    AUDIT_NAME,
+    AUDIT_HOURS,
+    MAX_ACTIVE_JOBS,
+    experiment_configs,
+)
 
 
 def protocol_signature():
     inputs = (
         evaluator.protocol_signature(),
-        common.file_hash(Path(__file__)),
-        common.file_hash(Path(runtime.__file__)),
+        source_hash(__file__),
+        source_hash(runtime.__file__),
     )
     return hashlib.sha256(json.dumps(inputs).encode()).hexdigest()
 

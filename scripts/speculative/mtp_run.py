@@ -7,7 +7,8 @@ import statistics
 import shutil
 import time
 
-import experiments as e
+from src.experiments import mtp
+from scripts import experiment_suite as e
 from scripts.pilot_run import run_logged, write_json
 
 
@@ -19,21 +20,21 @@ def file_digest(path):
 
 
 def check_data():
-    if e.MTP_UNFREEZE and shutil.disk_usage(e.MTP_DATA).free<e.MTP_CHECKPOINT_FREE_BYTES:
+    if mtp.MTP_UNFREEZE and shutil.disk_usage(mtp.MTP_DATA).free<mtp.MTP_CHECKPOINT_FREE_BYTES:
         raise RuntimeError('Insufficient free space for full draft checkpoints')
-    manifest=json.loads((e.MTP_DATA/'manifest.json').read_text())
+    manifest=json.loads((mtp.MTP_DATA/'manifest.json').read_text())
     if (manifest['revision']!=e.DATASET_REVISION or manifest['tokenizer']!='gpt2'
             or manifest['repo']!=e.DATASET_REPO or manifest['dtype']!='uint16'):
         raise RuntimeError('Unexpected source data manifest')
     for split in ('train','val'):
-        if (e.MTP_DATA/f'{split}.bin').stat().st_size!=2*manifest['tokens'][split]:
+        if (mtp.MTP_DATA/f'{split}.bin').stat().st_size!=2*manifest['tokens'][split]:
             raise RuntimeError('Incomplete prepared corpus')
     from scripts.mtp_common import sequence_starts
-    required=e.MTP_TRAIN_STEPS*e.MTP_GLOBAL_BATCH//4
-    parent_samples=e.MTP_PARENT_INPUT_TOKENS//(e.MTP_PARENT_CONTEXT*4) if e.MTP_UNFREEZE else 0
-    capacity=[len(sequence_starts(manifest['tokens']['train'],e.MTP_CONTEXT,4,rank,resume=parent_samples)) for rank in range(4)]
+    required=mtp.MTP_TRAIN_STEPS*mtp.MTP_GLOBAL_BATCH//4
+    parent_samples=mtp.MTP_PARENT_INPUT_TOKENS//(mtp.MTP_PARENT_CONTEXT*4) if mtp.MTP_UNFREEZE else 0
+    capacity=[len(sequence_starts(manifest['tokens']['train'],mtp.MTP_CONTEXT,4,rank,resume=parent_samples)) for rank in range(4)]
     if min(capacity)<required:raise RuntimeError('Insufficient unique rank coverage')
-    return dict(manifest_sha256=file_digest(e.MTP_DATA/'manifest.json'),tokens=manifest['tokens'],
+    return dict(manifest_sha256=file_digest(mtp.MTP_DATA/'manifest.json'),tokens=manifest['tokens'],
                 required_sequences_per_rank=required,available_sequences_per_rank=capacity,
                 parent_samples_per_rank=parent_samples)
 
@@ -45,9 +46,9 @@ def estimate(exp):
     if len(seconds)!=8 or min(seconds)<=0:raise RuntimeError('Need eight stable probe steps')
     median=statistics.median(seconds)
     # Reserve warmup/compilation, checkpoint and validation overhead explicitly.
-    low=(median*e.MTP_TRAIN_STEPS*1.1+1800)/3600
-    high=(max(seconds)*e.MTP_TRAIN_STEPS*1.5+3600)/3600
-    return dict(seconds_per_step=median,tokens_per_second=e.MTP_STEP_TOKENS/median,
+    low=(median*mtp.MTP_TRAIN_STEPS*1.1+1800)/3600
+    high=(max(seconds)*mtp.MTP_TRAIN_STEPS*1.5+3600)/3600
+    return dict(seconds_per_step=median,tokens_per_second=mtp.MTP_STEP_TOKENS/median,
                 projected_training_hours=high,estimated_hours_range=[low,high],
                 token_budget=e.TRAIN_TOKENS,probe_steps=len(rows),max_hours=e.MAX_HOURS)
 
@@ -66,18 +67,18 @@ def prepare():
     # Verify the actual pretrained source before spending the adaptation budget.
     from scripts.mtp_common import load_mtp, TokenSequences, validation_starts
     from scripts.mtp_evaluate import check_cached_logits, benchmark_reference, benchmark_speculative
-    model=load_mtp(e.MTP_MAX_HORIZONS, 'cuda', backend=e.MTP_INFERENCE_BACKEND).eval()
+    model=load_mtp(mtp.MTP_MAX_HORIZONS, 'cuda', backend=mtp.MTP_INFERENCE_BACKEND).eval()
     verifier_args={}
-    if e.MTP_UNFREEZE:
+    if mtp.MTP_UNFREEZE:
         from scripts.mtp_common import load_reference
         verifier_args['reference']=load_reference('cuda').requires_grad_(False).eval()
-    validation=TokenSequences('val',e.MTP_PROMPT_TOKENS)
+    validation=TokenSequences('val',mtp.MTP_PROMPT_TOKENS)
     checks=[]
-    for start in validation_starts(len(validation.tokens),e.MTP_PROMPT_TOKENS,e.MTP_PRECHECK_PROMPTS):
-        prompt=validation[start][:e.MTP_PROMPT_TOKENS].cuda()
+    for start in validation_starts(len(validation.tokens),mtp.MTP_PROMPT_TOKENS,mtp.MTP_PRECHECK_PROMPTS):
+        prompt=validation[start][:mtp.MTP_PROMPT_TOKENS].cuda()
         cached=check_cached_logits(model,prompt,**verifier_args)
-        baseline=benchmark_reference(verifier_args.get('reference',model.reference),prompt,mode='greedy',max_new_tokens=e.MTP_PRECHECK_NEW_TOKENS)
-        speculative=benchmark_speculative(model,prompt,mode='greedy',max_new_tokens=e.MTP_PRECHECK_NEW_TOKENS,**verifier_args)
+        baseline=benchmark_reference(verifier_args.get('reference',model.reference),prompt,mode='greedy',max_new_tokens=mtp.MTP_PRECHECK_NEW_TOKENS)
+        speculative=benchmark_speculative(model,prompt,mode='greedy',max_new_tokens=mtp.MTP_PRECHECK_NEW_TOKENS,**verifier_args)
         if baseline['token_ids']!=speculative['token_ids']:
             raise RuntimeError('Production-checkpoint speculative greedy mismatch')
         checks.append(dict(cached=cached,greedy_exact=True))
@@ -92,11 +93,11 @@ def prepare():
         estimates[exp.name]=estimate(exp)
         print(json.dumps(dict(name=exp.name,estimate=estimates[exp.name])),flush=True)
     warmstarts={}
-    if e.MTP_UNFREEZE:
+    if mtp.MTP_UNFREEZE:
         from scripts.mtp_common import warmstart_metadata
         warmstarts={exp.name:warmstart_metadata(exp.horizons) for exp in e.collect_experiments()}
     result=dict(design_signature=e.design_signature(),data=data,warmstarts=warmstarts,
-                source_sha256=file_digest(e.MTP_SOURCE),estimates=estimates)
+                source_sha256=file_digest(mtp.MTP_SOURCE),estimates=estimates)
     write_json(e.ARTIFACTS_ROOT/'probe-results.json',result)
     if max(x['projected_training_hours'] for x in estimates.values())>e.MAX_HOURS:
         raise RuntimeError('Measured MTP estimate exceeds approved cap; inspect probe-results.json')
@@ -107,12 +108,12 @@ def train(exp):
     prepared=json.loads((e.ARTIFACTS_ROOT/'prepared.json').read_text())
     signature=e.design_signature()
     if prepared['design_signature']!=signature:raise RuntimeError('Stale MTP preparation')
-    if prepared['source_sha256']!=file_digest(e.MTP_SOURCE):raise RuntimeError('Source checkpoint changed')
-    if prepared['data']['manifest_sha256']!=file_digest(e.MTP_DATA/'manifest.json'):
+    if prepared['source_sha256']!=file_digest(mtp.MTP_SOURCE):raise RuntimeError('Source checkpoint changed')
+    if prepared['data']['manifest_sha256']!=file_digest(mtp.MTP_DATA/'manifest.json'):
         raise RuntimeError('Source data changed')
     check_data()
     parent=None
-    if e.MTP_UNFREEZE:
+    if mtp.MTP_UNFREEZE:
         from scripts.mtp_common import warmstart_metadata
         parent=warmstart_metadata(exp.horizons)
         if prepared['warmstarts'].get(exp.name)!=parent:raise RuntimeError('Warmstart checkpoint changed')

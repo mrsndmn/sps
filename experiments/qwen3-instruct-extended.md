@@ -2,7 +2,7 @@
 Additional updates on the fixed instruction corpus can improve instruction following beyond the original final checkpoint.
 
 # Setup
-`scripts.extend_train.main`, launched by `scripts.extend_run.main`. The source checkpoints and optimizer states are continued; executable definitions and checkpoint selection live in `scripts/instruction/extend_config.py`. IFEval uses the existing protocol in both generation modes.
+`scripts.extend_train.main`, launched by `scripts.extend_run.main`. The source checkpoints and optimizer states are continued; executable definitions and checkpoint selection live in `src/experiments/extend_config.py`. IFEval uses the existing protocol in both generation modes.
 
 # Results
 Pending.

@@ -14,7 +14,7 @@ def test_separate_ifeval_dry_plan_keeps_original_signature(tmp_path):
     assert result.stdout.count('"instance_type": "a100.1gpu"') == 10
     assert result.stdout.count('scripts.ifeval_run --worker --filter') == 10
     assert 'scripts.instruct_run' not in result.stdout
-    code = 'import experiments as e; from scripts.ifeval_config import SOURCE_SIGNATURE; assert e.design_signature()==SOURCE_SIGNATURE'
+    code = 'from scripts import experiment_suite as e; from scripts.ifeval_config import SOURCE_SIGNATURE; assert e.design_signature()==SOURCE_SIGNATURE'
     subprocess.run([sys.executable, '-c', code], env=env, check=True)
 
 

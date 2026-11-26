@@ -8,7 +8,50 @@ different key and pass through.
 import hashlib
 import json
 
+from scripts.source_compatibility import source_hash
+
 _COMPATIBLE_DESIGNS = {
+    # Relocation of typed experiment definitions from the repository root.
+    # 10b
+    "ddd9a70e6f8c48584239f47b3f6a73e6a27abba234dff8ceb9f05a524d7c6968": "6b63ec67fa74e417455a4e44955105dce9247d8dc4649d402f5a815f0d5447b8",
+    # 1b
+    "d1c573847addb729c760f20212b0f4adcbdba31f0a9527cd84087472923e15aa": "344d91c4e7664df9c58cdc44d04fa191886c20f95f3bd271877b1b1e6d899c1f",
+    # ar-sps
+    "bc6c18b9fd21689dc1cbe25846ffa6d220f491e600be6177eca921fe9d04c6d8": "58079b749a5ebe8c5d59e041438ef590919a73ecbf5a0a1ba3fa9ea510d51df7",
+    # ar-sps-1.7b-ce
+    "df0842706162f23b68cac6790b42409d97c1ff10080db6da5d6b70d67c9a9fb2": "59b62831e85f49d241e53f541c4d3166b2e5c789d0d9a3de8a0613abb8399fa8",
+    # ar-sps-1.7b-kd
+    "f2993a25497bfc7be42654cc9d81ccf11ef6553321d84c79e1511a6bd42cc1d5": "93fb2508e012dc9cdcb2f2107802dc5fea2eade1d136f3c6d3a0f04087dd9001",
+    # ar-sps-360m-ce
+    "0dc258978d9144c3f19d09a7a70f07a78ec0c42e11a6c9a2f265afd0045e428b": "3e4604921c3e8c3b2dadc3def1bae1d772d1d4420988d8dbf9a6ec603ae90b99",
+    # ar-sps-360m-kd
+    "413b177cbcef97d545aabff283524ab7fec4e2ee0471640b23afc5727620b57f": "5f703ff776f4354784bf81546e0be0d0955df7f449d8b2183660ac523dfd01f5",
+    # ar-sps-kd
+    "96d6622fc7286c2134c4d6ece6e21bb72c76b98d6d4f83cff1c7f128d2c9e101": "0c7f96387ea7bc814c1fb13aeca79ecd6f99d76fbaadf373f658b1678f88f149",
+    # ar-sps-qwen3-0.6b
+    "111d199f679fbedbca7180b143fd8be07082a1314fe6bf0dfa488b13dc04464b": "065388611d07ccba134b38ae99df13ceee1ad3d46a25159289364e1878f6cc67",
+    # ar-sps-qwen3-1.7b
+    "8356a5beb63b3e10aac1d64bc71616b21b1ec018c5d292d9d2b18d2e2032b495": "b31e4559f6fc2603287161ea696b299304643e662f8f66c4db0150d451476b41",
+    # ar-sps-qwen3-1.7b-instruct
+    "94b3974483432170a957606770658adea90459b97361c9b2205a08ed13f8016d": "8386a4caf4ed6ac6c20a8eff5c71e01b5f72b5abeb5c5ac6d67158125e3a30b1",
+    # mmlu-full-resume
+    "a850a0f39eb7e48873a625c16c4290319eed6de6f1bd8271d52a141810567424": "60d5cf5718586eab81588845111dc96e6ccefbf36c33fc847f542c4ac1af8e9e",
+    # mmlu-generation
+    "e1770133b67a5a7d8cf280b739684c4724f1ba094c5fe675dcecb945714104d6": "f37b2a2a4722048d235d5136b77361e236ec635b6d91451abd29896a0eb06776",
+    # mmlu-stem-generation
+    "7f8c2a2582e35ec2733c7a314faabc40b0daeecc78c76daf80eefefa48003133": "5589783df10841467856827e573ff377de20397a16ca6560c7661bd37d7c312e",
+    # mtp
+    "9bb23165d699f7574a94efbcbe02f335c9b0843fea3a7f5d65fad5c76c6d16ea": "dc157d2767c66adeed12e31d5b2c25d8114e75d042ee73a21548b2cada5fbc25",
+    # mtp-parallel
+    "b6437a134e4cea648f2919631e8908d8901a83d627ead061289150f22dec44bb": "f0bd5cede0e81ca693ed39618879bde412bf0670c1bd59b249dc5cd8c82f337a",
+    # mtp-unfreeze
+    "279a6ddd2729cabe1a2b438fc1d665420e384003e19088227dc6f0011fc310cb": "f0bd5cede0e81ca693ed39618879bde412bf0670c1bd59b249dc5cd8c82f337a",
+    # mtp-unified
+    "3932cad9011896ea910b219890c9eebf69b01557de1a9d1785260b5390deb853": "a0c24f175df79cd6ab5ecf3a08159018ca7171c41ff9154cee2651ddebe93087",
+    # spec-baselines
+    "fee36f2220077d489dd80a26cae945f1cdd45651817a9e997a57ffc2b9fa55e4": "c4e978edfe22a6ba2057eac7aea15eb1a92ba5ed2ab6662f90cb376dcc234823",
+    # DFlash soft distillation training definitions.
+    "c5326db67f96cdcb7adb99a9705af1e9116cae3b138e949166b208554a8e5fd6": "45d1905c50658e4552dcb7fc3ba019d2056cb23d3bd7f10b6c026634d064eda5",
     # Instruct rerun launchers and evaluators consolidated without changing their protocols.
     "6a7b36957942598e7fb234779ddf5662415461ec72910ecae9dd97124240ac54":
         "7408b3ccf0455895e306d0d5272e2fad41d3e70ae8c6fbb5612210d6d18347ae",
@@ -118,7 +161,10 @@ def canonical_signature(digest):
 
 def rerun_signature(family, source_signature, folder):
     paths = [*folder.glob(f"{family}_*.py"), folder / "rerun_jobs.py", folder / "rerun_eval.py"]
-    files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+    config_name = f"{family}_config.py"
+    if not any(path.name == config_name for path in paths):
+        paths.append(folder.parents[1] / "src/experiments" / config_name)
+    files = {path.name: source_hash(path) for path in paths}
     design = {"source": source_signature, "files": files}
     digest = hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
     return canonical_signature(digest)

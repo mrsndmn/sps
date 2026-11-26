@@ -1,6 +1,5 @@
 """Fixed final-checkpoint IFEval and crossed held-out NLL for provenance controls."""
 import argparse
-from dataclasses import dataclass
 from functools import lru_cache
 import importlib.metadata
 import json
@@ -10,6 +9,7 @@ import shlex
 import time
 from unittest.mock import patch
 
+from scripts.source_compatibility import source_hash
 from scripts import provenance_train as train
 from scripts import instruct_evaluate as evaluator
 from scripts import instruct_generation as generation
@@ -17,19 +17,13 @@ from scripts import mmlu_generation as decoding
 from scripts import ifeval_config as ic
 from scripts import mlspace_launch as launch
 
+from src.experiments.provenance_evaluate import (
+    Experiment,
+    experiment_configs,
+)
+
 ROOT = train.ROOT.parent / 'instruct-provenance-evaluation'
 c = train.c
-
-@dataclass(frozen=True)
-class Experiment:
-    name: str
-    arm: str
-    mode: str
-    num_gpus: int = 1
-    hours: int = ic.EVAL_HOURS
-
-experiment_configs = [Experiment(f'{e.name}--{mode}', e.name, mode)
-                      for e in train.experiment_configs for mode in ic.MODES]
 
 
 def output_dir(exp):
@@ -79,7 +73,7 @@ def identity(exp):
              Path(train.common.__file__), Path(train.__file__), Path(c.__file__)]
     return dict(experiment=exp.__dict__, checkpoint=checkpoint(exp.arm), protocol=protocol(),
                 preparation_sha256=train.prep.common.file_hash(train.prep.ROOT / 'prepared.json'),
-                code={p.name: train.prep.common.file_hash(p) for p in files})
+                code={p.name: source_hash(p) for p in files})
 
 
 def input_path(commit, exp):

@@ -58,7 +58,7 @@ def test_unified_suite_is_evaluation_only_and_uses_continuation_markers(tmp_path
     for n in (2,3,4):
         marker=tmp_path/f'mtp-unfreeze/runs/out/s_sps_mtp_n{n}_unfreeze_ce_50m/trained.json'
         marker.parent.mkdir(parents=True);marker.write_text('{}')
-    isolated=f"import experiments as e;from pathlib import Path;import runpy,sys;e.COMMON_ROOT=Path({str(tmp_path)!r});e.ARTIFACTS_ROOT=e.COMMON_ROOT/'mtp-unified';e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs';sys.argv=['run_eval.py','--dry'];runpy.run_path('run_eval.py',run_name='__main__')"
+    isolated=f"from scripts import experiment_suite as e;from pathlib import Path;import runpy,sys;e.COMMON_ROOT=Path({str(tmp_path)!r});e.ARTIFACTS_ROOT=e.COMMON_ROOT/'mtp-unified';e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs';sys.argv=['run_eval.py','--dry'];runpy.run_path('run_eval.py',run_name='__main__')"
     r=subprocess.run(['python','-c',isolated],env={**os.environ,'SPS_EXPERIMENT_SUITE':'mtp-unified'},capture_output=True,text=True)
     assert r.returncode==0,r.stderr
     assert r.stdout.count('scripts.mtp_unified_evaluate')==3

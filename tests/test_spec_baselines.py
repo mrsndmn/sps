@@ -23,8 +23,8 @@ def test_medusa_heads_gradient_without_changing_features_or_head():
 
 
 def tiny_config():
-    from types import SimpleNamespace
-    return SimpleNamespace(vocab_size=19,hidden_size=16,n_head=2,n_layer=2,
+    from modeling.spec_baselines import TinyARConfig
+    return TinyARConfig(vocab_size=19,hidden_size=16,n_head=2,n_layer=2,
         intermediate_size=24,norm_eps=1e-6,bias=False,dropout=0.,block_size=32,
         eos_token_id=16,pad_token_id=17,predict_token_id=18)
 
@@ -48,10 +48,10 @@ def test_ar_causality_cache_and_rejection():
 
 
 def test_medusa_training_freezes_source_and_masks_future_gaps(monkeypatch):
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts.spec_baseline_common import MedusaTraining,loss_for
     from test_mtp_evaluate import model as source
-    monkeypatch.setattr(e,'BASELINE_CONTEXT',4)
+    monkeypatch.setattr(e.spec_baselines,'BASELINE_CONTEXT',4)
     m=MedusaTraining(source().reference).train()
     ids=torch.tensor([[1,2,3,4,5,6,7,8,9]])
     logits=m(ids[:,:4]);loss=loss_for(logits,ids,'medusa',m.config);loss.backward()
@@ -134,13 +134,13 @@ def test_conditional_sampling_has_target_markov_law():
 def test_baseline_registry_dry_and_training_budget(tmp_path):
     import subprocess,sys,os,json
     env=dict(os.environ,SPS_EXPERIMENT_SUITE='spec-baselines')
-    code="import experiments as e,json;print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),training=[x.recipe for x in e.experiment_configs if x.trainable],budget=e.TRAIN_TOKENS,commands=[e.train_command(x) for x in e.experiment_configs if x.trainable])))"
+    code="from scripts import experiment_suite as e;import json;print(json.dumps(dict(root=str(e.ARTIFACTS_ROOT),training=[x.recipe for x in e.experiment_configs if x.trainable],budget=e.TRAIN_TOKENS,commands=[e.train_command(x) for x in e.experiment_configs if x.trainable])))"
     a=json.loads(subprocess.check_output([sys.executable,'-c',code],env=env,text=True))
     assert a['root'].endswith('/spec-baselines') and a['training']==['medusa','ar_tiny']
     assert a['budget']==1050017792
     assert all('scripts.spec_baseline_train' in row for row in a['commands'])
     for command in (['run_train_jobs.py','--phase','prepare','--dry'],['run_train_jobs.py','--dry'],['run_eval.py','--dry']):
-        isolated=f"import experiments as e;from pathlib import Path;import runpy,sys;e.ARTIFACTS_ROOT=Path({str(tmp_path)!r});e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs';sys.argv={command!r};runpy.run_path(sys.argv[0],run_name='__main__')"
+        isolated=f"from scripts import experiment_suite as e;from pathlib import Path;import runpy,sys;e.ARTIFACTS_ROOT=Path({str(tmp_path)!r});e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs';sys.argv={command!r};runpy.run_path(sys.argv[0],run_name='__main__')"
         r=subprocess.run([sys.executable,'-c',isolated],env=env,capture_output=True,text=True)
         assert r.returncode==0,r.stderr
         assert 'scripts.spec_baseline_run' in r.stdout
@@ -148,18 +148,18 @@ def test_baseline_registry_dry_and_training_budget(tmp_path):
 
 @pytest.mark.skipif(not torch.cuda.is_available(),reason='CUDA mixed precision gradients')
 def test_cuda_head_and_ar_training_step(monkeypatch):
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts.spec_baseline_common import MedusaTraining,loss_for
     from modeling.models.sps import SPSModel,SPSConfig
-    from types import SimpleNamespace
-    monkeypatch.setattr(e,'BASELINE_CONTEXT',8)
+    from dataclasses import replace
+    monkeypatch.setattr(e.spec_baselines,'BASELINE_CONTEXT',8)
     torch.manual_seed(4)
     ref=SPSModel(SPSConfig(vocab_size=39,block_size=32,n_layer=2,n_head=2,
         hidden_size=128,intermediate_size=192,eos_token_id=36,pad_token_id=37,
         predict_token_id=38,window_size=0,dropout=0.)).cuda()
     original=ref.lm_head.weight.detach().clone()
     medusa=MedusaTraining(ref).cuda().train()
-    cfg=SimpleNamespace(**vars(tiny_config()));cfg.n_head=2;cfg.hidden_size=32
+    cfg = replace(tiny_config(), n_head=2, hidden_size=32)
     tiny=TinyAR(cfg).cuda().train()
     ids=torch.tensor([[1,2,3,4,5,6,7,8,9,10,11,12,13]],device='cuda')
     for model,recipe in [(medusa,'medusa'),(tiny,'ar_tiny')]:
@@ -176,7 +176,8 @@ def test_cuda_head_and_ar_training_step(monkeypatch):
 
 
 def test_probe_forecast_uses_only_steady_steps(tmp_path,monkeypatch):
-    import experiments as e,json
+    from scripts import experiment_suite as e
+    import json
     from scripts.spec_baseline_run import estimate
     monkeypatch.setattr(e,'SANITY_ROOT',tmp_path)
     exp=e.ExperimentConfig('baseline','medusa')
@@ -184,7 +185,7 @@ def test_probe_forecast_uses_only_steady_steps(tmp_path,monkeypatch):
     (dest/'metrics.jsonl').write_text('\n'.join(json.dumps(dict(event='train',step_seconds=t)) for t in [9999]*8+[2.]*8))
     result=estimate(exp)
     assert result['seconds_per_step']==2.
-    assert result['tokens']==e.BASELINE_STEPS*e.BASELINE_STEP_TOKENS
+    assert result['tokens']==e.spec_baselines.BASELINE_STEPS*e.spec_baselines.BASELINE_STEP_TOKENS
     assert result['estimated_hours_range'][0]<result['estimated_hours_range'][1]<24
 
 
@@ -205,22 +206,23 @@ def test_conditional_acceptance_summary_uses_reached_counts():
 
 @pytest.mark.parametrize('change',[{'tokens':0},{'step':-1},{'source_sha256':'other'},{'design_signature':'other'}])
 def test_resume_refuses_inconsistent_identity(change):
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts.spec_baseline_common import validate_resume
     identity={'source_sha256':'source','data_manifest_sha256':'data'}
-    state=dict(step=5,tokens=5*e.BASELINE_STEP_TOKENS,design_signature='sig',**identity)
+    state=dict(step=5,tokens=5*e.spec_baselines.BASELINE_STEP_TOKENS,design_signature='sig',**identity)
     assert validate_resume(state,'sig',identity)==5
     state.update(change)
     with pytest.raises(RuntimeError,match='resume identity'):validate_resume(state,'sig',identity)
 
 
 def test_completed_baseline_refuses_changed_checkpoint_provenance(tmp_path,monkeypatch):
-    import json,experiments as e
+    import json
+    from scripts import experiment_suite as e
     from scripts import spec_baseline_common as common
     exp=e.ExperimentConfig('head','medusa',horizons=4)
     path=tmp_path/'final.pt';marker=tmp_path/'trained.json'
     identity=dict(source_sha256='source',data_manifest_sha256='data')
-    state=dict(recipe='medusa',step=e.BASELINE_STEPS,tokens=e.BASELINE_STEPS*e.BASELINE_STEP_TOKENS,
+    state=dict(recipe='medusa',step=e.spec_baselines.BASELINE_STEPS,tokens=e.spec_baselines.BASELINE_STEPS*e.spec_baselines.BASELINE_STEP_TOKENS,
         design_signature='sig',model={},**identity)
     torch.save(state,path)
     marker.write_text(json.dumps(dict(checkpoint=str(path),design_signature='sig',**identity)))
@@ -245,22 +247,22 @@ def test_ar_cuda_inference_without_autocast():
 
 
 def test_completed_resume_recovers_final_checkpoint_idempotently(tmp_path):
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts.spec_baseline_common import finalize_checkpoint,validate_resume
     exp=e.ExperimentConfig('heads','medusa')
     identity=dict(source_sha256='source',data_manifest_sha256='data')
-    state=dict(recipe=exp.recipe,step=e.BASELINE_STEPS,
-        tokens=e.BASELINE_STEPS*e.BASELINE_STEP_TOKENS,design_signature='sig',
+    state=dict(recipe=exp.recipe,step=e.spec_baselines.BASELINE_STEPS,
+        tokens=e.spec_baselines.BASELINE_STEPS*e.spec_baselines.BASELINE_STEP_TOKENS,design_signature='sig',
         model={'weight':torch.tensor([3.])},optimizer={},**identity)
     torch.save(state,tmp_path/'latest.pt')
-    assert list(range(validate_resume(state,'sig',identity),e.BASELINE_STEPS))==[]
+    assert list(range(validate_resume(state,'sig',identity),e.spec_baselines.BASELINE_STEPS))==[]
     for _ in range(2):
         final=finalize_checkpoint(tmp_path,exp,'sig',identity)
         restored=torch.load(final,weights_only=False)
-        assert restored['step']==e.BASELINE_STEPS
+        assert restored['step']==e.spec_baselines.BASELINE_STEPS
         torch.testing.assert_close(restored['model']['weight'],state['model']['weight'])
     final.unlink()
-    state.update(step=e.BASELINE_STEPS-1,tokens=(e.BASELINE_STEPS-1)*e.BASELINE_STEP_TOKENS)
+    state.update(step=e.spec_baselines.BASELINE_STEPS-1,tokens=(e.spec_baselines.BASELINE_STEPS-1)*e.spec_baselines.BASELINE_STEP_TOKENS)
     torch.save(state,tmp_path/'latest.pt')
     with pytest.raises(RuntimeError,match='incomplete'):finalize_checkpoint(tmp_path,exp,'sig',identity)
     assert not final.exists()

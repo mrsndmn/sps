@@ -6,7 +6,7 @@ predictions beyond embedding-only adaptation of the same trained parent.
 
 ## Setup
 Training function: `scripts.mtp_train.main`; continuation suite in the
-`experiment_configs` registry in `experiments.py`. Evaluation uses
+`experiment_configs` registry in `src/experiments/mtp.py`. Evaluation uses
 `scripts.mtp_evaluate.evaluate` with a separate original SPS verifier.
 
 ## Results

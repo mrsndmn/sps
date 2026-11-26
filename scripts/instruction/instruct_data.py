@@ -120,7 +120,7 @@ def file_hash(path):
 
 
 def _config():
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts import instruct_config as c
     return e, c
 

@@ -8,7 +8,7 @@ quality or the absence of sampled-token conditioning within its draft block.
 ## Setup
 Training function: `scripts.spec_baseline_train.main`; evaluation function:
 `scripts.spec_baseline_evaluate.evaluate`. The `experiment_configs` registry in
-`experiments.py` defines training budgets, models, evaluation horizons and workers.
+`src/experiments/spec_baselines.py` defines training budgets, models, evaluation horizons and workers.
 Existing SPS-MTP continuations are controls in the same evaluation suite.
 
 The heads are a Medusa-style chain adaptation, not a reproduction of Medusa tree

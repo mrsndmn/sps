@@ -14,7 +14,7 @@ from scripts.mmlu_results import recover_samples
 
 def ensure_ifeval_resources():
     """Keep NLTK resources on shared storage, including fresh job containers."""
-    import experiments as e
+    from scripts import experiment_suite as e
     import nltk
     root = e.COMMON_ROOT / 'nltk_data'
     root.mkdir(parents=True, exist_ok=True)
@@ -129,7 +129,7 @@ def likelihood(model, tokenizer, root, limit):
 
 
 def evaluate(exp, limit=None):
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts import instruct_config as c
     from scripts.instruct_common import load_model, restore, nll
     from scripts.instruct_data import rows as data_rows
@@ -182,7 +182,7 @@ def evaluate(exp, limit=None):
 
 
 def audit():
-    import experiments as e
+    from scripts import experiment_suite as e
     from scripts import instruct_config as c
     from scripts.instruct_common import load_model
     from scripts.instruct_data import rows
@@ -238,7 +238,7 @@ def main():
         return audit()
     if args.limit is not None and args.limit <= 0:
         parser.error('--limit must be positive')
-    import experiments as e
+    from scripts import experiment_suite as e
     matches = [x for x in e.experiment_configs if x.name == args.filter]
     if len(matches) != 1:
         parser.error('Select one exact experiment name')

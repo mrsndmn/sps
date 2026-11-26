@@ -21,7 +21,7 @@ def test_instruct_dry_routing(tmp_path, phase, count, gpus):
     result = run_code('''
 import sys
 from pathlib import Path
-import experiments as e
+from scripts import experiment_suite as e
 e.ARTIFACTS_ROOT = Path(sys.argv[1]); e.RUN_ROOT = e.ARTIFACTS_ROOT/'runs'
 for exp in e.collect_experiments():
     marker = e.training_marker(exp)
@@ -39,7 +39,7 @@ main()
 
 def test_instruct_registry_and_signature():
     run_code('''
-import experiments as e
+from scripts import experiment_suite as e
 from scripts import instruct_config as c
 arms = e.collect_experiments()
 assert len(arms) == 5
@@ -79,7 +79,7 @@ def test_missing_training_markers_allow_only_original(tmp_path):
     result = run_code('''
 import sys
 from pathlib import Path
-import experiments as e
+from scripts import experiment_suite as e
 e.ARTIFACTS_ROOT=Path(sys.argv[1]); e.RUN_ROOT=e.ARTIFACTS_ROOT/'runs'
 from scripts.mlspace_launch import main
 sys.argv=['launcher','--dry']

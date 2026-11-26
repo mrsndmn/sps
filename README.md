@@ -148,9 +148,10 @@ function and records results and conclusions. The implementation defines the run
 
 | Where to look | What lives there |
 | --- | --- |
+| `src/experiments/` | Typed experiment definitions and numeric settings. |
 | `conf/`, `scripts/train.py`, `scripts/evaluate.py` | Hydra recipes and entry points for direct training and evaluation. |
 | `src/`, `lm_eval_tasks/` | Model implementations, data preparation, training utilities, and evaluation tasks. |
-| `run_train_jobs.py`, `run_eval.py` | Shared MLSpace launchers. Look up the suite's worker in `scripts/suite_registry.py` and its experiment definitions in `experiments.py` or the configuration module it imports. |
+| `run_train_jobs.py`, `run_eval.py` | Shared MLSpace launchers. Look up the suite's worker in `scripts/suite_registry.py` and its experiment definitions under `src/experiments/`. |
 | `scripts/` | Also contains independently launched experiment families. For example, `scripts/readout/real_readout_run.py` defines training and `scripts/readout/real_readout_mmlu.py` evaluates its checkpoints. |
 | `tests/` | Experiment, worker and orchestration tests. Model tests also live under `src/modeling/tests/`. |
 | `docs/paper/`, `figures/` | Manuscript sources and supporting material in the former, figures for the original SPS paper in the latter. |
@@ -185,7 +186,7 @@ scripts, which check agreement with the recorded audit protocol.
 
 ### Following an experiment into storage
 
-`experiments.COMMON_ROOT` points to the shared `sps-artifacts/` directory beside
+`src/experiments/environment.py` points to the shared `sps-artifacts/` directory beside
 this checkout. Most experiment families have their own directory there. The
 original `1b` pilot uses the root itself. Shared infrastructure includes `code/`
 for staged worker snapshots and `hf/` for the Hugging Face cache.
@@ -216,7 +217,7 @@ uv run pytest -m cuda         # GPU tests (Triton kernels)
 
 ## MLSpace pilot artifacts
 
-`experiments.py` defines the pilot registry and all numerical settings.
+`src/experiments/pilot.py` defines the pilot registry and numerical settings.
 `python run_train_jobs.py --dry` and `python run_eval.py --dry` print plans without
 API calls, credentials or writes. Submission requires the read-only shared `mls`
 package in the existing environment. Run `python run_train_jobs.py --phase prepare`
@@ -225,7 +226,7 @@ missing pilot shards, tokenizes them, and measures both methods with four-GPU DD
 Inspect `prepared.json`, then `python run_train_jobs.py` submits training.
 `python run_eval.py` submits the downstream tasks after training succeeds.
 
-Pilot workers write directly to the shared NFS target in `experiments.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
+Pilot workers write directly to the shared NFS target in `src/experiments/environment.py`: `runs/data` holds shared input memmaps, `runs/out` holds method-specific
 checkpoints and evaluation outputs, `sanity` holds throughput probes, `code` holds
 immutable committed snapshots, `hf` holds downloaded HF shards, and `submissions`
 holds full job-ID receipts. The existing project venv is reused; do not mutate its

@@ -6,7 +6,7 @@ new prediction embeddings, with reference verification preserving generation qua
 
 ## Setup
 Training function: `scripts.mtp_train.main`; source registry: `experiment_configs`
-in `experiments.py`. Evaluation: `scripts.mtp_evaluate.evaluate`.
+in `src/experiments/mtp.py`. Evaluation: `scripts.mtp_evaluate.evaluate`.
 Artifacts use a separate suite directory under the existing shared artifact root;
 prepared data, source checkpoint, environment and HF cache are reused.
 

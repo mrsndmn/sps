@@ -1,12 +1,13 @@
 """Shared SPS/adaptation loading, document-safe targets and data order."""
 from pathlib import Path
 import json
-import experiments as e
+from src.experiments import mtp
+from scripts import experiment_suite as e
 import hashlib
 import numpy as np
 import torch
 
-from experiments import MTP_SOURCE, MTP_DATA, MTP_MAX_HORIZONS, MTP_SEED
+from src.experiments.mtp import MTP_SOURCE, MTP_DATA, MTP_MAX_HORIZONS, MTP_SEED
 
 
 def file_sha256(path):
@@ -18,7 +19,7 @@ def file_sha256(path):
 
 
 def warmstart_checkpoint(horizons):
-    return e.MTP_PARENT_ROOT / f's_sps_mtp_n{horizons}_emb_1b' / 'adaptation_final.pt'
+    return mtp.MTP_PARENT_ROOT / f's_sps_mtp_n{horizons}_emb_1b' / 'adaptation_final.pt'
 
 
 def warmstart_metadata(horizons, world_size=4):
@@ -35,9 +36,9 @@ def warmstart_metadata(horizons, world_size=4):
     if not signature or state.get('design_signature') != signature:
         raise RuntimeError('Parent checkpoint design signature mismatch')
     tokens, step = state.get('tokens'), state.get('step')
-    if tokens != e.MTP_PARENT_INPUT_TOKENS or not isinstance(step, int) or step <= 0:
+    if tokens != mtp.MTP_PARENT_INPUT_TOKENS or not isinstance(step, int) or step <= 0:
         raise RuntimeError('Parent checkpoint is not the completed input budget')
-    if tokens != step * e.MTP_PARENT_STEP_TOKENS:
+    if tokens != step * mtp.MTP_PARENT_STEP_TOKENS:
         raise RuntimeError('Parent checkpoint step/token mismatch')
     source = torch.load(MTP_SOURCE, map_location='cpu', weights_only=False, mmap=True)
     width = source['model_args']['hidden_size']
@@ -49,7 +50,7 @@ def warmstart_metadata(horizons, world_size=4):
         raise RuntimeError('Parent adaptation embedding shape/value mismatch')
     if state.get('train_backbone') or 'backbone' in state:
         raise RuntimeError('Warmstart must be an embedding-only parent')
-    per_rank_tokens = e.MTP_PARENT_CONTEXT * world_size
+    per_rank_tokens = mtp.MTP_PARENT_CONTEXT * world_size
     if world_size <= 0 or tokens % per_rank_tokens:
         raise RuntimeError('Parent input budget cannot map to exact per-rank samples')
     return dict(path=str(path), sha256=file_sha256(path), parent_tokens=tokens,
@@ -91,7 +92,7 @@ def load_reference(device):
 
 def load_mtp(horizons, device, checkpoint_path=None, backend='auto', train_backbone=False):
     from modeling.models.sps.mtp import SPSMTP
-    if checkpoint_path is None and getattr(e, 'MTP_UNFREEZE', False):
+    if checkpoint_path is None and mtp.MTP_UNFREEZE:
         checkpoint_path = Path(warmstart_metadata(horizons)['path'])
     reference = load_reference(device)
     model = SPSMTP(reference, horizons, backend=backend, train_backbone=train_backbone).to(device)

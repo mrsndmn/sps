@@ -6,7 +6,8 @@ from pathlib import Path
 
 import torch
 
-from experiments import HF_HOME
+from src.experiments.environment import HF_HOME
+from scripts.source_compatibility import source_hash
 from scripts import dflash_mask_ablation as reference, dflash_repro_train as training
 from scripts import mlspace_launch as launch, qwen4b_drafter_eval as paired
 from scripts import qwen4b_drafter_train as previous
@@ -14,14 +15,13 @@ from scripts import qwen4b_drafter_train as previous
 GSM8K = "openai/gsm8k"
 GSM8K_REVISION = "740312add88f781978c0658806c59bc2815b9866"
 GSM8K_FILE = "main/test-00000-of-00001.parquet"
-LIMIT = 2048
-WARMUP_TOKENS = 32
+from src.experiments.dflash_repro_eval import LIMIT, WARMUP_TOKENS
 
 
 def signature():
     digest = sha256()
     for path in (Path(__file__), Path(paired.__file__)):
-        digest.update(sha256(path.read_bytes()).digest())
+        digest.update(bytes.fromhex(source_hash(path)))
     return digest.hexdigest()
 
 

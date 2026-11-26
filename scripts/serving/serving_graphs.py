@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.source_compatibility import source_hash
 from scripts import serving_benchmark as bench
 from scripts import serving_runtime as runtime
 from scripts import vllm_sps_common as common
@@ -18,13 +19,8 @@ from scripts import vllm_sps_config as c
 
 EAGER_ROOT = c.ROOT
 ROOT = EAGER_ROOT.parent / "vllm-sps-qwen3-cudagraphs"
-IMPLEMENTATION = "31ba03a874f775372154f0edf3e17d436f2d7462"
+from src.experiments.serving_graphs import IMPLEMENTATION, COMPILATION
 SITE = ROOT / "runtime/site-packages"
-COMPILATION = {
-    "mode": 0,
-    "cudagraph_mode": "FULL_DECODE_ONLY",
-    "cudagraph_capture_sizes": [1, 2, 3, 4],
-}
 experiment_configs = bench.experiment_configs
 BASE_VERIFY = bench.verify_runtime
 BASE_PROTOCOL = bench.protocol_signature
@@ -41,7 +37,7 @@ def protocol_signature():
         json.dumps(
             [
                 BASE_PROTOCOL(),
-                common.file_hash(Path(__file__)),
+                source_hash(__file__),
                 IMPLEMENTATION,
                 COMPILATION,
             ]

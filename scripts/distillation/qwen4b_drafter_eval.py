@@ -8,14 +8,12 @@ import time
 
 import torch
 
+from scripts.source_compatibility import source_hash
 from scripts import dflash_mask_ablation as reference
 from scripts import instruct_config, mlspace_launch as launch, report_mmlu_stem, vllm_sps_config
 from scripts import qwen4b_drafter_train as training
 
-PROMPTS = 64
-REPEATS = 2
-LIMIT = 128
-WARMUP_TOKENS = 24
+from src.experiments.qwen4b_drafter_eval import PROMPTS, REPEATS, LIMIT, WARMUP_TOKENS
 
 
 def signature(dataset=training.DEFAULT_DATASET):
@@ -24,7 +22,7 @@ def signature(dataset=training.DEFAULT_DATASET):
                  Path(report_mmlu_stem.__file__), Path(vllm_sps_config.__file__),
                  Path(reference.select_examples.__code__.co_filename),
                  Path(reference.mmlu_messages.__code__.co_filename)):
-        digest.update(sha256(path.read_bytes()).digest())
+        digest.update(bytes.fromhex(source_hash(path)))
     return digest.hexdigest()
 
 

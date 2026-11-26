@@ -5,7 +5,6 @@ then compares extended greedy cached decoding with/without speculation in eager
 and graph modes. This is a diagnostic gate, not a proof of full sampling equality.
 """
 import argparse
-from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -15,6 +14,7 @@ import shlex
 import time
 from unittest.mock import patch
 
+from scripts.source_compatibility import source_hash
 from scripts import mlspace_launch as launch
 from scripts import serving_benchmark as bench
 from scripts import serving_graphs as graphs
@@ -22,31 +22,21 @@ from scripts import serving_runtime as runtime
 from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as source
 
-ROOT = source.ROOT.parent / 'sps-sampling-audit'
-SAMPLES = 32768
-SEED = 9147
-PREFIX_LENGTHS = (32, 127, 511, 1023)
-OUTPUT_LENGTHS = (1, 2, 3, 4, 5, 32, 128)
-KERNEL_CASES = (
-    ('uniform', (1,1,1,1,1,1,1,1), 1., 1., 8, (0,1,2)),
-    ('skewed', (40,20,15,10,7,4,3,1), 1., 1., 8, (0,4,7)),
-    ('thinking', (40,20,15,10,7,4,3,1), .6, .95, 8, (0,1,7)),
-    ('nonthinking', (40,20,15,10,7,4,3,1), .7, .8, 8, (0,1,7)),
-    ('topk', (40,20,15,10,7,4,3,1), .7, 1., 2, (0,1,7)),
-    ('point_mass', (1,0,0,0,0,0,0,0), 1., 1., 8, (0,0,1)),
+from src.experiments.sampling_audit import (
+    SAMPLES,
+    SEED,
+    PREFIX_LENGTHS,
+    OUTPUT_LENGTHS,
+    KERNEL_CASES,
+    Experiment,
+    experiment_configs,
 )
 
-@dataclass(frozen=True)
-class Experiment:
-    name: str = 'kernel-and-cache'
-    num_gpus: int = 1
-    hours: int = 4
-
-experiment_configs = [Experiment()]
+ROOT = source.ROOT.parent / 'sps-sampling-audit'
 
 
 def signature():
-    return hashlib.sha256(json.dumps(dict(code=common.file_hash(Path(__file__)),
+    return hashlib.sha256(json.dumps(dict(code=source_hash(__file__),
         graph_protocol=graphs.protocol_signature()), sort_keys=True).encode()).hexdigest()
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shlex
 
+from scripts.source_compatibility import source_hash
 from scripts import instruct_config as source
 from scripts import mlspace_launch as launch
 from scripts import real_readout_eval as quality
@@ -15,13 +16,15 @@ from scripts import vllm_sps_common as common
 from scripts import vllm_sps_config as c
 from scripts.mmlu_results import recover_samples
 from scripts.readout.readout_archive import compatible_identity
+from src.experiments.real_readout_gsm8k import (
+    ROOT,
+    HOURS,
+    INSTRUCTION,
+    experiment_configs,
+)
 
-ROOT = train.ROOT / "gsm8k-generation"
-HOURS = {"thinking": 48, "nonthinking": 16}
-INSTRUCTION = "Solve the problem. End your response with a separate line containing #### followed by the final numeric answer."
+
 NUMBER = re.compile(r"####[ \t]+([+-]?(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?)")
-experiment_configs = [c.Experiment(f"{arm}-{mode}", arm, mode)
-                      for arm in ("A", "B") for mode in HOURS]
 
 
 def answer(text):
@@ -39,7 +42,7 @@ def answer(text):
 def dataset():
     from huggingface_hub import hf_hub_download
     from pyarrow.parquet import read_table
-    from experiments import HF_HOME
+    from src.experiments.environment import HF_HOME
     from scripts.dflash_repro_eval import GSM8K, GSM8K_REVISION, GSM8K_FILE
     path = hf_hub_download(GSM8K, GSM8K_FILE, repo_type="dataset", revision=GSM8K_REVISION,
                            cache_dir=HF_HOME / "hub", local_files_only=True)
@@ -55,7 +58,7 @@ def identity(exp, marker, data):
                 model_sources=quality.model_sources(exp),
                 model=c.MODEL, revision=c.REVISION, generation=source.GENERATION[exp.mode],
                 seed=c.SEED, data=data, prompt=INSTRUCTION, code={
-                    name: common.file_hash(Path(__file__).with_name(name + ".py")) for name in files})
+                    name: source_hash(Path(__file__).with_name(name + ".py")) for name in files})
 
 
 def evaluate(exp):

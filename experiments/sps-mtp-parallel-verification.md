@@ -6,7 +6,7 @@ prefix KV reduces speculative decoding overhead on existing learned MTP drafts.
 
 ## Setup
 Evaluation function: `scripts.mtp_parallel_evaluate.evaluate`. The evaluation-only
-registry in `experiments.py` selects completed drafts and their learned parents.
+registry in `src/experiments/mtp.py` selects completed drafts and their learned parents.
 The original SPS generator supplies baseline timings and a numerical oracle.
 
 ## Results
