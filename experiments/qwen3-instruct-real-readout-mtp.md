@@ -36,7 +36,7 @@ respectively, A averaged 2.19 and 2.55 tokens per verification round, with
 median decode time per round of 8.33 and 7.38 ms. B averaged 2.17 and 2.58
 tokens per round, taking 8.48 and 7.42 ms.
 
-HumanEval+ generation produced one record per task in all four runs. In thinking mode, A and B reached the length cap on 45 and 49 tasks, with 37 and 42 empty extracted solutions respectively. In non-thinking mode, A reached the cap once and B never reached it. Both exported 164 nonempty solutions. Functional scoring is pending.
+HumanEval+ generation produced one record per task in all four runs. In thinking mode, A and B reached the length cap on 45 and 49 tasks, with 37 and 42 empty extracted solutions respectively. In non-thinking mode, A reached the cap once and B never reached it. Both exported 164 nonempty solutions. External EvalPlus scoring covered all 164 tasks in each run. In thinking mode, A and B passed 66 and 66 base tasks and 59 and 63 tasks with both base and extra tests. In non-thinking mode, the corresponding base counts were 75 and 69, with 67 and 65 passing both suites.
 
 All four sequential-generation IFEval runs covered the same 541 prompts. In
 thinking mode, strict prompt passes changed from 360 to 309 for A and 349 to
@@ -84,3 +84,4 @@ respectively. This comparison does not resolve a readout advantage.
 - 2026-11-25: Verified both serving runs against their submitted code and recorded paired throughput, STEM accuracy and greedy agreement.
 - 2026-11-26: Verified task coverage, sample extraction and raw/export hashes for all four HumanEval+ runs and packaged the samples for external scoring.
 - 2026-11-26: Verified all eight parent and final IFEval answer sets against the pinned prompts, reproduced per-answer scores, and compared paired changes.
+- 2026-11-26: Scored all four HumanEval files on the external VM and verified returned solutions and task IDs against the submitted files.
