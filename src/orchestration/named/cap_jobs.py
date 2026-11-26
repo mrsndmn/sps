@@ -129,7 +129,7 @@ def main():
                     raise RuntimeError(f"Completed job missing {marker}")
                 active[row["identity"]] = row["job_name"]
                 active.setdefault(identity, row["job_name"])
-        launch.reconcile_intents(active)
+        launch.reconcile_intents(active, {marker.parent})
         if identity in active:
             print(active[identity])
             return

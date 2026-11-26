@@ -203,3 +203,50 @@ def test_shared_submission_requires_current_preparation(tmp_path, monkeypatch, f
     (tmp_path / "prepared.json").write_text('{"design_signature":"obsolete"}')
     with pytest.raises(RuntimeError, match="Stale"):
         mlspace_launch.main("eval")
+
+
+def test_ambiguous_retry_cannot_adopt_an_older_failed_receipt(tmp_path, monkeypatch):
+    import json
+    from orchestration.named import publication
+
+    run = RunDirectory(tmp_path, tmp_path / "eval")
+    job = "lm-mpi-job-48fcb78d-e22e-4076-a28d-f92f4e1d6b0c"
+    monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
+    monkeypatch.setattr(mlspace_launch, "ARTIFACTS_ROOT", tmp_path)
+    api = ModuleType("mls.manager.job.utils")
+    api.get_in_progress_jobs = lambda **_: []
+    client = SimpleNamespace(run_job=lambda body: {"job_name": job},
+                             get_job_status=lambda _: {"status": "failed"})
+    api.training_job_api_from_profile = lambda _: (client, {})
+    monkeypatch.setitem(sys.modules, api.__name__, api)
+    body = {"job_desc": "worker #owner", "script": "echo done"}
+    mlspace_launch.submit_payload(client, dict(body), "eval", "arm", "head", output_dir=run.output)
+    assert publication.retryable(run)
+    def lost(body):
+        raise ConnectionError("response lost")
+    client.run_job = lost
+    with pytest.raises(ConnectionError):
+        mlspace_launch.submit_payload(client, dict(body), "eval", "arm", "head", output_dir=run.output)
+    saved = json.loads((run.reservation / "submission.json").read_text())
+    assert not publication.retryable(run)
+    assert run.reservation.is_dir() and run.job_name() is None
+    mlspace_launch.reconcile_for_outputs(client, {}, [tmp_path / "independent"])
+    retry = "lm-mpi-job-22222222-2222-4222-8222-222222222222"
+    api.get_in_progress_jobs = lambda **_: [dict(job_name=retry, job_desc=saved["identity"]+" #attempt-"+saved["attempt"])]
+    client.get_job_status = lambda _: {"status": "running"}
+    assert not publication.retryable(run) and run.job_name() == retry
+    assert not Path(saved["intent"]).exists()
+
+
+def test_native_and_named_commands_include_the_same_schedule_arguments(tmp_path, monkeypatch):
+    from experiments.protocols import schemas
+    from orchestration.named import publication
+    monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["scripts/instruction/sched_run.py"])
+    output = tmp_path / "cosine"
+    command = "echo --filter qwen3_instruct_staged_sps_ce"
+    body = {"job_desc": "schedule", "script": command}
+    preview = publication.published_command(command, output, tmp_path, schemas("sched_run", "train"))
+    publication.reserve_payload(body, output, tmp_path, phase="train", intent=tmp_path/"intent")
+    assert "--instruct_config__weight_decay" in body["script"]
+    assert body["script"] == preview

@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+from uuid import uuid4
 import shlex
 import subprocess
 import sys
@@ -58,29 +59,43 @@ def retryable(directory, profile="default"):
     from orchestration.pilot_launch import TERMINAL_FAILURES
 
     name = directory.job_name()
-    if not name:
-        intent = directory.reservation / "submission.json"
-        if intent.is_file():
-            from mls.manager.job.utils import get_in_progress_jobs
-            from orchestration.mlspace_launch import normalize
+    meta = directory.reservation / "submission.json"
+    record = json.loads(meta.read_text()) if meta.is_file() else {}
+    attempt = record.get("attempt")
+    if not name and attempt:
+        from mls.manager.job.utils import get_in_progress_jobs
+        from orchestration.mlspace_launch import normalize
 
-            record = json.loads(intent.read_text())
-            active = {
-                normalize(j["job_desc"]): j["job_name"]
-                for j in get_in_progress_jobs(client_profile=profile)
-            }
-            name = active.get(record["identity"])
-            if not name:
-                for path in Path(record["receipts"]).glob("*.json"):
-                    row = json.loads(path.read_text())
-                    if (
-                        row.get("output_dir") == str(directory.output)
-                        and row["identity"] == record["identity"]
-                    ):
-                        name = row["job_name"]
-                        break
-            if name:
-                directory.record(name)
+        name = next(
+            (
+                job["job_name"]
+                for job in get_in_progress_jobs(client_profile=profile)
+                if normalize(job["job_desc"]) == record["identity"]
+                and f"#attempt-{attempt}" in job["job_desc"].split()
+            ),
+            None,
+        )
+        if not name:
+            for path in Path(record["receipts"]).glob("*.json"):
+                row = json.loads(path.read_text())
+                if row.get("attempt") == attempt and row.get("output_dir") == str(
+                    directory.output
+                ):
+                    name = row["job_name"]
+                    break
+        if name:
+            directory.record(name)
+    if name and attempt:
+        from orchestration.mlspace_launch import store_json
+
+        intent = Path(record["intent"])
+        if intent.is_file():
+            row = json.loads(intent.read_text())
+            if row.get("attempt") == attempt:
+                store_json(
+                    Path(record["receipts"]) / f"{name}.json", dict(row, job_name=name)
+                )
+                intent.unlink(missing_ok=True)
     if not name:
         print(f"Skip unresolved reservation: {directory.reservation}", flush=True)
         return False
@@ -111,6 +126,10 @@ def pending_output(output, profile="default"):
 def published_command(command, output, staged, schemas, original=None, selected=None):
     from experiments.family_cli import worker_command
 
+    words = shlex.split(command)
+    selected = next(
+        (words[words.index(k) + 1] for k in ("--filter", "--arm") if k in words), None
+    )
     command = worker_command(command, schemas, selected)
     return f"cd {shlex.quote(str(staged))} && " + shlex.join(
         [
@@ -124,49 +143,31 @@ def published_command(command, output, staged, schemas, original=None, selected=
     )
 
 
-def reserve_payload(body, output, staged, original=None, selected=None):
+def reserve_payload(body, output, staged, *, phase, intent, original=None):
     from orchestration import mlspace_launch as launch
 
     directory = RunDirectory(COMMON_ROOT, output)
-    configured = os.environ.get("SPS_FAMILY_SCHEMAS")
-    if configured is None:
-        from orchestration.named.standalone import family_schemas, load
+    from experiments.protocols import schemas
 
-        # Native and catalog submissions execute the same family arguments.
-        script = Path(sys.argv[0])
-        schemas = ()
-        if script.parent.parent.name == "scripts":
-            module = (
-                "orchestration.named.cap_jobs"
-                if script.stem == "cap_jobs"
-                else f"workloads.{script.parent.name}.{script.stem}"
-            )
-            native = load(module)
-            dependencies = [
-                getattr(native, key)
-                for key in ("training", "evaluation", "prepared")
-                if hasattr(native, key)
-            ]
-            schemas = family_schemas([native, *dependencies])
-    else:
-        schemas = tuple(filter(None, configured.split(",")))
-    body["script"] = published_command(
-        body["script"],
-        output,
-        staged,
-        schemas,
-        original,
-        os.environ.get("SPS_SELECTED_RUN") or selected,
-    )
+    groups = schemas(Path(sys.argv[0]).stem, phase)
+    body["script"] = published_command(body["script"], output, staged, groups, original)
     if not directory.reserve():
         return None
-    launch.store_json(
-        directory.reservation / "submission.json",
-        {
-            "identity": launch.normalize(body["job_desc"]),
-            "receipts": str(launch.ARTIFACTS_ROOT / "submissions"),
-        },
-    )
+    attempt = uuid4().hex
+    body["job_desc"] += f" #attempt-{attempt}"
+    try:
+        launch.store_json(
+            directory.reservation / "submission.json",
+            {
+                "identity": launch.normalize(body["job_desc"]),
+                "attempt": attempt,
+                "receipts": str(launch.ARTIFACTS_ROOT / "submissions"),
+                "intent": str(intent),
+            },
+        )
+    except Exception:
+        directory.retire()
+        raise
     return directory
 
 

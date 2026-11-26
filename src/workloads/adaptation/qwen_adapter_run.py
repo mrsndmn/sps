@@ -123,8 +123,7 @@ def submit(phase, dry, name=None):
     launch.disable_submission_retries(client)
     active = {launch.normalize(job['job_desc']): job['job_name']
               for job in get_in_progress_jobs(client_profile='default')}
-    launch.reconcile_receipts(client, active)
-    launch.reconcile_intents(active)
+    launch.reconcile_for_outputs(client, active, [directory(arm) if phase == "train" else winner_output() for arm in arms])
     for arm in arms:
         body = payload(phase, arm, staged)
         identity = launch.output_identity(body['job_desc'], directory(arm) if phase == "train" else winner_output(), active)

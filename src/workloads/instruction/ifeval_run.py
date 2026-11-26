@@ -91,8 +91,7 @@ def submit(args):
         launch.disable_submission_retries(client)
         active = {launch.normalize(x['job_desc']): x['job_name']
                   for x in get_in_progress_jobs(client_profile=args.profile)}
-        launch.reconcile_receipts(client, active)
-        launch.reconcile_intents(active)
+        launch.reconcile_for_outputs(client, active, [output_dir(exp, mode) for exp in experiments for mode in modes if (exp.name, mode) in pending])
         for exp in experiments:
             old_identity = launch.normalize(payload(exp, staged, args.author_name, args.telegram_nick)['job_desc'])
             if old_identity in active:

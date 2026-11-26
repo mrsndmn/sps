@@ -437,8 +437,7 @@ def submit(args, choices):
                 for row in response["jobs"]
             }
         )
-    launch.reconcile_receipts(client, active)
-    launch.reconcile_intents(active)
+    launch.reconcile_for_outputs(client, active, [output(exp) for exp in choices])
     staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
     occupied = sum(key.startswith("sps-draft-sweep eval ") for key in active)
     jobs = []

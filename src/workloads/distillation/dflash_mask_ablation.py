@@ -357,8 +357,7 @@ def submit(dry):
                         for j in response["jobs"]
                     }
                 )
-            launch.reconcile_receipts(client, active)
-            launch.reconcile_intents(active)
+            launch.reconcile_for_outputs(client, active, [result_path().parent])
             identity = launch.output_identity(body["job_desc"], result_path().parent, active)
             if identity in active:
                 print(

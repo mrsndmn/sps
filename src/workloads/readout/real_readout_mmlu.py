@@ -179,8 +179,7 @@ def main():
         launch.disable_submission_retries(client)
         active = {launch.normalize(j["job_desc"]): j["job_name"]
                   for j in get_in_progress_jobs(client_profile="default")}
-        launch.reconcile_receipts(client, active)
-        launch.reconcile_intents(active)
+        launch.reconcile_for_outputs(client, active, [ROOT / "runs/out" / exp.name for exp in selected])
         commit = launch.git("rev-parse", "HEAD")
         staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
         for exp in selected:

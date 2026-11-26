@@ -253,7 +253,7 @@ def submit(dry=False):
         response=client.get_list_jobs(options['region'],None,status,1000,0)
         if 'jobs' not in response:raise RuntimeError('Cannot establish active jobs')
         active.update({launch.normalize(x['job_desc']):x['job_name'] for x in response['jobs']})
-    launch.reconcile_receipts(client,active);launch.reconcile_intents(active)
+    launch.reconcile_for_outputs(client, active, [prepared_dir()])
     key=launch.output_identity(payload(exp,staged)['job_desc'], prepared_dir(), active)
     if key in active:
         job=dict(name=exp.name,job_name=active[key],reused=True)

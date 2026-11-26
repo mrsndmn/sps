@@ -103,8 +103,7 @@ def submit_pending(phase, selected, commit, staged, dataset):
             raise RuntimeError(f"Cannot establish active {status} jobs")
         active.update({launch.normalize(job["job_desc"]): job["job_name"]
                        for job in result["jobs"]})
-    launch.reconcile_receipts(client, active)
-    launch.reconcile_intents(active)
+    launch.reconcile_for_outputs(client, active, [phase_output(phase, name, dataset) for name in pending])
     launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
     for name in pending:
         if marker(phase, name, dataset).is_file():

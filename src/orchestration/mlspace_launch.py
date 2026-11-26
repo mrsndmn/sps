@@ -75,12 +75,35 @@ def submission_lock():
         shutil.rmtree(lock)
 
 
-def reconcile_receipts(client, active_by_desc):
+def receipt_outputs(record):
+    if output := record.get("output_dir"):
+        return {Path(output)}
+    name = record.get("name")
+    if not name:
+        return set()
+    if record.get("phase") == "prepare":
+        return {ARTIFACTS_ROOT / "probe", ARTIFACTS_ROOT / "prepared",
+                ARTIFACTS_ROOT / "sanity/out" / name}
+    paths = {RUN_ROOT / "out" / name}
+    if record.get("phase") == "eval" and record.get("identity", "").startswith("sps-qwen3-adapters "):
+        paths.add(ARTIFACTS_ROOT / "evaluations/winner")
+    return paths
+
+
+def reconcile_for_outputs(client, active, outputs):
+    selected = set(outputs)
+    reconcile_receipts(client, active, selected)
+    reconcile_intents(active, selected)
+
+
+def reconcile_receipts(client, active_by_desc, outputs=None):
     # A just-submitted job may not yet appear in the list API. Its durable
     # receipt prevents a second submission; only a confirmed failed/cancelled
     # state permits retry. Unknown or unreachable states fail closed.
     for path in sorted((ARTIFACTS_ROOT / 'submissions').glob('*.json')):
         receipt = json.loads(path.read_text())
+        if outputs is not None and not outputs.intersection(receipt_outputs(receipt)):
+            continue
         identity = receipt['identity']
         if identity in active_by_desc:
             continue
@@ -122,11 +145,13 @@ def disable_submission_retries(client):
     session.max_redirects = 0
 
 
-def reconcile_intents(active_by_desc):
+def reconcile_intents(active_by_desc, outputs=None):
     for path in sorted((ARTIFACTS_ROOT / 'submission-intents').glob('*.json')):
         intent = json.loads(path.read_text())
+        if outputs is not None and not outputs.intersection(receipt_outputs(intent)):
+            continue
         identity = intent['identity']
-        if identity not in active_by_desc:
+        if intent.get('attempt') or identity not in active_by_desc:
             raise RuntimeError(f'Unresolved MLSpace submission at {path}; reconcile with job history '
                                'before clearing it. Automatic resubmission is blocked.')
         job_name = active_by_desc[identity]
@@ -156,14 +181,7 @@ def output_identity(description, output, active=None):
         receipt = ARTIFACTS_ROOT / "submissions" / f"{active[original]}.json"
         if receipt.is_file():
             record = json.loads(receipt.read_text())
-            if published := record.get("output_dir"):
-                return original if Path(published) == output else identity
-            name = record.get("name")
-            historical = {ARTIFACTS_ROOT / "probe", ARTIFACTS_ROOT / "prepared",
-                          ARTIFACTS_ROOT / "evaluations/winner"}
-            if name:
-                historical |= {RUN_ROOT / "out" / name, ARTIFACTS_ROOT / "sanity/out" / name}
-            return original if output in historical else identity
+            return original if Path(output) in receipt_outputs(record) else identity
         raise RuntimeError(f"Active legacy job lacks a destination receipt: {active[original]}")
     return identity
 
@@ -192,10 +210,11 @@ def submit_payload(client, body, phase, name, commit, *, output_dir=None):
     directory = None
     if output:
         from orchestration.named.publication import reserve_payload
-        directory = reserve_payload(body, Path(output), STAGING_ROOT / commit, original=output_dir, selected=name)
+        directory = reserve_payload(body, Path(output), STAGING_ROOT / commit, original=output_dir, phase=phase, intent=intent)
         if directory is None:
             return dict(name=name, reused=True, output_dir=str(output))
         data['output_dir'] = str(output)
+        data['attempt'] = json.loads((directory.reservation / 'submission.json').read_text())['attempt']
     try:
         store_json(intent, data)
     except Exception:

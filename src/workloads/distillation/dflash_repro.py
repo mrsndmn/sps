@@ -103,8 +103,7 @@ def submit_job(phase, name, root, result_path, body, commit):
                 raise RuntimeError(f"Cannot establish {status} jobs")
             active.update({launch.normalize(job["job_desc"]): job["job_name"]
                            for job in response["jobs"]})
-        launch.reconcile_receipts(client, active)
-        launch.reconcile_intents(active)
+        launch.reconcile_for_outputs(client, active, [result_path.parent])
         identity = launch.output_identity(body["job_desc"], result_path.parent, active)
         if identity in active:
             result = {"name": name, "job_name": active[identity], "reused": True}

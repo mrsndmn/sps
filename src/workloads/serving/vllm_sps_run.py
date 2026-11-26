@@ -83,8 +83,7 @@ def submit(args):
             launch.normalize(j["job_desc"]): j["job_name"]
             for j in get_in_progress_jobs(client_profile=args.profile)
         }
-        launch.reconcile_receipts(client, active)
-        launch.reconcile_intents(active)
+        launch.reconcile_for_outputs(client, active, [c.ROOT / ("sanity" if args.phase == "probe" else "runs") / "out" / exp.name for exp in experiments])
         staged = launch.stage_repo(
             Path(launch.git("rev-parse", "--show-toplevel")), commit
         )

@@ -106,8 +106,7 @@ class Rerun:
                 launch.normalize(j["job_desc"]): j["job_name"]
                 for j in get_in_progress_jobs(client_profile=args.profile)
             }
-            launch.reconcile_receipts(client, active)
-            launch.reconcile_intents(active)
+            launch.reconcile_for_outputs(client, active, [self.sc.output_dir(args.variant, exp, w) for exp in exps for w in workloads if (exp.name, w) in pending])
             staged = launch.stage_repo(
                 Path(launch.git("rev-parse", "--show-toplevel")), commit
             )

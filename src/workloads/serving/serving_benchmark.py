@@ -337,8 +337,7 @@ def submit(args):
         active.update(
             {launch.normalize(j["job_desc"]): j["job_name"] for j in response["jobs"]}
         )
-    launch.reconcile_receipts(client, active)
-    launch.reconcile_intents(active)
+    launch.reconcile_for_outputs(client, active, [root_for(exp) for exp in choices])
     staged = launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
     jobs = []
     occupied = sum(key.startswith("sps-serving-benchmark ") for key in active)

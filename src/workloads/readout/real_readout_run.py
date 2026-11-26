@@ -73,8 +73,7 @@ def submit(phase, dry):
     launch.disable_submission_retries(client)
     active = {launch.normalize(j["job_desc"]): j["job_name"]
               for j in get_in_progress_jobs(client_profile="default")}
-    launch.reconcile_receipts(client, active)
-    launch.reconcile_intents(active)
+    launch.reconcile_for_outputs(client, active, [output])
     identity = launch.output_identity(body["job_desc"], output, active)
     if identity in active:
         print(active[identity])

@@ -1,10 +1,9 @@
 """Named plans for families with dedicated MLSpace submission protocols."""
 
+from experiments.protocols import schemas
 from experiments.family_arguments import settings
 from dataclasses import asdict, dataclass, is_dataclass
 from importlib import import_module
-from importlib.util import find_spec
-from types import ModuleType
 from pathlib import Path
 
 
@@ -38,34 +37,6 @@ def values(module):
     }
 
 
-def family_schemas(sources):
-    """Collect definitions explicitly selected by the native submission plan."""
-    pending = list(sources)
-    visited = set()
-    names = set()
-    while pending:
-        source = pending.pop()
-        name = source.__name__
-        if name in visited:
-            continue
-        visited.add(name)
-        if name.startswith("experiments.") and (
-            "family_config" in vars(source) or "experiment_configs" in vars(source)
-        ):
-            names.add(name.rsplit(".", 1)[-1])
-        if not name.startswith("experiments."):
-            definition = "experiments." + name.rsplit(".", 1)[-1]
-            if find_spec(definition):
-                pending.append(import_module(definition))
-        pending.extend(
-            value
-            for value in vars(source).values()
-            if isinstance(value, ModuleType)
-            and value.__name__.startswith("experiments.")
-        )
-    return tuple(sorted(names))
-
-
 def job(
     module,
     phase,
@@ -95,7 +66,7 @@ def job(
         settings,
         submit_flag,
         output_dir,
-        family_schemas((*sources, module)),
+        schemas(module.__name__.split(".")[-1], phase),
         run if isinstance(run, str) else getattr(run, "name", name),
     )
 

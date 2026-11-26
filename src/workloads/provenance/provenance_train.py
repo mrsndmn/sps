@@ -199,8 +199,7 @@ def submit(selected, dry=False):
         if 'jobs' not in response:
             raise RuntimeError('Cannot establish active jobs')
         active.update({launch.normalize(x['job_desc']): x['job_name'] for x in response['jobs']})
-    launch.reconcile_receipts(client, active)
-    launch.reconcile_intents(active)
+    launch.reconcile_for_outputs(client, active, [output_dir(exp) for exp in selected])
     jobs = []
     for exp in selected:
         ident = identity(exp, report, plan)

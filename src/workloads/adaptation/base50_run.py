@@ -52,7 +52,7 @@ def submit(dry):
     client, extra = training_job_api_from_profile('default')
     launch.disable_submission_retries(client)
     active = {launch.normalize(j['job_desc']):j['job_name'] for j in get_in_progress_jobs(client_profile='default')}
-    launch.reconcile_receipts(client, active); launch.reconcile_intents(active)
+    launch.reconcile_for_outputs(client, active, [marker.parent])
     identity = launch.output_identity(payload(exp, staged)['job_desc'], marker.parent, active)
     if identity in active:
         print(json.dumps(dict(job_name=active[identity], reused=True))); return
