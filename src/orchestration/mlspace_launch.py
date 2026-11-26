@@ -112,7 +112,9 @@ def occupied_slots(client, active, prefix, roots=(), *, legacy_only=False):
     for row in records("submissions"):
         if not matches(row["identity"]):
             continue
-        received_attempts.add((row["identity"], row.get("attempt")))
+        attempt = row.get("attempt") or row.get("attempted_at")
+        if attempt is not None:
+            received_attempts.add((row["identity"], attempt))
         job = row["job_name"]
         if job not in jobs:
             state = str(client.get_job_status(job).get("status", "")).strip().casefold()
@@ -123,7 +125,7 @@ def occupied_slots(client, active, prefix, roots=(), *, legacy_only=False):
         identity = row["identity"]
         if not matches(identity) or identity in listed:
             continue
-        if (identity, row.get("attempt")) in received_attempts:
+        if (identity, row.get("attempt") or row.get("attempted_at")) in received_attempts:
             continue
         # The worker can finish even if the submitter never received its job ID.
         output = row.get("output_dir")

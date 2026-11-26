@@ -391,6 +391,12 @@ def test_batch_skips_finished_active_and_deferred_before_charging(tmp_path, monk
         with pytest.raises(RuntimeError, match="older design"):
             batch.submit({"job_desc": "sps-draft-sweep eval second new"}, "eval", "second",
                          tmp_path / "second", legacy_prefix="sps-draft-sweep eval second ")
+    client.get_job_status = lambda name: {"status": "Failed"}
+    mlspace_launch.store_json(old_receipt, dict(identity=identity, job_name=job, attempted_at=1))
+    intent = tmp_path / "submission-intents" / "old.json"
+    for attempted_at, expected in [(1, 0), (2, 1), (None, 1)]:
+        mlspace_launch.store_json(intent, dict(identity=identity, attempted_at=attempted_at))
+        assert mlspace_launch.occupied_slots(client, {}, identity, legacy_only=True) == expected
     assert len(sent) == 1 and sent[0]["region"] == "test"
     assert staged == ["commit"] and charged == ["first"]
     assert not RunDirectory(tmp_path, tmp_path / "second").reservation.exists()
