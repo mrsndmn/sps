@@ -136,3 +136,20 @@ def test_mmlu_worker_resumes_saved_answers(tmp_path, monkeypatch):
     worker.evaluate(exp, limit=2, destination=tmp_path)
     assert generated == ["second"]
     assert [json.loads(line)["index"] for line in samples.read_text().splitlines()] == [0, 1]
+
+
+
+def test_legacy_manifest_keeps_original_generation_limit(monkeypatch):
+    from dataclasses import dataclass
+    from experiments import mmlu
+    from workloads.evaluation.mmlu_results import matches_manifest
+
+    @dataclass(kw_only=True)
+    class ChangedDefaults(mmlu.FamilyConfig):
+        MAX_NEW_TOKENS: int = 128
+
+    exp = mmlu.experiments("mmlu-generation")[0]
+    manifest = dict(limit=None, experiment=vars(exp))
+    monkeypatch.setattr(mmlu, "FamilyConfig", ChangedDefaults)
+    monkeypatch.setattr(mmlu, "family_config", mmlu.FamilyConfig())
+    assert not matches_manifest(manifest, exp, None)

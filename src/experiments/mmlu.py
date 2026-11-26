@@ -1,15 +1,27 @@
 """Pinned generative MMLU design and checkpoint provenance."""
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
+
+
+# The first manifests did not record these four settings.
+INITIAL_PROTOCOL = MappingProxyType(
+    dict(
+        dataset="cais/mmlu",
+        revision="c30699e8356da336a370243923dbaf21066bb9fe",
+        max_new_tokens=512,
+        seed=1337,
+    )
+)
 
 
 @dataclass(kw_only=True)
 class FamilyConfig:
-    DATASET: str = "cais/mmlu"
-    REVISION: str = "c30699e8356da336a370243923dbaf21066bb9fe"
-    MAX_NEW_TOKENS: int = 512
+    DATASET: str = INITIAL_PROTOCOL["dataset"]
+    REVISION: str = INITIAL_PROTOCOL["revision"]
+    MAX_NEW_TOKENS: int = INITIAL_PROTOCOL["max_new_tokens"]
     MAX_HOURS: int = 48
-    SEED: int = 1337
+    SEED: int = INITIAL_PROTOCOL["seed"]
     SOURCES: list[tuple[str, ...]] = field(
         default_factory=lambda: [
             (
