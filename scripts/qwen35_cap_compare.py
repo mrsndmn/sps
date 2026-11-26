@@ -63,6 +63,8 @@ def generate(arm):
         if not prompt.endswith('<think>\n'):
             raise ValueError('Missing thinking prefix')
         prompts[row['id']] = tokenizer.encode(prompt, add_special_tokens=False)
+    end_ids = {tokenizer.eos_token_id,
+               json.loads((Path(model_path)/'config.json').read_bytes())['text_config']['eos_token_id']}
     needed = [r for r in rows if not (out_dir/(r['id']+'.json')).exists()]
     if not needed:
         return
@@ -72,14 +74,15 @@ def generate(arm):
     for i in range(0, len(needed), BATCH):
         batch = needed[i:i+BATCH]
         params = [SamplingParams(max_tokens=CAPS[-1], temperature=c.TEACHER_TEMPERATURE,
-                  top_k=c.TEACHER_TOP_K, top_p=c.TEACHER_TOP_P, seed=r['seed']) for r in batch]
+                  top_k=c.TEACHER_TOP_K, top_p=c.TEACHER_TOP_P, seed=r['seed'],
+                  stop_token_ids=sorted(end_ids)) for r in batch]
         outputs = engine.generate([dict(prompt_token_ids=prompts[r['id']]) for r in batch], params)
         for r, response in zip(batch, outputs, strict=True):
             out, = response.outputs
             ids = list(out.token_ids)
             assert list(response.prompt_token_ids)==prompts[r['id']] and out.finish_reason in ('stop','length')
             # Qwen3.5 puts the opening tag inside the prompt. Preserve generated closing tags.
-            clean = ids[:-1] if ids and ids[-1]==tokenizer.eos_token_id else ids
+            clean = ids[:-1] if ids and ids[-1] in end_ids else ids
             text = tokenizer.decode(clean, skip_special_tokens=False)
             data.atomic_json(out_dir/(r['id']+'.json'),dict(id=r['id'],revision=experiment_configs[arm][1],
                 seed=r['seed'],prompt_hash=data.digest(prompts[r['id']]),ids=ids,text=text,stop=out.finish_reason))
@@ -90,6 +93,13 @@ def tail_loop(ids):
     return any(tail[i] == tail[i+k] == tail[i+2*k] and
                tail[i:i+k] == tail[i+k:i+2*k] == tail[i+2*k:i+3*k]
                for k in range(8,65) for i in range(len(tail)-3*k+1))
+
+
+def completed_answer(text, stop):
+    if stop != 'stop':
+        return None
+    answer = data.parse_thinking('<think>\n'+text)
+    return answer if answer and answer['content'] else None
 
 
 def summarize(arm):
@@ -103,7 +113,7 @@ def summarize(arm):
         item = json.loads((folder(arm)/(r['id']+'.json')).read_bytes())
         assert (item['id'], item['seed'], item['revision']) == (r['id'], r['seed'], experiment_configs[arm][1])
         ids = item['ids']
-        answer = data.parse_thinking('<think>\n'+item['text']) if item['stop']=='stop' else None
+        answer = completed_answer(item['text'], item['stop'])
         fits = False
         if answer:
             try:
