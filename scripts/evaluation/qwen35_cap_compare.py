@@ -2,6 +2,7 @@
 import argparse
 from collections import Counter
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -11,7 +12,7 @@ from scripts import instruct_data as data
 from scripts import serving_runtime as runtime
 from scripts import teacher_cap_probe as pilot
 from scripts import mlspace_launch as launch
-from src.experiments.qwen35_cap_compare import BATCH, CAPS, experiment_configs
+from src.experiments.qwen35_cap_compare import BATCH, CAPS, RUNTIME_ENV, experiment_configs
 
 ROOT = pilot.ROOT.parent / 'qwen35-unloop-cap-compare'
 PROMPTS = ROOT / 'cohort.json'
@@ -44,6 +45,7 @@ def weights_path(arm):
 
 
 def generate(arm):
+    os.environ.update(RUNTIME_ENV)
     import torch
     from vllm import LLM, SamplingParams
     from transformers import AutoTokenizer

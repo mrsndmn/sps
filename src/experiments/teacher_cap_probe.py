@@ -13,3 +13,4 @@ class Probe:
 experiment_configs = [Probe()]
 
 SHARDS = 8
+EVAL_HOURS = 20

@@ -22,3 +22,6 @@ experiment_configs = {
 }
 CAPS = Probe().caps
 BATCH = 32
+EVAL_HOURS = 4
+
+RUNTIME_ENV = {"HF_HUB_OFFLINE": "1", "VLLM_USE_V2_MODEL_RUNNER": "0"}

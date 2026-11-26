@@ -50,13 +50,13 @@ _MIGRATED_SOURCES = {
     ): "d11762dcd5668935bfca494ea348ed73200fc70372894b94e7a1c77d9f788dc2",
     (
         "scripts/evaluation/qwen35_cap_compare.py",
-        "e297836d9accfbdb66ab530cc548177e6988610608269ce4b5a0bbaf6e501b0b",
+        "6ca6d8a2278e2ae4ff1b7918fd6ba211d991e3f59741d1a773e47312cf77bdd1",
     ): "368b7c39020d6f4dda4a336ec92f8dc221e24ca187bf6539d9aec3dea2380e12",
     # Shard support in c84d1ea left the original full-cohort report design
     # unchanged. Use the published report identity for this exact migration.
     (
         "scripts/evaluation/teacher_cap_probe.py",
-        "4c4fe2c23ff8edd4724bed22294a23b9c46126d75fdc61ba9432dde5d8ba39d5",
+        "683cbba98147618a0e2a13c9462a59bb263ee185c5e33a933122472801a342fa",
     ): "5bb50eb67bff7ec297e740ea8bffdce6d220f9bf5051cc47d67a5755634f82c5",
     (
         "scripts/instruct_common.py",

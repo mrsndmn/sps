@@ -133,7 +133,11 @@ def test_cap_receipts_distinguish_paired_cohorts(tmp_path, monkeypatch, capsys):
     for cohort in (["same"], ["same"], ["changed"]):
         prompts.write_text(json.dumps(cohort))
         cap_jobs.main()
-        descriptions.append(json.loads(capsys.readouterr().out)["job_desc"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["env_variables"]["HF_HUB_OFFLINE"] == "1"
+        assert payload["env_variables"]["VLLM_USE_V2_MODEL_RUNNER"] == "0"
+        assert "timeout 4h" in payload["script"]
+        descriptions.append(payload["job_desc"])
     assert descriptions[0] == descriptions[1]
     assert descriptions[0] != descriptions[2]
 
@@ -148,21 +152,38 @@ def test_teacher_cap_receipt_reuses_published_report_identity(monkeypatch, capsy
     assert teacher.source_hash(teacher.__file__) == teacher.PILOT_HASH
     path = f"{teacher.PILOT_HASH}/report.json"
     identity = sha256(path.encode()).hexdigest()
-    assert identity in json.loads(capsys.readouterr().out)["job_desc"]
+    payload = json.loads(capsys.readouterr().out)
+    assert identity in payload["job_desc"]
+    assert "timeout 20h" in payload["script"]
 
 
-def test_teacher_cap_reuses_active_published_receipt(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("arm", [None, "original", "unloop"])
+def test_cap_reuses_active_published_receipt(arm, tmp_path, monkeypatch, capsys):
     from types import ModuleType
     from scripts.named import cap_jobs
 
     job_name = "lm-mpi-job-22222222-2222-4222-8222-222222222222"
+    if arm:
+        identity = f"qwen35-cap-{arm}"
+        commit = cap_jobs.PUBLISHED_COMPARISON_COMMIT
+        marker_dir = tmp_path.joinpath(*cap_jobs.PUBLISHED_COMPARISON_DESIGN, arm)
+        monkeypatch.setattr(cap_jobs.compare, "ROOT", tmp_path)
+        prompts = tmp_path / "cohort.json"
+        prompts.write_text("[]")
+        monkeypatch.setattr(cap_jobs.compare, "PROMPTS", prompts)
+        monkeypatch.setattr(cap_jobs.compare, "prepare", lambda: None)
+        monkeypatch.setattr(cap_jobs.compare, "folder", lambda _: marker_dir)
+    else:
+        identity = "qwen3-teacher-cap-probe"
+        commit = cap_jobs.PUBLISHED_TEACHER_COMMIT
+        monkeypatch.setattr(cap_jobs.teacher, "ROOT", tmp_path)
     submissions = tmp_path / "submissions"
     submissions.mkdir()
     (submissions / f"{job_name}.json").write_text(
         json.dumps(
             dict(
-                identity="qwen3-teacher-cap-probe",
-                commit=cap_jobs.PUBLISHED_TEACHER_COMMIT,
+                identity=identity,
+                commit=commit,
                 job_name=job_name,
             )
         )
@@ -178,12 +199,13 @@ def test_teacher_cap_reuses_active_published_receipt(tmp_path, monkeypatch, caps
     utils.get_in_progress_jobs = lambda **_: []
     utils.training_job_api_from_profile = lambda _: (Client(), {})
     monkeypatch.setitem(sys.modules, utils.__name__, utils)
-    monkeypatch.setattr(cap_jobs.teacher, "ROOT", tmp_path)
     monkeypatch.setattr(cap_jobs.launch, "disable_submission_retries", lambda _: None)
     monkeypatch.setattr(
         cap_jobs.launch, "stage_repo", lambda *_: pytest.fail("Staged a duplicate job")
     )
-    monkeypatch.setattr(sys, "argv", ["cap_jobs", "teacher"])
+    monkeypatch.setattr(
+        sys, "argv", ["cap_jobs", "compare", arm] if arm else ["cap_jobs", "teacher"]
+    )
 
     cap_jobs.main()
 
@@ -214,6 +236,37 @@ def test_cap_report_identities_track_inherited_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "read_bytes", change_sampler)
     assert source_hash(teacher.__file__) != teacher_identity
     assert compare.folder("original") != paired_folder
+
+
+def test_cap_completed_comparison_skips_cohort_preparation(
+    tmp_path, monkeypatch, capsys
+):
+    from scripts.named import cap_jobs
+
+    compare = cap_jobs.compare
+    monkeypatch.setattr(compare, "ROOT", tmp_path)
+    prompts = tmp_path / "cohort.json"
+    prompts.write_text("[]")
+    monkeypatch.setattr(compare, "PROMPTS", prompts)
+    folder = compare.folder("original")
+    folder.mkdir(parents=True)
+    report = folder / "report.json"
+    report.write_text("{}")
+    monkeypatch.setattr(
+        compare, "prepare", lambda: pytest.fail("Reconstructed the cohort")
+    )
+    monkeypatch.setattr(sys, "argv", ["cap_jobs", "compare", "original"])
+    cap_jobs.main()
+    assert capsys.readouterr().out.strip() == f"Completed original: {report}"
+
+
+def test_teacher_cap_assists_require_archived_design(monkeypatch):
+    from scripts.named import cap_jobs
+
+    teacher = cap_jobs.teacher
+    monkeypatch.setattr(teacher, "source_hash", lambda _: "different-design")
+    with pytest.raises(RuntimeError, match="published teacher-cap design"):
+        teacher.run(shard=0)
 
 
 def test_unprepared_drafter_prints_worker_command(tmp_path):

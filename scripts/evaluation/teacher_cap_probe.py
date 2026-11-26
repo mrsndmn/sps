@@ -75,6 +75,10 @@ from src.experiments.teacher_cap_probe import SHARDS
 
 
 def run(shard=None):
+    identity = source_hash(__file__)
+    if shard is not None and identity != PILOT_HASH:
+        raise RuntimeError('Assist mode requires the published teacher-cap design')
+
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -92,7 +96,7 @@ def run(shard=None):
         torch_dtype=torch.bfloat16, attn_implementation='sdpa').to('cuda').eval()
     eos = model.generation_config.eos_token_id
     eos = {eos} if isinstance(eos, int) else set(eos)
-    folder = ROOT / (PILOT_HASH if shard is not None else source_hash(__file__))
+    folder = ROOT / identity
     results = []
     for domain, population, row, archive in selected:
         key = row['source_id']
