@@ -1,9 +1,12 @@
-"""Preserve completed runs across routing and output-directory changes.
+"""Preserve completed runs across behavior-preserving refactors.
 
-Each key is a full design hash for a storage or routing migration. Its
-value is the hash of the same design at 98fb926. Changes to a hashed input
-(including the suite and selected worker) produce a different key and pass through.
+Each key is a full design hash after a migration. Its value is the hash of
+the same design before that migration. Changes to hashed inputs produce a
+different key and pass through.
 """
+
+import hashlib
+import json
 
 _COMPATIBLE_DESIGNS = {
     # Python family definitions with verified pre-migration worker settings.
@@ -46,6 +49,11 @@ _COMPATIBLE_DESIGNS = {
     "de8d1561450d73ae624f2e187a3bccaf22a26a0ff7d55b47a16cbe47297b86d3":
         "c4e978edfe22a6ba2057eac7aea15eb1a92ba5ed2ab6662f90cb376dcc234823",  # spec-baselines
 
+    # Instruct rerun launchers and evaluators consolidated without changing their protocols.
+    "6a7b36957942598e7fb234779ddf5662415461ec72910ecae9dd97124240ac54":
+        "7408b3ccf0455895e306d0d5272e2fad41d3e70ae8c6fbb5612210d6d18347ae",
+    "da6f177d5318de256097ab2405e263a572d96021d2b5e21a0486522f64653543":
+        "4c2035c32194d92c51ef749eac238607bec051698f475288a1b699565f0e36d7",
     # 10b
     "1553ac38526e045bef4f3908091a50f4dc1635de0a3ba33e1d10daf55ad3f8f3":
         "6b63ec67fa74e417455a4e44955105dce9247d8dc4649d402f5a815f0d5447b8",
@@ -146,3 +154,11 @@ _COMPATIBLE_DESIGNS = {
 
 def canonical_signature(digest):
     return _COMPATIBLE_DESIGNS.get(digest, digest)
+
+
+def rerun_signature(family, source_signature, folder):
+    paths = [*folder.glob(f"{family}_*.py"), folder / "rerun_jobs.py", folder / "rerun_eval.py"]
+    files = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+    design = {"source": source_signature, "files": files}
+    digest = hashlib.sha256(json.dumps(design, sort_keys=True).encode()).hexdigest()
+    return canonical_signature(digest)

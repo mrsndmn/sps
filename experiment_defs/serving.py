@@ -11,7 +11,7 @@ def serving(family):
         phases = module.PHASES
         collect = module.candidates
     elif family == "vllm_sps_run":
-        phases = ("train", "probe", "eval")
+        phases = ("train", "probe")
         collect = module.c.collect_experiments
     else:
         phases = ("audit", "eval")

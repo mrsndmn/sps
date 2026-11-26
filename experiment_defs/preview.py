@@ -19,7 +19,7 @@ def preview(plan):
         body = module.payload(module.c.experiment_configs[0], staged)
     elif short in {"sched_run", "extend_run", "ifeval_run"}:
         name = args[args.index("--filter") + 1]
-        (run,) = [r for r in module.launch.collect_experiments() if r.name == name]
+        (run,) = [r for r in launch.collect_experiments() if r.name == name]
         if short == "ifeval_run":
             body = module.payload(run, staged, *author, args[-1])
         else:
@@ -95,12 +95,9 @@ def readout_payload(module, plan, staged, author):
             "gsm8k": "sps-readout-gsm8k",
             "humaneval": "sps-readout-humaneval-plus",
             "mmlu": "sps-readout-full-mmlu",
-            "likelihood": "sps-real-readout",
             "serving": "sps-real-readout-serving",
         }
-        if task == "likelihood":
-            hours = module.sched_config.WORKLOAD_HOURS["quality"]
-        elif task == "gsm8k":
+        if task == "gsm8k":
             hours = module.HOURS[run.mode]
         elif task in {"mmlu", "humaneval"}:
             hours = module.HOURS

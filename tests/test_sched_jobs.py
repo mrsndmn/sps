@@ -4,6 +4,7 @@ import math
 import os
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 import pytest
 from scripts import sched_common as sc, sched_config as c
@@ -47,6 +48,24 @@ else:
     assert p.returncode==0,p.stderr
 
 
+@pytest.mark.parametrize(
+    "family, archived",
+    [
+        ("sched", "7408b3ccf0455895e306d0d5272e2fad41d3e70ae8c6fbb5612210d6d18347ae"),
+        ("extend", "4c2035c32194d92c51ef749eac238607bec051698f475288a1b699565f0e36d7"),
+    ],
+)
+def test_shared_rerun_code_matches_archived_design_and_tracks_changes(tmp_path, family, archived):
+    from scripts.design_compatibility import rerun_signature
+
+    folder = Path(sc.__file__).parent
+    for source in [*folder.glob(f"{family}_*.py"), folder / "rerun_jobs.py", folder / "rerun_eval.py"]:
+        (tmp_path / source.name).write_bytes(source.read_bytes())
+    assert rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path) == archived
+    (tmp_path / "rerun_eval.py").write_text("changed")
+    assert rerun_signature(family, c.SOURCE_SIGNATURE, tmp_path) != archived
+
+
 @pytest.mark.parametrize('total',[102,410,512])
 def test_warmup_cosine_endpoints_and_monotonicity(total):
     values=[sc.lr_multiplier(i,total) for i in range(total)]
@@ -73,12 +92,12 @@ def test_sps_stage_reset_and_ar_single_schedule():
 
 
 def test_terminal_marker_skips_and_stale_marker_fails(tmp_path,monkeypatch,capsys):
-    from scripts import sched_run as r
+    from scripts import mlspace_launch as launch, sched_run as r
     exp=SimpleNamespace(name='example',trainable=True)
-    monkeypatch.setattr(r,'experiments',lambda _: [exp])
+    monkeypatch.setattr(sc.e,'collect_experiments',lambda _: [exp])
     monkeypatch.setattr(sc,'output_dir',lambda *args:tmp_path)
     monkeypatch.setattr(sc,'signature',lambda:'current')
-    monkeypatch.setattr(r.launch,'git',lambda *args:'commit')
+    monkeypatch.setattr(launch,'git',lambda *args:'commit')
     marker=tmp_path/'evaluated.json';marker.write_text(json.dumps({'design_signature':'current'}))
     args=SimpleNamespace(filter=None,phase='eval',variant='step384',workload='ifeval-thinking',dry=True)
     r.submit(args);assert 'Skip completed' in capsys.readouterr().out

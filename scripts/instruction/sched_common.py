@@ -1,10 +1,10 @@
 """Isolated rerun provenance and deterministic, optimizer-step LR schedules."""
-import hashlib
 import json
 import math
 import os
 from pathlib import Path
 from scripts import sched_config as c
+from scripts.design_compatibility import rerun_signature
 os.environ.setdefault('SPS_EXPERIMENT_SUITE', c.SOURCE_SUITE)
 import experiments as e
 
@@ -12,9 +12,7 @@ import experiments as e
 def signature():
     if e.SUITE != c.SOURCE_SUITE or e.design_signature() != c.SOURCE_SIGNATURE:
         raise RuntimeError('Pinned instruct source design changed')
-    files = sorted(Path(__file__).parent.glob('sched_*.py'))
-    return hashlib.sha256(json.dumps(dict(source=c.SOURCE_SIGNATURE,
-        files={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}), sort_keys=True).encode()).hexdigest()
+    return rerun_signature("sched", c.SOURCE_SIGNATURE, Path(__file__).parent)
 
 
 def root(variant):

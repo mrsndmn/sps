@@ -171,8 +171,10 @@ also resolve to the grouped sources.
 | `serving/` | Qwen3 SPS-MTP training and vLLM evaluation, draft-length sweep, runtime setup, graph benchmarks and sampling diagnostics. |
 | `analysis/`, `figures/`, `tables/`, `benchmark/` | Analysis, plots, table exports and performance measurements for the original paper. |
 
-Browse the Qwen3 vLLM pilot with `python run_train_jobs.py --list vllm-sps-qwen3`
-and the draft sweep with `python run_train_jobs.py --list vllm-sps-draft-sweep`.
+Browse the Qwen3 vLLM probe and training runs with
+`python run_train_jobs.py --list vllm-sps-qwen3`. For evaluation in the isolated
+runtime use `python run_eval.py --list vllm-sps-benchmark`. The draft-length sweep
+is in the `vllm-sps-draft-sweep` family. Use `scripts/generate.py` for local checkpoint smoke tests.
 
 SPS-MTP training and its native-readout control use checkpoint metadata and
 SHA-256 checksums instead of a hash of the training scripts. Existing checkpoints

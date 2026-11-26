@@ -29,12 +29,12 @@ def readout():
     module = load("real_readout_run")
     for phase in ("probe", "train"):
         yield job(module, phase, module.ARM, phase, config=module.c)
-    for workload in ("eval", "mmlu", "gsm8k", "humaneval", "likelihood", "serving"):
+    for workload in ("eval", "mmlu", "gsm8k", "humaneval", "serving"):
         module = load("real_readout_" + workload)
         for exp in module.experiment_configs:
             selector = (
                 ("--arm", exp.arm)
-                if workload in {"serving", "likelihood"}
+                if workload == "serving"
                 else ("--filter", exp.name)
             )
             source = load("instruct_config")
