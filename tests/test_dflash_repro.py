@@ -168,12 +168,18 @@ def test_archived_checkpoint_must_match_published_run_and_step(tmp_path, monkeyp
         with pytest.raises(ValueError, match="published training run"):
             evaluation.validate_checkpoint(args)
 
-def test_archived_probe_is_reported_and_skipped_before_submission(tmp_path):
+def test_archived_probe_is_reported_and_skipped_before_submission(tmp_path, monkeypatch):
 
-    design = "a" * 64
+    design = next(iter(jobs.evaluation.ARCHIVED_INPUTS))
     exp = replace(BASELINE, output_dir=tmp_path / design[:16])
     archive = exp.output_dir / "prepared.json"
     training.launch.store_json(archive, {"design": design})
     assert jobs.marker(exp, "probe") == archive
     jobs.submit_phase(exp, "probe", None, {}, "unused", None)
+    import shlex
+    args = jobs.worker_arguments(training, exp, "probe", None)
+    plan = jobs.payload(exp, "probe", None, tmp_path, exp.script, args)
+    command = shlex.split(plan["script"])
+    monkeypatch.setattr(training, "train", lambda **kwargs: pytest.fail("reran a completed probe"))
+    jobs.worker(training, None, "probe", command[command.index("--worker") + 2 :])
     assert not exp.output("probe").exists()

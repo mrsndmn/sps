@@ -20,20 +20,24 @@ from orchestration import mlspace_launch as launch
 from experiments.launch import run_filter
 
 
-def marker(experiment, phase, step=None):
+def completion_marker(output, phase):
     filename = {
         "probe": "prepared.json",
         "train": "trained.json",
         "eval": "evaluated.json",
     }[phase]
-    path = work_path(experiment.output(phase, step)) / filename
-    if phase == "probe" and experiment.archived_eval_pattern and not path.is_file():
-        archived = experiment.output_dir / filename
-        if archived.is_file():
-            design = json.loads(archived.read_text()).get("design")
-            if isinstance(design, str) and design[:16] == experiment.output_dir.name:
-                return archived
+    path = work_path(output) / filename
+    if phase == "probe" and not path.is_file():
+        archived = output.parent / filename
+        for design in evaluation.ARCHIVED_INPUTS:
+            if design[:16] == output.parent.name and archived.is_file():
+                if json.loads(archived.read_text()).get("design") == design:
+                    return archived
     return path
+
+
+def marker(experiment, phase, step=None):
+    return completion_marker(experiment.output(phase, step), phase)
 
 
 def worker_arguments(trainer, experiment, phase, step):
@@ -74,8 +78,7 @@ def worker(trainer, evaluate, phase, argv):
         return evaluate(replace(args, result=work_path(args.result)))
     if phase not in ("train", "probe"):
         raise ValueError(f"Unknown phase {phase}")
-    filename = "prepared.json" if phase == "probe" else "trained.json"
-    if not (work_path(args.result_dir) / filename).is_file():
+    if not completion_marker(args.result_dir, phase).is_file():
         return trainer.train(experiment=args, probe=phase == "probe")
 
 
