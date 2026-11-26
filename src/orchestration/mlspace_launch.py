@@ -117,8 +117,13 @@ def occupied_slots(client, active, prefix):
     for path in (ARTIFACTS_ROOT / "submission-intents").glob("*.json"):
         row = json.loads(path.read_text())
         identity = row["identity"]
-        if (identity.startswith(prefix) and identity not in listed
-                and (identity, row.get("attempt")) not in received_attempts):
+        if not identity.startswith(prefix) or identity in listed:
+            continue
+        if (identity, row.get("attempt")) in received_attempts:
+            continue
+        # The worker can finish even if the submitter never received its job ID.
+        output = row.get("output_dir")
+        if not output or not Path(output).is_dir():
             unknown += 1
     return len(jobs) + unknown
 

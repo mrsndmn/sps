@@ -282,5 +282,14 @@ def test_family_capacity_counts_pending_siblings_when_list_lags(tmp_path, monkey
     assert mlspace_launch.occupied_slots(client, active, prefix) == 2
     statuses[second] = "Completed"
     assert mlspace_launch.occupied_slots(client, active, prefix) == 1
-    mlspace_launch.store_json(tmp_path / "submission-intents" / "c.json", dict(identity=prefix + "c"))
+    output = tmp_path / "c"
+    mlspace_launch.store_json(tmp_path / "submission-intents" / "c.json",
+                              dict(identity=prefix + "c", output_dir=str(output)))
+    assert mlspace_launch.occupied_slots(client, active, prefix) == 2
+    run = RunDirectory(tmp_path, output)
+    assert run.reserve()
+    with run.writing(reserved=True):
+        pass
+    assert mlspace_launch.occupied_slots(client, active, prefix) == 1
+    active[prefix + "c"] = "lm-mpi-job-33333333-3333-4333-8333-333333333333"
     assert mlspace_launch.occupied_slots(client, active, prefix) == 2
