@@ -43,3 +43,27 @@ class FamilyConfig:
 
 
 family_config = FamilyConfig()
+
+
+def launches(family):
+    from .instruct_config import experiment_configs
+    from .launch import filtered
+
+    extended = family == "qwen3-instruct-extended"
+    script = (
+        "scripts/instruction/extend_run.py"
+        if extended
+        else "scripts/instruction/sched_run.py"
+    )
+    for phase in ("train", "eval"):
+        options = ("variant", "workload") if phase == "eval" else ("variant",)
+        required = tuple(k for k in options if k == "workload" or not extended)
+        yield from filtered(
+            (r for r in experiment_configs if r.trainable),
+            phase,
+            script,
+            "--phase",
+            phase,
+            options=options,
+            required=required,
+        )

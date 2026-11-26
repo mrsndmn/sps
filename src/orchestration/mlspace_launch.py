@@ -193,7 +193,7 @@ def valid_job_name(result):
 
 def pending(output, profile="default"):
     from orchestration.named.publication import pending_output
-    return pending_output(Path(os.environ.get("SPS_SUBMIT_OUTPUT") or output), profile)
+    return pending_output(Path(output), profile)
 
 
 def output_identity(description, output):
@@ -212,27 +212,29 @@ def prepare_payload(body, output, staged, phase):
     from experiments.protocols import schemas
     from orchestration.named.publication import published_command
 
-    destination = Path(os.environ.get("SPS_SUBMIT_OUTPUT") or output)
+    from experiments.family_cli import worker_command, worker_settings
+
     body = dict(body)
-    scope_payload(body, destination)
-    groups = schemas(Path(sys.argv[0]).stem, phase)
-    body["script"] = published_command(body["script"], destination, staged, groups, original=output)
-    return body
+    scope_payload(body, output)
+    words = shlex.split(body["script"])
+    selected = next((words[words.index(k) + 1] for k in ("--filter", "--arm") if k in words), None)
+    settings = worker_settings(schemas(Path(sys.argv[0]).stem, phase), selected)
+    command = worker_command(body["script"], settings)
+    body["script"] = published_command(command, output, staged)
+    return body, settings
 
 
 def print_preview(body, output, staged, phase):
-    payload = prepare_payload(body, output, staged, phase)
-    if os.environ.get("SPS_NAMED_PREVIEW"):
-        print(json.dumps(dict(payload=payload, output_dir=os.environ.get("SPS_SUBMIT_OUTPUT") or str(output)), indent=2))
-    else:
-        print(json.dumps(payload, indent=2))
+    from experiments.family_cli import json_value
+    payload, settings = prepare_payload(body, output, staged, phase)
+    print(json.dumps(dict(payload=payload, output_dir=str(output), settings=settings), default=json_value, indent=2))
 
 
 def submit_payload(client, body, phase, name, commit, *, output_dir=None, directory=None, before_send=None):
-    output = directory.output if directory else os.environ.get("SPS_SUBMIT_OUTPUT") or output_dir
+    output = directory.output if directory else output_dir
     if output and directory is None:
         from orchestration.named.publication import COMMON_ROOT, RunDirectory
-        body = prepare_payload(body, output_dir or output, STAGING_ROOT / commit, phase)
+        body, _ = prepare_payload(body, output, STAGING_ROOT / commit, phase)
         directory = RunDirectory(COMMON_ROOT, Path(output))
     identity = normalize(body["job_desc"])
     intent = ARTIFACTS_ROOT / 'submission-intents' / (
@@ -303,17 +305,18 @@ def payload(phase, name, staged, author, nick, *, training_gpus=4):
         n_workers=1, processes_per_worker=1)
 
 
-def main(default_phase='train', *, named=None):
+def main(default_phase='train'):
     parser = argparse.ArgumentParser(epilog="Use --list [FAMILY] to browse named runs. "
                                      "Select one with --experiment FAMILY/NAME.")
     parser.add_argument('--phase', choices=('prepare', 'train', 'eval'), default=default_phase)
     parser.add_argument('--author_name', default='d.tarasov')
     parser.add_argument('--telegram_nick', default='mrsndmn')
     parser.add_argument('--profile', default='default')
-    parser.add_argument('--filter')
+    selectors = parser.add_mutually_exclusive_group()
+    selectors.add_argument('--filter')
+    selectors.add_argument('--exact', dest='named', metavar='NAME')
     parser.add_argument('--dry', action='store_true')
     args = parser.parse_args()
-    args.named = named
     return submit(args)
 
 

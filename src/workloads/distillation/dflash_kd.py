@@ -1,12 +1,7 @@
-"""Submit and report the DFlash-b16 soft-distillation experiment."""
-
-import argparse
-from orchestration.named.publication import work_path
-from hashlib import sha256
+"""Submit and report the DFlash soft-distillation experiment."""
 
 import json
 from pathlib import Path
-import shlex
 import tempfile
 
 from workloads.distillation import dflash_kd_train as training, dflash_repro as runner
@@ -15,93 +10,21 @@ from workloads.distillation import dflash_repro_train as hard
 from orchestration import mlspace_launch as launch
 
 
-def evaluation_signature():
-    return evaluation.signature()
-
-
-def arm_name(phase, step):
-    if phase == "eval":
-        return training.EXPERIMENT.output(phase, step).name
-    return training.EXPERIMENT.name
-
-
-def marker(phase, step):
-    directory = work_path(training.EXPERIMENT.output(phase, step))
-    file = {"probe": "prepared.json", "train": "trained.json", "eval": "evaluated.json"}[phase]
-    return directory / file
-
-
-def payload(phase, step, staged):
-    name = arm_name(phase, step)
-    body = launch.payload("eval" if phase == "eval" else "train", name, staged, "d.tarasov", "mrsndmn")
-    distributed = []
-    if phase != "eval":
-        gpus = training.EXPERIMENT.num_gpus
-        body["instance_type"] = f"a100.{gpus}gpu"
-        body["env_variables"]["TORCHINDUCTOR_COMPILE_THREADS"] = "1"
-        distributed = ["-m", "torch.distributed.run", "--standalone", f"--nproc-per-node={gpus}"]
-    entry = ["scripts/distillation/dflash_kd.py", "--worker", "--phase", phase]
-    if phase == "eval":
-        entry += ["--step", str(step)]
-    command = ["timeout", "--kill-after=60s", runner.TIMEOUTS[phase], str(launch.PYTHON),
-               *distributed, *entry]
-    body["script"] = f"cd {shlex.quote(str(staged))} && " + shlex.join(command)
-    body["job_desc"] = f"dflash-kd {phase} {name} {training.run_root().name} #d.tarasov @mrsndmn"
-    return body
-
-
-def evaluate(step, result):
+def evaluate(checkpoint, result, *, experiment):
     # Reuse the exact hard-run evaluation protocol without changing its archived identity.
     result.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=result.parent) as tmp:
         raw = Path(tmp) / "raw.json"
-        evaluation.evaluate(training.checkpoint_path(step), raw, experiment=training.EXPERIMENT)
+        evaluation.evaluate(checkpoint, raw, experiment=experiment)
         report = json.loads(raw.read_text())
-        report.update(design=training.EXPERIMENT.name, evaluation=evaluation_signature(),
-                      hard_design=hard.EXPERIMENT.name, objective="soft-kl")
+        report.update(
+            design=experiment.name,
+            evaluation=evaluation.signature(),
+            hard_design=hard.EXPERIMENT.name,
+            objective="soft-kl",
+        )
         launch.store_json(result, report)
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--phase", choices=tuple(runner.TIMEOUTS), default="probe")
-    parser.add_argument("--step", type=int)
-    modes = parser.add_mutually_exclusive_group()
-    for flag in ("dry", "worker", "report"):
-        modes.add_argument(f"--{flag}", action="store_true")
-    args = parser.parse_args()
-    phase, step = args.phase, args.step
-    if phase == "eval":
-        if step is None:
-            try:
-                step = runner.final_step()
-            except FileNotFoundError as error:
-                if not args.dry:
-                    raise
-                print(json.dumps({"pending_input": error.filename}))
-                return
-        elif step not in hard.EXPERIMENT.milestones and step != runner.final_step():
-            parser.error("Choose a scheduled DFlash checkpoint")
-    elif step is not None:
-        parser.error("--step is only available for evaluation")
-
-    result = marker(phase, step)
-    if args.report:
-        report = json.loads(result.read_text())
-        print(json.dumps(report["summary"] if phase == "eval" else report, indent=2))
-    elif args.worker:
-        if result.is_file():
-            return
-        if phase == "eval":
-            if not marker("train", None).is_file():
-                raise RuntimeError("Complete DFlash training before evaluating any checkpoint")
-            evaluate(step, result)
-        else:
-            training.train(experiment=training.EXPERIMENT, probe=phase == "probe")
-    else:
-        commit = launch.git("rev-parse", "HEAD")
-        body = payload(phase, step, launch.STAGING_ROOT / commit)
-        if args.dry:
-            launch.print_preview(body, training.EXPERIMENT.output(phase, step), launch.STAGING_ROOT / commit, phase)
-            return
-        runner.submit_phase(training, phase, step, marker, body, commit)
+    runner.run(training, "scripts/distillation/dflash_kd.py", evaluate)

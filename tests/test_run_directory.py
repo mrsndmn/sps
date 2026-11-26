@@ -95,7 +95,6 @@ def test_named_evaluation_uses_recorded_checkpoint_and_reserved_output(
 ):
     import json
     from dataclasses import replace
-    from orchestration.named.registry import effective_settings
 
     run = replace(
         pilot_launch.suite.collect_experiments()[0],
@@ -109,7 +108,7 @@ def test_named_evaluation_uses_recorded_checkpoint_and_reserved_output(
     (run.output_dir / "trained.json").write_text(
         json.dumps({"checkpoint": str(checkpoint)})
     )
-    commands = effective_settings("1b", run, tmp_path, "eval")["worker_commands"]
+    commands = pilot_launch.pilot_preview(run, tmp_path, "eval")["worker_commands"]
     for cmd in commands:
         assert cmd[cmd.index("--checkpoint_path") + 1] == str(checkpoint)
         result = Path(cmd[cmd.index("--output_path") + 1])
@@ -159,8 +158,7 @@ def test_native_and_named_submission_share_the_same_reservation(tmp_path, monkey
     assert directory.job_name() == job
     assert not output.exists()
     assert "orchestration.named.publication" in shlex.split(submitted[0]["script"])
-    monkeypatch.setenv("SPS_SUBMIT_OUTPUT", str(output))
-    assert mlspace_launch.submit_payload(client, dict(body), "eval", "arm", "commit")["reused"]
+    assert mlspace_launch.submit_payload(client, dict(body), "eval", "arm", "commit", output_dir=output)["reused"]
     assert len(submitted) == 1
     other = tmp_path / "second"
     identity = mlspace_launch.normalize(submitted[0]["job_desc"])
@@ -171,12 +169,13 @@ def test_native_and_named_submission_share_the_same_reservation(tmp_path, monkey
 
 def test_dflash_worker_uses_explicit_run_fields(monkeypatch):
     from experiments import dflash_kd_train
-    from experiments.family_cli import flags, read_worker_arguments
+    from experiments.family_cli import worker_command, worker_settings, read_worker_arguments
+    import shlex
 
     (exp,) = dflash_kd_train.experiment_configs
     monkeypatch.setattr(dflash_kd_train, "experiment_configs", [exp])
     group = f"dflash_kd_train.experiment_configs.{exp.name}"
-    argv = ["worker", *flags(group, exp), f"--cfg.{group}.epochs=7"]
+    argv = [*shlex.split(worker_command("worker", worker_settings(["dflash_kd_train"], exp.name))), f"--cfg.{group}.epochs=7"]
     read_worker_arguments(argv)
     (selected,) = dflash_kd_train.experiment_configs
     assert argv == ["worker"]
@@ -241,17 +240,15 @@ def test_ambiguous_retry_cannot_adopt_an_older_failed_receipt(tmp_path, monkeypa
 
 
 def test_native_and_named_commands_include_the_same_schedule_arguments(tmp_path, monkeypatch):
-    from experiments.protocols import schemas
     from orchestration.named import publication
     monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
     monkeypatch.setattr(sys, "argv", ["scripts/instruction/sched_run.py"])
     output = tmp_path / "cosine"
     command = "echo --filter qwen3_instruct_staged_sps_ce"
     body = {"job_desc": "schedule", "script": command}
-    preview = publication.published_command(command, output, tmp_path, schemas("sched_run", "train"))
-    body = mlspace_launch.prepare_payload(body, output, tmp_path, "train")
+    body, settings = mlspace_launch.prepare_payload(body, output, tmp_path, "train")
     assert "--cfg.instruct_config.weight_decay" in body["script"]
-    assert body["script"] == preview
+    assert "weight_decay" in settings["instruct_config"]
 
 
 def test_family_capacity_counts_pending_siblings_when_list_lags(tmp_path, monkeypatch):
@@ -313,13 +310,13 @@ def test_logged_child_receives_parsed_training_arguments(tmp_path, monkeypatch):
 
 def test_worker_arguments_include_paired_conditions_and_selected_arm():
     import shlex
-    from experiments.family_cli import worker_command
+    from experiments.family_cli import worker_command, worker_settings
     from experiments.dflash_mask_ablation import experiment_configs
 
-    mask = shlex.split(worker_command("mask", ["dflash_mask_ablation"]))
+    mask = shlex.split(worker_command("mask", worker_settings(["dflash_mask_ablation"])))
     for row in experiment_configs:
         assert any(f".{row.name}." in flag for flag in mask)
-    serving = worker_command("serving", ["real_readout_serving"], "A")
+    serving = worker_command("serving", worker_settings(["real_readout_serving"], "A"))
     assert ".serving-A.arm=A" in serving
     assert ".serving-B." not in serving
 

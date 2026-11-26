@@ -9,7 +9,7 @@ from workloads.serving import vllm_sps_common as common
 from experiments import vllm_sps_config as c
 from experiments.real_readout_run import family_config as real_readout_run_settings
 from experiments.real_readout_run import experiment_configs
-ARM, = experiment_configs
+from experiments.launch import run_filter
 ROOT = real_readout_run_settings.ROOT
 PARENT = real_readout_run_settings.PARENT
 OUT = real_readout_run_settings.OUT
@@ -26,38 +26,33 @@ def trained():
     return marker
 
 
-def probe_report():
-    path = ROOT / "probe/prepared.json"
-    return path
-
-
-def check_probe():
-    projected = common.probe_seconds(probe_report(), num_gpus=ARM.num_gpus,
+def check_probe(exp):
+    projected = common.probe_seconds(exp.output("probe") / "prepared.json", num_gpus=exp.num_gpus,
                                      legacy_horizons=LEGACY_HORIZONS)
     if projected >= c.family_config.TRAIN_HOURS * 3600:
         raise RuntimeError("Training projection exceeds allocation")
 
 
-def submit(phase, dry):
+def submit(exp, phase, dry):
     commit = launch.git("rev-parse", "HEAD")
     staged = launch.STAGING_ROOT / commit
-    output = ROOT / "probe" if phase == "probe" else OUT
+    output = exp.output(phase)
     if not dry and not launch.pending(output):
         return
     script = ["timeout", f"{c.family_config.PROBE_HOURS if phase == 'probe' else c.family_config.TRAIN_HOURS}h",
               str(launch.PYTHON), "-m", "torch.distributed.run", "--standalone",
-              f"--nproc_per_node={ARM.num_gpus}", "scripts/readout/real_readout_train.py", phase]
-    body = launch.payload("train", ARM.name, staged, "d.tarasov", "mrsndmn")
+              f"--nproc_per_node={exp.num_gpus}", "scripts/readout/real_readout_train.py", phase, "--filter", exp.name]
+    body = launch.payload("train", exp.name, staged, "d.tarasov", "mrsndmn")
     body.update(script=f"cd {shlex.quote(str(staged))} && " + shlex.join(script),
-                instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[ARM.num_gpus],
-                job_desc=f"sps-real-readout {phase} {ARM.name} #d.tarasov @mrsndmn")
+                instance_type=launch.INSTANCE_TYPES_BY_NUM_GPUS[exp.num_gpus],
+                job_desc=f"sps-real-readout {phase} {exp.name} #d.tarasov @mrsndmn")
     body["env_variables"].update(SPS_EXPERIMENT_SUITE="ar-sps-qwen3-1.7b-instruct",
                                  HF_HUB_DISABLE_XET="1")
     if dry:
         launch.print_preview(body, output, staged, phase)
         return
     if phase == "train":
-        check_probe()
+        check_probe(exp)
     from mls.manager.job.utils import get_in_progress_jobs, training_job_api_from_profile
 
     client, extra = training_job_api_from_profile("default")
@@ -72,16 +67,17 @@ def submit(phase, dry):
     launch.stage_repo(Path(launch.git("rev-parse", "--show-toplevel")), commit)
     body["region"] = extra["region"]
     print(json.dumps(launch.submit_payload(client, body, "prepare" if phase == "probe" else phase,
-                                          ARM.name, commit, output_dir=output)), flush=True)
+                                          exp.name, commit, output_dir=output)), flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("probe", "train"))
     parser.add_argument("--dry", action="store_true")
+    configs = run_filter(parser, experiment_configs)
     args = parser.parse_args()
     launch.ARTIFACTS_ROOT, launch.RUN_ROOT = ROOT, ROOT / "runs"
     if args.dry:
-        return submit(args.phase, True)
+        return submit(configs[args.filter], args.phase, True)
     with launch.submission_lock():
-        submit(args.phase, False)
+        submit(configs[args.filter], args.phase, False)

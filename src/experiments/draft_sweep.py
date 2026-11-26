@@ -34,3 +34,22 @@ experiment_configs = [
     for mode in c.family_config.GENERATION
     for arm in ("eagle3", "sps_mtp")
 ]
+
+
+def launches(family):
+    from . import draft_sweep_train, serving_benchmark
+    from .launch import filtered
+
+    script = "scripts/serving/draft_sweep.py"
+    for phase in ("train", "probe"):
+        yield from filtered(
+            (draft_sweep_train.EXPERIMENT,), phase, script, "--phase", phase
+        )
+    yield from filtered(
+        (r for r in serving_benchmark.experiment_configs if r.arm == "audit"),
+        "audit",
+        script,
+        "--phase",
+        "audit",
+    )
+    yield from filtered(experiment_configs, "eval", script, "--phase", "eval")

@@ -30,3 +30,13 @@ class Experiment:
 
 
 experiment_configs = [Experiment()]
+
+
+def launches(family):
+    from importlib import import_module
+    from .launch import Launch
+
+    for study in ("audit", "trace", "precision", "cache_trace", "backbone_precision"):
+        module = import_module(f"experiments.sampling_{study}")
+        for job in getattr(module, "job_configs", module.experiment_configs):
+            yield Launch(job.name, "eval", f"scripts/serving/sampling_{study}.py")

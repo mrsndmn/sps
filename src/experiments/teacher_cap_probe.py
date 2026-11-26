@@ -23,3 +23,11 @@ class FamilyConfig:
 
 
 family_config = FamilyConfig()
+
+
+def launches(family):
+    from .launch import Launch
+
+    yield Launch(
+        "continuations", "eval", "scripts/evaluation/cap_jobs.py", ("teacher",)
+    )

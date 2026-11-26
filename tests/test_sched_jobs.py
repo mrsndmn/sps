@@ -29,7 +29,7 @@ def test_dry_jobs_are_isolated_and_have_required_gpu_count(variant,phase,count,g
 
 
 def test_mode_filter_and_invalid_worker_routes():
-    p=run('--variant','step384','--phase','eval','--workload','ifeval-nonthinking','--filter','staged_sps_ce','--dry')
+    p=run('--variant','step384','--phase','eval','--workload','ifeval-nonthinking','--filter','qwen3_instruct_staged_sps_ce','--dry')
     assert p.returncode==0 and p.stdout.count('"instance_type"')==1
     assert run('--variant','step384','--phase','train','--dry').returncode!=0
     assert run('--variant','cosine','--phase','train','--limit','1','--dry').returncode!=0

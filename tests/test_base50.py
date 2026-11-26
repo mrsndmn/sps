@@ -50,6 +50,6 @@ runner.e.RUN_ROOT = Path(sys.argv.pop(1)) / 'runs'
 runner.main()
 '''
     result=subprocess.run([sys.executable,'-c',cli,str(tmp_path),'--dry'],env=env,check=True,capture_output=True,text=True)
-    data=json.loads(result.stdout)
+    data=json.loads(result.stdout)["payload"]
     assert 'scripts/adaptation/base50_run.py --worker' in data['script']
     assert 'qwen3-base-1.7b-ce-50k' in data['job_desc']

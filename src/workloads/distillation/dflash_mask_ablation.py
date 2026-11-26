@@ -359,10 +359,13 @@ def submit(dry):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
-    for option in ("submit", "dry", "worker", "report"):
+    mode = parser.add_mutually_exclusive_group()
+    parser.add_argument("--dry", action="store_true")
+    for option in ("submit", "worker", "report"):
         mode.add_argument(f"--{option}", action="store_true")
     args = parser.parse_args()
+    if not any((args.dry, args.submit, args.worker, args.report)) or (args.dry and (args.worker or args.report)):
+        parser.error("Use --dry, --submit, --worker or --report")
     if args.worker:
         evaluate()
     elif args.report:

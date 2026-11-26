@@ -91,5 +91,18 @@ def collect_experiments(phase, pattern=None):
         x
         for x in experiment_configs
         if (x.arm == "train") == (phase in {"probe", "train"})
-        and (pattern is None or pattern in x.name)
+        and (pattern is None or pattern == x.name)
     ]
+
+
+def launches(family):
+    from .launch import filtered
+
+    for phase in ("probe", "train"):
+        yield from filtered(
+            collect_experiments(phase),
+            phase,
+            "scripts/serving/vllm_sps_run.py",
+            "--phase",
+            phase,
+        )

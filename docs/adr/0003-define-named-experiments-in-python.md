@@ -12,7 +12,25 @@ base as a frozen, keyword-only dataclass with the family's defaults. List
 instances in `experiment_configs`, giving each a stable name and spelling out
 only the fields that vary. Use dataclass inheritance to share defaults. Changes
 to one instance must leave the others independent. Keep numeric settings in
-code. The registry checks name uniqueness within each family.
+code.
+
+## Selection by name
+
+Use the exact key `FAMILY/NAME` and a phase. The family registry maps each
+family ID to its Python definitions. Each family derives its available runs
+and phases from its experiment configs. Listing a family must work before
+data preparation or training and without loading a model or an MLSpace client.
+
+Pass selectors such as checkpoint step, dataset and evaluation workload as
+native CLI options. A phase and its options identify one submission. A family
+can expose a collective operation. Shared preparation has one name,
+`data-and-probes`, and a paired evaluation submits one job for all conditions. A winner evaluation selects a trained arm when the
+launcher resolves its inputs.
+
+The catalog forwards the selection to the native launcher. That launcher
+resolves the destination and builds the worker arguments once. Use these values
+for the preview and for submission. Adding an experiment instance to an existing
+family must require a change only to its experiment definitions.
 
 ## Worker interface
 

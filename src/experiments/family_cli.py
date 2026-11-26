@@ -18,7 +18,7 @@ def _rows(module, table):
     return ((getattr(row, "name", "default"), row) for row in records)
 
 
-def _json_value(value):
+def json_value(value):
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, (set, frozenset)):
@@ -26,36 +26,41 @@ def _json_value(value):
     raise TypeError(type(value).__name__)
 
 
-def flags(group, record):
-    result = []
-    for field in fields(record):
-        if not field.init or field.name == "experiment_configs":
-            continue
-        value = getattr(record, field.name)
-        if value is None:
-            continue
-        if isinstance(value, (dict, tuple, list, set, frozenset)):
-            value = json.dumps(value, default=_json_value, separators=(",", ":"))
-        result.append(f"{PREFIX}{group}.{field.name.lower()}={value}")
-    return result
-
-
-def worker_command(command, families, selected=None):
-    options = []
+def worker_settings(families, selected=None):
+    records = {}
     for family in families:
         module = import_module("experiments." + family)
         if hasattr(module, "family_config"):
-            options.extend(flags(family, module.family_config))
+            records[family] = module.family_config
         for table in ("experiment_configs", "job_configs"):
             rows = list(_rows(module, table))
-            selected_rows = [
+            matches = [
                 (name, row)
                 for name, row in rows
-                if name == selected or getattr(row, "arm", None) == selected
+                if selected is not None
+                and (name == selected or getattr(row, "arm", None) == selected)
             ]
-            # A worker without a matching selector consumes the whole table (e.g. a paired evaluation).
-            for name, row in selected_rows or rows:
-                options.extend(flags(f"{family}.{table}.{name}", row))
+            for name, row in matches or rows:
+                records[f"{family}.{table}.{name}"] = row
+    return {
+        group: {
+            f.name.lower(): getattr(row, f.name)
+            for f in fields(row)
+            if f.init
+            and f.name != "experiment_configs"
+            and getattr(row, f.name) is not None
+        }
+        for group, row in records.items()
+    }
+
+
+def worker_command(command, settings):
+    options = []
+    for group, values in settings.items():
+        for name, value in values.items():
+            if isinstance(value, (dict, tuple, list, set, frozenset)):
+                value = json.dumps(value, default=json_value, separators=(",", ":"))
+            options.append(f"{PREFIX}{group}.{name}={value}")
     return command + (" " + shlex.join(options) if options else "")
 
 

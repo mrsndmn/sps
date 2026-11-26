@@ -14,9 +14,7 @@ from orchestration.run_directory import RunDirectory
 
 def work_path(path):
     """Redirect only this worker's output tree. Other experiments stay readable."""
-    final = os.environ.get("SPS_JOB_ORIGINAL_OUTPUT") or os.environ.get(
-        "SPS_JOB_OUTPUT"
-    )
+    final = os.environ.get("SPS_JOB_OUTPUT")
     work = os.environ.get("SPS_JOB_WORK")
     path = Path(path)
     if final and work and path.is_relative_to(final):
@@ -122,34 +120,25 @@ def pending_output(output, profile="default"):
         return ready and retryable(directory, profile)
 
 
-def published_command(command, output, staged, schemas, original=None):
-    from experiments.family_cli import worker_command
-
-    words = shlex.split(command)
-    selected = next(
-        (words[words.index(k) + 1] for k in ("--filter", "--arm") if k in words), None
-    )
-    command = worker_command(command, schemas, selected)
+def published_command(command, output, staged):
     return f"cd {shlex.quote(str(staged))} && " + shlex.join(
         [
             str(PYTHON),
             "-m",
             "orchestration.named.publication",
             str(output),
-            str(original or output),
             command,
         ]
     )
 
 
 def main():
-    output, original, command = sys.argv[1:]
+    output, command = sys.argv[1:]
     directory = RunDirectory(COMMON_ROOT, Path(output))
     with directory.writing(reserved=True) as work:
         env = dict(
             os.environ,
             SPS_JOB_OUTPUT=output,
-            SPS_JOB_ORIGINAL_OUTPUT=original,
             SPS_JOB_WORK=str(work),
         )
         subprocess.run(["/bin/bash", "-c", command], env=env, check=True)

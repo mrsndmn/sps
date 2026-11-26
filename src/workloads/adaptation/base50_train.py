@@ -39,7 +39,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--filter', required=True)
     args = parser.parse_args()
-    matches = e.collect_experiments(args.filter)
+    matches = [exp for exp in config.experiment_configs if exp.name == args.filter]
     if len(matches) != 1 or not matches[0].trainable:
         raise ValueError('Select exactly one trainable arm')
     exp = matches[0]

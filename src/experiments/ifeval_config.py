@@ -14,3 +14,16 @@ class FamilyConfig:
 
 
 family_config = FamilyConfig()
+
+
+def launches(family):
+    from .instruct_config import experiment_configs
+    from .launch import filtered
+
+    yield from filtered(
+        experiment_configs,
+        "eval",
+        "scripts/instruction/ifeval_run.py",
+        options=("mode",),
+        required=("mode",),
+    )

@@ -64,7 +64,7 @@ def reserve(name):
 
 
 def submit(args):
-    experiments = e.collect_experiments(args.filter)
+    experiments = [exp for exp in e.collect_experiments(args.filter) if args.filter in (None, exp.name)]
     if not experiments:
         raise ValueError('No matching experiments')
     commit = launch.git('rev-parse', 'HEAD')

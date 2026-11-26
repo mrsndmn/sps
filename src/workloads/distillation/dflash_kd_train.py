@@ -18,11 +18,7 @@ from workloads.distillation import dflash_repro_train as hard
 from orchestration import mlspace_launch as launch
 from orchestration.named.publication import work_path
 from experiments.dflash_kd_train import experiment_configs
-EXPERIMENT, = experiment_configs
-
-
-def run_root():
-    return EXPERIMENT.output_root
+EXPERIMENT = experiment_configs[0]
 
 
 def checkpoint_path(step, experiment=None):

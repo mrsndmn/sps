@@ -37,3 +37,10 @@ class FamilyConfig:
 
 
 family_config = FamilyConfig()
+
+
+def launches(family):
+    from .launch import Launch
+
+    for name in experiment_configs:
+        yield Launch(name, "eval", "scripts/evaluation/cap_jobs.py", ("compare", name))

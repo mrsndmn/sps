@@ -30,3 +30,23 @@ class Experiment:
 
 
 experiment_configs = [Experiment()]
+
+
+def launches(family):
+    from . import provenance_train, provenance_evaluate
+    from .launch import Launch, filtered
+
+    for exp in experiment_configs:
+        yield Launch(exp.name, "prepare", "scripts/provenance/provenance_prepare.py")
+    for exp in provenance_train.experiment_configs:
+        yield Launch(
+            exp.name,
+            "train",
+            "scripts/provenance/provenance_train.py",
+            ("--arm", exp.name),
+        )
+    yield from filtered(
+        provenance_evaluate.experiment_configs,
+        "eval",
+        "scripts/provenance/provenance_evaluate.py",
+    )

@@ -68,15 +68,44 @@ TERMINAL_FAILURES = {
 }
 
 
+def pilot_preview(run, root, phase):
+    from orchestration.experiment_suite import (
+        TASKS,
+        DATASET_REPO,
+        DATASET_REVISION,
+        DATA_FILES,
+        eval_command,
+        train_command,
+    )
+
+    work = destination(phase, run).work
+    probe = phase == "prepare"
+    data_root = work if probe else root
+    result = run.config(data_root, probe=probe)
+    result["data_source"] = dict(
+        repo=DATASET_REPO, revision=DATASET_REVISION, files=DATA_FILES
+    )
+    if phase == "eval":
+        marker = run.output_dir / "trained.json"
+        checkpoint = Path(json.loads(marker.read_text())["checkpoint"]) if marker.is_file() else None
+        # The filename is only known after training has published the checkpoint.
+        stem = checkpoint.stem if checkpoint else "<checkpoint>"
+        result["worker_commands"] = [eval_command(run, task, checkpoint=checkpoint,
+            result=work / stem / f"{task}.json") for task in TASKS]
+    else:
+        dest = work / "out" / run.name if probe else work
+        result["worker_commands"] = [train_command(run, probe=probe, data_root=data_root, dest=dest)]
+    return result
+
+
 def submit(args):
     from orchestration import mlspace_launch as launch
-    from orchestration.named.registry import effective_settings
 
     phase = args.phase
     runs = [
         e
         for e in suite.collect_experiments(args.filter)
-        if (not args.named or e.name == args.named)
+        if (not args.named or ("data-and-probes" if phase == "prepare" else e.name) == args.named)
         and (phase != "train" or e.trainable)
     ]
     if suite.SUITE in evaluation_outputs and phase != "eval":
@@ -116,7 +145,7 @@ def submit(args):
             else:
                 body["script"] += " --reserved"
             if suite.SUITE not in {"1b", "10b"}:
-                from experiments.family_cli import worker_command
+                from experiments.family_cli import worker_command, worker_settings
 
                 if suite.SUITE in suite.AR_SPS_SUITES:
                     schemas = ("ar_sps_config",)
@@ -129,7 +158,8 @@ def submit(args):
                         "spec-baselines": ("spec_baselines",),
                         "mtp-unified": ("mtp_unified",),
                     }.get(suite.SUITE, ())
-                body["script"] = worker_command(body["script"], schemas, name)
+                settings = worker_settings(schemas, name)
+                body["script"] = worker_command(body["script"], settings)
             launch.scope_payload(body, directory.output)
             if args.dry:
                 if (
@@ -142,12 +172,9 @@ def submit(args):
                         print(f"Skip evaluation without trained checkpoint: {name}")
                         continue
                 if args.named:
-                    settings = {
-                        e.name: effective_settings(
-                            suite.SUITE, e, suite.RUN_ROOT, phase
-                        )
-                        for e in (suite.collect_experiments() if run is None else [run])
-                    }
+                    if suite.SUITE in {"1b", "10b"}:
+                        settings = {e.name: pilot_preview(e, suite.RUN_ROOT, phase) for e in (
+                            suite.collect_experiments() if run is None else [run])}
                     print(
                         json.dumps(
                             dict(
@@ -228,6 +255,8 @@ def submit(args):
                     before_send=reserve_budget,
                 )
             )
+    if args.dry and args.named:
+        return 0
     print("__MLS_JOBS_JSON__")
     print(json.dumps(dict(phase=phase, jobs=jobs)))
     return 0

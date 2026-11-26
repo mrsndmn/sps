@@ -49,7 +49,7 @@ def test_payload_keeps_global_batch_and_eval_gpu_count(tmp_path, monkeypatch):
     assert training.EXPERIMENT.global_batch == hard.EXPERIMENT.global_batch == 24
     assert hard.total_steps(93216, training.EXPERIMENT) == 11652
     for phase in ("probe", "train"):
-        body = jobs.payload(phase, None, tmp_path)
+        body = jobs.runner.payload(training.EXPERIMENT, phase, None, tmp_path, "scripts/distillation/dflash_kd.py")
         assert body["instance_type"] == "a100.8gpu"
         assert "--nproc-per-node=8" in body["script"]
-    assert jobs.payload("eval", 5000, tmp_path)["instance_type"] == "a100.1gpu"
+    assert jobs.runner.payload(training.EXPERIMENT, "eval", 5000, tmp_path, "scripts/distillation/dflash_kd.py")["instance_type"] == "a100.1gpu"

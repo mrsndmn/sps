@@ -7,27 +7,57 @@ import sys
 
 import pytest
 
-from orchestration.named.registry import named_runs, resolve
+from orchestration.named.registry import FAMILIES, family_runs
 from orchestration.suite_registry import WORKER_SCRIPTS
 
 
+def test_shared_preparation_has_one_name_and_one_output():
+    runs = family_runs("1b")
+    assert [name for name, phase in runs if phase == "prepare"] == ["data-and-probes"]
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "scripts/run_train_jobs.py",
+            "--experiment",
+            "1b/data-and-probes",
+            "--phase",
+            "prepare",
+            "--dry",
+        ],
+        text=True,
+    )
+    preview = json.loads(out)
+    assert preview["output_dir"] and "data-and-probes" in preview["payload"]["job_desc"]
+
+
 def test_catalog_covers_common_workers_and_disambiguates_archives():
-    runs = named_runs()
-    assert {family for family, _ in runs.values()} == set(WORKER_SCRIPTS)
-    with pytest.raises(ValueError, match="Ambiguous"):
-        resolve("smollm2_original_ar", runs)
-    family, run = resolve("ar-sps-360m-ce/smollm2_original_ar", runs)
-    assert family == "ar-sps-360m-ce"
-    assert run.name == "smollm2_original_ar"
-    assert "mmlu-full-resume/qwen0.6_ce" not in runs
+    assert set(WORKER_SCRIPTS) <= FAMILIES.keys()
+    assert ("smollm2_original_ar", "eval") in family_runs("ar-sps-360m-ce")
+    assert ("qwen0.6_ce", "eval") not in family_runs("mmlu-full-resume")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_eval.py",
+            "--experiment",
+            "smollm2_original_ar",
+            "--dry",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2 and "FAMILY/NAME" in result.stderr
 
 
-@pytest.mark.parametrize("entry, gpus", [("scripts/run_eval.py", 1), ("scripts/run_train_jobs.py", 4)])
+@pytest.mark.parametrize(
+    "entry, gpus", [("scripts/run_eval.py", 1), ("scripts/run_train_jobs.py", 4)]
+)
 def test_named_preview_overrides_ambient_suite(entry, gpus):
     env = dict(os.environ, SPS_EXPERIMENT_SUITE="10b")
     name = "s_standard_pilot_1b"
     out = subprocess.check_output(
-        [sys.executable, entry, "--experiment", name, "--dry"], env=env, text=True
+        [sys.executable, entry, "--experiment", "1b/" + name, "--dry"],
+        env=env,
+        text=True,
     )
     plan, _ = json.JSONDecoder().raw_decode(out)
     assert plan["payload"]["instance_type"] == f"a100.{gpus}gpu"
@@ -37,21 +67,30 @@ def test_named_preview_overrides_ambient_suite(entry, gpus):
     if gpus == 1:
         commands = plan["settings"][name]["worker_commands"]
         assert all(
-            ("--checkpoint_path" in cmd or "--checkpoint" in cmd) and cmd[cmd.index("--num_fewshot")+1] == "0" for cmd in commands
+            ("--checkpoint_path" in cmd or "--checkpoint" in cmd)
+            and cmd[cmd.index("--num_fewshot") + 1] == "0"
+            for cmd in commands
         )
-        assert any(cmd[cmd.index("--tasks")+1] == "piqa" for cmd in commands)
+        assert any(cmd[cmd.index("--tasks") + 1] == "piqa" for cmd in commands)
 
 
 def test_readout_named_preview_uses_its_checkpoint_and_worker():
     name = "qwen3-instruct-real-readout-mtp/gsm8k-A-nonthinking"
     out = subprocess.check_output(
-        [sys.executable, "scripts/run_eval.py", "--experiment", name, "--dry"], text=True
+        [sys.executable, "scripts/run_eval.py", "--experiment", name, "--dry"],
+        text=True,
     )
     plan = json.loads(out)
     from experiments import instruct_config
 
-    assert plan["settings"]["generation"] == instruct_config.family_config.GENERATION["nonthinking"]
-    assert plan["settings"]["REVISION"] == instruct_config.family_config.REVISION
+    assert (
+        plan["settings"]["instruct_config"]["generation"]["nonthinking"]
+        == instruct_config.family_config.GENERATION["nonthinking"]
+    )
+    assert (
+        plan["settings"]["instruct_config"]["revision"]
+        == instruct_config.family_config.REVISION
+    )
     assert plan["payload"]["instance_type"] == "a100.1gpu"
     assert (
         "scripts/readout/real_readout_gsm8k.py --worker --filter A-nonthinking"
@@ -60,27 +99,17 @@ def test_readout_named_preview_uses_its_checkpoint_and_worker():
 
 
 def test_named_mask_ablation_selects_submission_mode(monkeypatch, tmp_path):
-    from orchestration.named import publication
-    monkeypatch.setattr(publication, "COMMON_ROOT", tmp_path)
     from orchestration.named import cli
-    from types import SimpleNamespace
-    from orchestration.named import special_families
 
-    monkeypatch.setattr(
-        special_families,
-        "load",
-        lambda _: SimpleNamespace(
-            __name__="workloads.distillation.dflash_mask_ablation", experiment_configs=[],
-            result_path=lambda: tmp_path / "mask" / "evaluated.json",
-        ),
-    )
     monkeypatch.setattr(
         sys,
         "argv",
         ["scripts/run_eval.py", "--experiment", "dflash-mask-ablation/paired-masks"],
     )
     calls = []
-    monkeypatch.setattr(cli.subprocess, "call", lambda argv, env: calls.append(argv) or 0)
+    monkeypatch.setattr(
+        cli.subprocess, "call", lambda argv, env: calls.append(argv) or 0
+    )
     with monkeypatch.context() as context:
         context.setattr(os, "environ", os.environ.copy())
         assert cli.main("eval") == 0
@@ -100,7 +129,7 @@ def test_cap_submission_identity_uses_configured_output(tmp_path, monkeypatch, c
     for cohort in (["same"], ["same"], ["changed"]):
         prompts.write_text(json.dumps(cohort))
         cap_jobs.main()
-        payload = json.loads(capsys.readouterr().out)
+        payload = json.loads(capsys.readouterr().out)["payload"]
         assert payload["env_variables"]["HF_HUB_OFFLINE"] == "1"
         assert payload["env_variables"]["VLLM_USE_V2_MODEL_RUNNER"] == "0"
         assert "timeout 4h" in payload["script"]
@@ -118,11 +147,13 @@ def test_cap_submission_identity_uses_configured_output(tmp_path, monkeypatch, c
 )
 def test_named_cap_preview_matches_worker_timeout(name, hours):
     out = subprocess.check_output(
-        [sys.executable, "scripts/run_eval.py", "--experiment", name, "--dry"], text=True
+        [sys.executable, "scripts/run_eval.py", "--experiment", name, "--dry"],
+        text=True,
     )
     preview = json.loads(out)
     payload = preview["payload"]
-    assert preview["settings"]["EVAL_HOURS"] == hours
+    group = "teacher_cap_probe" if hours == 20 else "qwen35_cap_compare"
+    assert preview["settings"][group]["eval_hours"] == hours
     assert f"timeout {hours}h" in payload["script"]
 
 
@@ -150,16 +181,22 @@ def test_cap_completed_comparison_skips_cohort_preparation(
 
 @pytest.mark.parametrize("mode", ["thinking", "nonthinking"])
 def test_provenance_preview_uses_evaluation_generation(mode):
-    from orchestration.named.special_families import provenance
-    from workloads.provenance import provenance_evaluate, provenance_prepare
+    from experiments import instruct_config, provenance_prepare
 
-    plans = list(provenance())
-    prep = next(plan for plan in plans if plan.phase == "prepare")
-    assert prep.settings["GENERATION"] == provenance_prepare.GENERATION
-    plan = next(plan for plan in plans if plan.name == "continued_ar-teacher--" + mode)
-    assert plan.settings["generation"] == provenance_evaluate.c.GENERATION[mode]
-    assert plan.settings["preparation_generation"] == provenance_prepare.GENERATION
-    assert plan.settings["GENERATION"] == provenance_evaluate.c.GENERATION
+    name = "instruct-response-provenance/continued_ar-teacher--" + mode
+    plan = json.loads(
+        subprocess.check_output(
+            [sys.executable, "scripts/run_eval.py", "--experiment", name, "--dry"]
+        )
+    )
+    assert (
+        plan["settings"]["instruct_config"]["generation"][mode]
+        == instruct_config.family_config.GENERATION[mode]
+    )
+    assert (
+        plan["settings"]["provenance_prepare"]["generation"]
+        == provenance_prepare.family_config.GENERATION
+    )
 
 
 @pytest.mark.parametrize(
@@ -187,10 +224,100 @@ def test_named_train_preview_includes_shared_optimizer_and_context(family, run, 
         text=True,
     )
     plan, _ = json.JSONDecoder().raw_decode(out)
-    actual = plan["settings"]
-    assert "GPU_HOURS" not in actual and "EVAL_MAX_HOURS" not in actual
+    actual = plan["settings"]["instruct_config"]
     for field in ("CONTEXT", "EMBED_LR", "FULL_LR", "BETAS", "WEIGHT_DECAY", "CLIP"):
         expected = getattr(vllm_sps_train.source.family_config, field)
-        assert actual[field] == (
+        assert actual[field.lower()] == (
             list(expected) if isinstance(expected, tuple) else expected
         )
+
+
+def test_second_dflash_config_reaches_worker_and_owns_its_output(tmp_path):
+    """A new row in one family file is sufficient for list, launch and dedup."""
+    import shlex
+    import shutil
+    from pathlib import Path
+
+    from orchestration.run_directory import RunDirectory
+
+    repo = Path(__file__).resolve().parents[1]
+    shutil.copytree(
+        repo / "src/experiments",
+        tmp_path / "src/experiments",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    launcher = "scripts/run_train_jobs.py"
+    native = "scripts/distillation/dflash_repro.py"
+    for script in (launcher, native):
+        (tmp_path / script).parent.mkdir(exist_ok=True, parents=True)
+        shutil.copy(repo / script, tmp_path / script)
+    artifacts = tmp_path / "artifacts"
+    config = tmp_path / "src/experiments/dflash_repro_train.py"
+    with config.open("a") as stream:
+        stream.write(
+            '\nexperiment_configs.append(Experiment(name="second", '
+            f"output_root=Path({str(artifacts / 'custom')!r}), "
+            'eval_dir_pattern="eval-{step}", lr=0.0123, num_gpus=1))\n'
+        )
+    # Isolate NFS state while keeping both entry points and their real parsers.
+    (tmp_path / "sitecustomize.py").write_text(
+        f"from experiments import environment\n"
+        f"environment.COMMON_ROOT = environment.Path({str(artifacts)!r})\n"
+    )
+    env = dict(
+        os.environ,
+        PYTHONPATH=os.pathsep.join(
+            map(str, (tmp_path, tmp_path / "src", repo / "src"))
+        ),
+        GIT_DIR=subprocess.check_output(
+            ["git", "rev-parse", "--absolute-git-dir"], cwd=repo, text=True
+        ).strip(),
+        SPS_EXPERIMENT_SUITE="ar-sps-qwen3-1.7b-instruct",
+    )
+
+    def call(*args):
+        return subprocess.check_output(
+            [sys.executable, *args], cwd=tmp_path, env=env, text=True
+        )
+
+    family = "dflash-reproduction"
+    name = family + "/second"
+    listing = call(
+        "-c",
+        "import runpy, sys; sys.modules.update(dict.fromkeys(['torch', 'mls', 'transformers'])); "
+        "sys.argv.pop(0); runpy.run_path(sys.argv[0], run_name='__main__')",
+        launcher,
+        "--list",
+        family,
+    )
+    assert {
+        line.split()[1] for line in listing.splitlines() if line.startswith(name + "\t")
+    } == {"probe", "train", "eval"}
+    plan = json.loads(call(launcher, "--experiment", name, "--dry"))
+    assert plan == json.loads(
+        call(native, "--phase", "train", "--filter", "second", "--dry")
+    )
+    output = artifacts / "custom/runs/out/second"
+    assert plan["output_dir"] == str(output)
+    assert plan["payload"]["instance_type"] == "a100.1gpu"
+    command = shlex.split(shlex.split(plan["payload"]["script"])[-1])
+    argv = command[command.index(native) + 1 :]
+    worker = """
+import json, sys
+from experiments.family_cli import read_worker_arguments
+read_worker_arguments(sys.argv)
+from workloads.distillation import dflash_repro as jobs
+jobs.training.train = lambda experiment, probe: print(json.dumps([experiment.name, experiment.lr, str(experiment.output("train")), probe]))
+jobs.main()
+"""
+    assert json.loads(call("-c", worker, *argv)) == [
+        "second",
+        0.0123,
+        str(output),
+        False,
+    ]
+    directory = RunDirectory(artifacts, output)
+    directory.reservation.mkdir(parents=True)
+    assert "Skip unresolved reservation" in call(launcher, "--experiment", name)
+    output.mkdir(parents=True)
+    assert "Skip existing output" in call(launcher, "--experiment", name)

@@ -78,12 +78,15 @@ def resume_audit(state, split):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("probe", "train"))
-    probe = parser.parse_args().phase == "probe"
+    configs = run.run_filter(parser, run.experiment_configs)
+    args = parser.parse_args()
+    exp = configs[args.filter]
+    probe = args.phase == "probe"
     device = torch.device("cuda", int(os.environ["LOCAL_RANK"]))
     torch.cuda.set_device(device)
     dist.init_process_group("nccl")
     rank, world = dist.get_rank(), dist.get_world_size()
-    if world != run.ARM.num_gpus or c.family_config.GLOBAL_BATCH % world:
+    if world != exp.num_gpus or c.family_config.GLOBAL_BATCH % world:
         raise RuntimeError("Unexpected allocation")
     torch.manual_seed(c.family_config.SEED)
     data = common.data("train")
@@ -91,7 +94,7 @@ def main():
     steps = c.family_config.PROBE_STEPS if probe else c.family_config.TRAIN_STEPS
     split = steps // 2 if probe else c.family_config.STAGE_STEPS
     model = parent().to(device)
-    root = work_path(run.ROOT / "probe") if probe else work_path(run.OUT)
+    root = work_path(exp.output(args.phase))
     root.mkdir(parents=True, exist_ok=True)
     start = 0
     state = None

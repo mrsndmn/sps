@@ -35,3 +35,14 @@ class Experiment:
 experiment_configs = [
     Experiment(mask, width) for width in (4, 8) for mask in ("bidirectional", "causal")
 ]
+
+
+def launches(family):
+    from .launch import Launch
+
+    yield Launch(
+        "paired-masks",
+        "eval",
+        "scripts/distillation/dflash_mask_ablation.py",
+        ("--submit",),
+    )

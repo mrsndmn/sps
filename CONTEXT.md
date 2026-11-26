@@ -34,4 +34,4 @@
 
 ## Experiment definitions
 
-**Named experiment** — A Python definition that identifies a run and specifies its effective settings. Related runs can share settings through a family definition.
+**Named experiment** — A run or collective operation selected by an exact `FAMILY/NAME` key. A family defines its available phases. A phase can take options such as a checkpoint step or an evaluation workload.

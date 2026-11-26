@@ -250,7 +250,7 @@ def selected(phase, name=None):
         exp
         for exp in experiment_configs
         if (exp.arm == "audit") == (phase == "audit")
-        and (name is None or name in exp.name)
+        and (name is None or name == exp.name)
     ]
 
 

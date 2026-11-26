@@ -16,3 +16,15 @@ class FamilyConfig:
 
 
 family_config = FamilyConfig()
+
+
+def launches(family):
+    from .qwen4b_drafter_train import experiment_configs
+    from .launch import Launch, filtered
+
+    script = "scripts/distillation/qwen4b_drafter.py"
+    yield from filtered(
+        experiment_configs, "train", script, "--phase", "train", options=("dataset",)
+    )
+    for name, phase in (("probe", "probe"), ("evaluation", "eval")):
+        yield Launch(name, phase, script, ("--phase", phase), options=("dataset",))

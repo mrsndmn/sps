@@ -221,25 +221,27 @@ Browse families and their named runs from the repository root.
 ```bash
 python scripts/run_train_jobs.py --list
 python scripts/run_train_jobs.py --list 1b
+python scripts/run_train_jobs.py --experiment 1b/data-and-probes --phase prepare --dry
 python scripts/run_train_jobs.py --experiment 1b/s_standard_pilot_1b --dry
 python scripts/run_eval.py --experiment 1b/s_standard_pilot_1b --dry
 ```
 
-Use the same selection without `--dry` to submit. Each catalog key contains the
-family and the historical run name. Each phase publishes to its configured output
-directory. Launching it again skips an existing directory. While a job is queued or
-running, its reservation under `in_progress/` blocks duplicate submissions.
-Choose another output directory to run it again. DFlash evaluation requires
-completed training, including when evaluating an earlier checkpoint. A named dry run previews settings before those checks.
-For an evaluation that selects a winner after training, the preview shows the
-candidate payloads until the validation artifacts identify the winner.
-Historical IFEval and schedule workers require a pinned instruct source.
-A real submission stops if the current checkout and the archived source differ.
+Select a run by its full `FAMILY/NAME` key. Listing a family prints each name
+and supported phase. Use `--phase` to select a phase explicitly. For example,
+to evaluate a published DFlash checkpoint:
 
-The pilot families in `src/experiments/pilot_1b.py` and `src/experiments/pilot_10b.py` share training settings
-between its named variants. `src/orchestration/named/registry.py` collects the families
-served by the common worker. `src/orchestration/named/special_families.py` registers the
-families with dedicated submission protocols.
+```bash
+python scripts/run_eval.py --experiment dflash-reproduction/qwen3-4b-dflash-b16-scratch --step 5000 --dry
+```
+
+Remove `--dry` to submit. The native launcher resolves the output directory and
+builds the worker command shown in the preview. An existing result or an active
+reservation under `in_progress/` skips the submission. DFlash evaluation
+requires a published training result. A winner evaluation can report a pending
+training input during preview.
+
+Add related runs to the family's `experiment_configs` in `src/experiments/`.
+The registry in `src/orchestration/named/registry.py` holds one entry per family.
 
 ## MLSpace pilot artifacts
 

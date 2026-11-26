@@ -82,3 +82,23 @@ def arms(scope):
 
 
 experiment_configs = arms(os.environ.get("SPS_ADAPTER_SCOPE", "attention"))
+
+
+def scope_for(family):
+    return "attention-mlp" if family.endswith("-mlp") else "attention"
+
+
+def launch_environment(family):
+    return {
+        "SPS_EXPERIMENT_SUITE": family_config.SUITE,
+        "SPS_ADAPTER_SCOPE": scope_for(family),
+    }
+
+
+def launches(family):
+    from .launch import Launch, filtered
+
+    scope = scope_for(family)
+    script = "scripts/adaptation/qwen_adapter_run.py"
+    yield from filtered(arms(scope), "train", script, "train")
+    yield Launch("winner", "eval", script, ("eval",))

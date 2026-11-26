@@ -41,3 +41,13 @@ def learning_rate(step):
 
 
 experiment_configs = [ARExperiment("qwen3_base_staged_sps_ce_50k", "staged_sps")]
+
+
+def launch_environment(family):
+    return {"SPS_EXPERIMENT_SUITE": family_config.SOURCE_SUITE}
+
+
+def launches(family):
+    from .launch import filtered
+
+    yield from filtered(experiment_configs, "train", "scripts/adaptation/base50_run.py")

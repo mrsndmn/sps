@@ -20,8 +20,40 @@ class FamilyConfig:
 family_config = FamilyConfig()
 
 
+@dataclass(frozen=True)
+class Experiment(c.Experiment):
+    probe_dir: str | None = None
+
+    def output(self, phase):
+        if phase == "probe":
+            return family_config.ROOT / (self.probe_dir or f"probes/{self.name}")
+        return family_config.ROOT / "runs/out" / self.name
+
+
 experiment_configs = [
-    c.Experiment(
-        "qwen3_real_readout_mtp", "train", num_gpus=c.experiment_configs[0].num_gpus
+    Experiment(
+        "qwen3_real_readout_mtp", "train", num_gpus=c.experiment_configs[0].num_gpus, probe_dir="probe"
     )
 ]
+
+
+def launches(family):
+    from importlib import import_module
+    from .launch import Launch, filtered
+
+    for phase in ("probe", "train"):
+        yield from filtered(
+            experiment_configs, phase, "scripts/readout/real_readout_run.py", phase
+        )
+    for task in ("eval", "mmlu", "gsm8k", "humaneval", "serving"):
+        module = import_module(f"experiments.real_readout_{task}")
+        for exp in module.experiment_configs:
+            selector = (
+                ("--arm", exp.arm) if task == "serving" else ("--filter", exp.name)
+            )
+            yield Launch(
+                f"{task}-{exp.name}",
+                "eval",
+                f"scripts/readout/real_readout_{task}.py",
+                selector,
+            )

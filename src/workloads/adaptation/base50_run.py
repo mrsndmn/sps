@@ -1,5 +1,6 @@
 """Submit one durable prepare+train job; data and resume state share an isolated root."""
 from experiments.family_cli import worker_child
+from experiments.launch import run_filter
 import argparse
 import json
 from pathlib import Path
@@ -14,8 +15,8 @@ from orchestration import mlspace_launch as launch
 
 
 def payload(exp, staged):
-    body = launch.payload('train', exp.name, staged, 'd.tarasov', 'mrsndmn')
-    command = [str(e.PYTHON), 'scripts/adaptation/base50_run.py', '--worker']
+    body = launch.payload('train', exp.name, staged, 'd.tarasov', 'mrsndmn', training_gpus=exp.num_gpus)
+    command = [str(e.PYTHON), 'scripts/adaptation/base50_run.py', '--worker', '--filter', exp.name]
     body['script'] = f'cd {shlex.quote(str(staged))} && '+shlex.join(command)
     body['job_desc'] = f'sps-{config.ROOT_NAME} train {exp.name} #d.tarasov @mrsndmn'
     return body
@@ -27,19 +28,18 @@ def plan():
                 design_signature=e.SUITE)
 
 
-def worker():
+def worker(exp):
     from data.ar_sps_data import prepare
     prepare()
     launch.store_json(e.prepared_path(), plan())
     command = [str(e.PYTHON), '-m', 'torch.distributed.run', '--standalone',
-               '--nproc_per_node=4', 'scripts/adaptation/base50_train.py', '--filter', config.experiment_configs[0].name]
+               f'--nproc_per_node={exp.num_gpus}', 'scripts/adaptation/base50_train.py', '--filter', exp.name]
     subprocess.run(worker_child(command), check=True)
 
 
-def submit(dry):
+def submit(exp, dry):
     commit = launch.git('rev-parse', 'HEAD')
     staged = e.STAGING_ROOT/commit
-    exp = config.experiment_configs[0]
     marker = e.RUN_ROOT/'out'/exp.name/'trained.json'
     if not dry and not launch.pending(marker.parent):
         return
@@ -68,12 +68,14 @@ def main():
     parser.add_argument('--dry', action='store_true')
     parser.add_argument('--worker', action='store_true')
     parser.add_argument('--internal', action='store_true')
+    configs = run_filter(parser, config.experiment_configs)
     args = parser.parse_args()
+    exp = configs[args.filter]
     if args.internal:
         if not args.worker: parser.error('--internal requires --worker')
-        return worker()
+        return worker(exp)
     if args.worker:
-        process = subprocess.Popen(worker_child([str(e.PYTHON), 'scripts/adaptation/base50_run.py', '--worker', '--internal']), start_new_session=True)
+        process = subprocess.Popen(worker_child([str(e.PYTHON), 'scripts/adaptation/base50_run.py', '--worker', '--internal', '--filter', exp.name]), start_new_session=True)
         try:
             code = process.wait(timeout=config.JOB_HOURS*3600)
             if code: raise RuntimeError(f'Long base worker exited {code}')
@@ -82,5 +84,5 @@ def main():
             except ProcessLookupError: pass
             process.wait(); raise
         return
-    if args.dry: return submit(True)
-    with launch.submission_lock(): submit(False)
+    if args.dry: return submit(exp, True)
+    with launch.submission_lock(): submit(exp, False)

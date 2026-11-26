@@ -55,13 +55,13 @@ def test_checkpoint_restores_optimizer_cursor_and_schedule(tmp_path):
 
 def test_worker_payload_requests_matching_training_topology_and_single_eval_gpu(tmp_path, monkeypatch):
     for phase in ("probe", "train"):
-        body = jobs.payload(phase, None, tmp_path)
+        body = jobs.payload(training.EXPERIMENT, phase, None, tmp_path, "scripts/distillation/dflash_repro.py")
         assert body["instance_type"] == "a100.4gpu"
         assert "--nproc-per-node=4" in body["script"]
         assert body["processes_per_worker"] == 1
-    body = jobs.payload("eval", 10000, tmp_path)
+    body = jobs.payload(training.EXPERIMENT, "eval", 10000, tmp_path, "scripts/distillation/dflash_repro.py")
     assert body["instance_type"] == "a100.1gpu"
-    assert "--phase eval --step 10000" in body["script"]
+    assert "--step 10000" in body["script"]
     assert "torch.distributed" not in body["script"]
 
 
@@ -79,12 +79,12 @@ def test_milestone_evaluation_waits_for_published_training(tmp_path, monkeypatch
     calls = []
     monkeypatch.setattr(jobs, "submit_job", lambda *args: calls.append(args))
     with pytest.raises(RuntimeError, match="Complete DFlash training"):
-        jobs.submit_phase(training, "eval", 5000, jobs.marker, {}, "test")
-    jobs.marker("train", None).touch()
-    jobs.submit_phase(training, "eval", 5000, jobs.marker, {}, "test")
+        jobs.submit_phase(exp, training, "eval", 5000, {}, "test")
+    jobs.marker(exp, "train").touch()
+    jobs.submit_phase(exp, training, "eval", 5000, {}, "test")
     assert len(calls) == 1
     exp.output("eval", 5000).mkdir()
-    jobs.submit_phase(training, "eval", 5000, jobs.marker, {}, "test")
+    jobs.submit_phase(exp, training, "eval", 5000, {}, "test")
     assert len(calls) == 1
 
 

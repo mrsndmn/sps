@@ -30,13 +30,13 @@ runner.sc.e.COMMON_ROOT = Path(sys.argv.pop(1))
 runner.main()
 '''
     for phase,step in [('train','2048'),('eval','1024'),('eval','1536'),('eval','2048')]:
-        p=subprocess.run([sys.executable,'-c',cli,str(tmp_path),'--phase',phase,'--variant',step,'--dry','--filter','staged_sps_ce'],capture_output=True,text=True,check=True,env=env)
+        p=subprocess.run([sys.executable,'-c',cli,str(tmp_path),'--phase',phase,'--variant',step,'--dry','--filter','qwen3_instruct_staged_sps_ce'],capture_output=True,text=True,check=True,env=env)
         assert 'scripts/instruction/extend_run.py' in p.stdout
         assert f'step{step}' in p.stdout
         assert ('a100.4gpu' if phase=='train' else 'a100.1gpu') in p.stdout
     code="""from workloads.instruction.extend_run import experiments
 from workloads.instruction import extend_common as sc
-exp=experiments('staged_sps_ce')[0]
+exp=experiments('qwen3_instruct_staged_sps_ce')[0]
 assert sc.output_dir('1024',exp,'ifeval-thinking')!=sc.output_dir('2048',exp,'ifeval-thinking')
 assert sc.output_dir('1024',exp)==sc.output_dir('2048',exp)
 """

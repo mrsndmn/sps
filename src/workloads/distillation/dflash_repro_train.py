@@ -26,7 +26,7 @@ from orchestration import mlspace_launch as launch
 from orchestration.named.publication import work_path
 from workloads.distillation import qwen4b_drafter_data as prepared, qwen4b_drafter_train as previous
 from experiments.dflash_repro_train import Experiment, experiment_configs
-EXPERIMENT, = experiment_configs
+EXPERIMENT = experiment_configs[0]
 
 
 def training_inputs(experiment):
@@ -37,10 +37,6 @@ def training_inputs(experiment):
         settings=settings, selection_sha256=instruct_data.file_hash(previous.selection_path()),
         target_revision=reference.TARGET_REVISION, draft_revision=reference.DRAFT_REVISION,
     )))
-
-
-def run_root():
-    return EXPERIMENT.output_root
 
 
 def total_steps(row_count, exp=EXPERIMENT):

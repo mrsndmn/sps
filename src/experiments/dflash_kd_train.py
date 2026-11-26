@@ -20,3 +20,17 @@ experiment_configs = [
         eval_dir_pattern="gsm8k-step-{step:05d}-5938c51ca9ec",
     ),
 ]
+
+
+def launches(family):
+    from .launch import filtered
+
+    for phase in ("probe", "train", "eval"):
+        yield from filtered(
+            experiment_configs,
+            phase,
+            "scripts/distillation/dflash_kd.py",
+            "--phase",
+            phase,
+            options=("step",) if phase == "eval" else (),
+        )
