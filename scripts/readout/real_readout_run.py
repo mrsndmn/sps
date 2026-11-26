@@ -14,19 +14,22 @@ experiment_configs = [c.Experiment("qwen3_real_readout_mtp", "train",
                                     num_gpus=c.experiment_configs[0].num_gpus)]
 ARM = experiment_configs[0]
 OUT = ROOT / "runs/out" / ARM.name
+LEGACY_HORIZONS = 4
 
 
 def trained():
     marker = json.loads((OUT / "trained.json").read_text())
     if (marker["checkpoint"] != str(OUT / "final.pt") or marker["parent"] != str(PARENT)
             or marker["step"] != c.TRAIN_STEPS or not marker["checkpoint_sha256"]
+            or marker.get("horizons", LEGACY_HORIZONS) != c.HORIZONS
             or common.recorded_schedule(marker) != common.training_schedule()):
         raise ValueError("Native readout checkpoint does not match the configured run")
     return marker
 
 
 def check_probe():
-    projected = common.probe_seconds(ROOT / "prepared.json", num_gpus=ARM.num_gpus)
+    projected = common.probe_seconds(ROOT / "prepared.json", num_gpus=ARM.num_gpus,
+                                     legacy_horizons=LEGACY_HORIZONS)
     if projected >= c.TRAIN_HOURS * 3600:
         raise RuntimeError("Training projection exceeds allocation")
 
