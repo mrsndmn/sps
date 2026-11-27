@@ -26,7 +26,6 @@ class PaperSPS:
             *corpus.parts,
             TrainSPS(name="s", corpus=corpus, model=PaperRun, warmup_tokens=50_000_000, micro_batch_size=6),
             TrainSPS(name="m", corpus=corpus, model=MRun, warmup_tokens=100_000_000, micro_batch_size=2),
-            # XL validates on rank zero for longer than NCCL's default timeout.
             TrainSPS(name="xl", corpus=corpus, model=XLRun, warmup_tokens=100_000_000,
                      micro_batch_size=1, ddp_timeout_seconds=3600),
         ]

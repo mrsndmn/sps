@@ -11,7 +11,6 @@ from typing import Literal, Optional
 
 @dataclass
 class TrainArgs:
-    distributed_validation: bool = False
     micro_batch_size: int = 6
     global_batch_size: int = 96
     max_tokens: int = 10000000000
@@ -30,6 +29,7 @@ class TrainArgs:
     chunk_size_units: int = 262144
     init_from: str = "resume"
     resume_checkpoint: Optional[str] = None
+    distributed_validation: bool = False
 
 
 @dataclass
