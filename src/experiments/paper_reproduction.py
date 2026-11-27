@@ -95,6 +95,7 @@ class TrainSPS(PaperSPS):
             architecture="sps",
             tags=(self.name, "sps", *window_tags, "deterministic", "w0", "20b", "triton"),
             window_size=0,
+            distributed_validation=True,
             warmup_tokens=self.warmup_tokens,
             micro_batch_size=self.micro_batch_size,
             ddp_timeout_seconds=self.ddp_timeout_seconds,

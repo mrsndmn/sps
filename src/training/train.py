@@ -38,6 +38,7 @@ import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group, all_reduce, ReduceOp
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from training import (
     TokenDataset,
@@ -47,8 +48,8 @@ from training import (
     CheckpointManager,
     prepare_wandb_dir_from_config,
 )
-from tqdm import trange
 from training.sampler import initial_sampler_offset
+from training.validation import collect_validation, validation_batches
 
 
 @worker_cli("train")
@@ -448,6 +449,9 @@ def main(cfg: DictConfig):
     if ddp:
         model = DDP(model, device_ids=[ddp_local_rank])
 
+    parallel_eval = ddp and getattr(cfg.training, "distributed_validation", False)
+    eval_world = ddp_world_size if parallel_eval else 1
+
     # Evaluation function
     @torch.no_grad()
     def estimate_loss():
@@ -457,14 +461,12 @@ def main(cfg: DictConfig):
             eval_batch_size = cfg.training.micro_batch_size * gradient_accumulation_steps
             eval_tokens_per_iter = eval_batch_size * block_size
             eval_iters = max(1, math.ceil(cfg.training.eval_total_tokens / eval_tokens_per_iter))
-            losses = torch.zeros(eval_iters)
-            eval_stats_sums = {}
-            eval_stats_occurrences = {}
-            val_rng = torch.Generator().manual_seed(42)
-            for k in trange(eval_iters, disable=not master_process):
-                batch_size = eval_batch_size
-                data = np.memmap(val_bin_path, dtype=np.uint16, mode='r')
-                ix = torch.randint(len(data) - block_size, (batch_size,), generator=val_rng)
+            local = []
+            data = np.memmap(val_bin_path, dtype=np.uint16, mode='r')
+            batches = validation_batches(eval_iters, eval_batch_size, len(data) - block_size,
+                                         ddp_rank, eval_world)
+            for k, ix in tqdm(batches, total=len(range(ddp_rank, eval_iters, eval_world)),
+                              disable=not master_process):
                 X = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
                 Y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
                 if device_type == 'cuda':
@@ -480,19 +482,15 @@ def main(cfg: DictConfig):
                         end = start + cfg.training.micro_batch_size
                         X_slice = X[start:end]
                         Y_slice = Y[start:end]
-                        # Validation runs on rank zero only. Calling the DDP
-                        # wrapper here would broadcast buffers to training ranks.
+                        # Ranks may own different numbers of batches. Use a local forward.
                         model_out = raw_model(X_slice, Y_slice)
                         _, loss_slice, stats = model_out
                         loss_total += float(loss_slice.detach())
                         if stats:
                             _accumulate_stats(stats, stats_sums_iter, stats_occurrences_iter)
                 stats_iters = max(max(stats_occurrences_iter.values(), default=0), 1)
-                losses[k] = loss_total / stats_iters
-                for key, total in stats_sums_iter.items():
-                    eval_stats_sums[key] = eval_stats_sums.get(key, 0.0) + total
-                    eval_stats_occurrences[key] = eval_stats_occurrences.get(key, 0) + stats_occurrences_iter.get(key, 0)
-            out[split] = losses.mean()
+                local.append((k, loss_total / stats_iters, stats_sums_iter, stats_occurrences_iter))
+            out[split], eval_stats_sums, eval_stats_occurrences = collect_validation(local, eval_world)
             for key, value in _summarize_stats(eval_stats_sums, eval_stats_occurrences).items():
                 out[f"{split}_{key}"] = value
         model.train()
@@ -669,9 +667,13 @@ def main(cfg: DictConfig):
         # Evaluate only on token schedule.
         tokens_seen = iter_num * tokens_per_iter
         should_eval = tokens_seen >= next_eval_tokens
+        if should_eval:
+            while next_eval_tokens <= tokens_seen:
+                next_eval_tokens += eval_interval_tokens
+            if master_process or parallel_eval:
+                eval_start = time.perf_counter()
+                losses = estimate_loss()
         if should_eval and master_process:
-            eval_start = time.perf_counter()
-            losses = estimate_loss()
             eval_time = time.perf_counter() - eval_start
             tokens_seen = iter_num * tokens_per_iter
             val_nll = losses.get('val_token_nll', float("nan"))
@@ -682,8 +684,6 @@ def main(cfg: DictConfig):
                 f"eval | iter {iter_num:>6} | val nll: {val_nll:.4f} (ppl {val_ppl:.2f}) | "
                 f"tokens: {_format_tokens(tokens_seen)} | eval: {eval_time*1000:.0f}ms"
             )
-            while next_eval_tokens <= tokens_seen:
-                next_eval_tokens += eval_interval_tokens
 
             # Store validation metrics to log together with train metrics later
             if cfg.logging.wandb_log:
@@ -841,12 +841,11 @@ def main(cfg: DictConfig):
         # Termination - check if we've reached max_tokens
         tokens_seen = iter_num * tokens_per_iter
         if tokens_seen >= cfg.training.max_tokens:
-            if master_process:
-                print(f"Reached max_tokens: {tokens_seen:,} >= {cfg.training.max_tokens:,}")
-                # Final evaluation at end of training
-                print(f"Running final evaluation...")
+            if master_process or parallel_eval:
                 eval_start = time.perf_counter()
                 losses = estimate_loss()
+            if master_process:
+                print(f"Reached max_tokens: {tokens_seen:,} >= {cfg.training.max_tokens:,}")
                 eval_time = time.perf_counter() - eval_start
                 tokens_seen = iter_num * tokens_per_iter
                 val_nll_eval = losses.get('val_token_nll', float("nan"))
