@@ -26,7 +26,9 @@ class PaperSPS:
             *corpus.parts,
             TrainSPS(name="s", corpus=corpus, model=PaperRun, warmup_tokens=50_000_000, micro_batch_size=6),
             TrainSPS(name="m", corpus=corpus, model=MRun, warmup_tokens=100_000_000, micro_batch_size=2),
-            TrainSPS(name="xl", corpus=corpus, model=XLRun, warmup_tokens=100_000_000, micro_batch_size=1),
+            # XL validates on rank zero for longer than NCCL's default timeout.
+            TrainSPS(name="xl", corpus=corpus, model=XLRun, warmup_tokens=100_000_000,
+                     micro_batch_size=1, ddp_timeout_seconds=3600),
         ]
 
     @classmethod
@@ -83,6 +85,7 @@ class TrainSPS(PaperSPS):
     warmup_tokens: int
     micro_batch_size: int
     num_gpus: int = 4
+    ddp_timeout_seconds: int | None = None
 
     @property
     def recipe(self) -> PaperRun:
@@ -94,6 +97,7 @@ class TrainSPS(PaperSPS):
             window_size=0,
             warmup_tokens=self.warmup_tokens,
             micro_batch_size=self.micro_batch_size,
+            ddp_timeout_seconds=self.ddp_timeout_seconds,
         )
 
     @property

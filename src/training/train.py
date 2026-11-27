@@ -25,6 +25,7 @@ import json
 import time
 from contextlib import nullcontext
 from dataclasses import asdict
+from datetime import timedelta
 import math
 import random
 
@@ -75,7 +76,11 @@ def main(cfg: DictConfig):
     # DDP setup
     ddp = int(os.environ.get('RANK', -1)) != -1
     if ddp:
-        init_process_group(backend=cfg.system.backend)
+        seconds = cfg.system.get("ddp_timeout_seconds")
+        if seconds is not None and seconds <= 0:
+            raise ValueError("ddp_timeout_seconds must be positive")
+        init_process_group(backend=cfg.system.backend,
+                           timeout=None if seconds is None else timedelta(seconds=seconds))
         ddp_rank = int(os.environ['RANK'])
         ddp_local_rank = int(os.environ['LOCAL_RANK'])
         ddp_world_size = int(os.environ['WORLD_SIZE'])

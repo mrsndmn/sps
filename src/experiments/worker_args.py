@@ -80,6 +80,7 @@ class DataArgs:
 
 @dataclass
 class SystemArgs:
+    ddp_timeout_seconds: Optional[int] = None
     backend: str = "nccl"
     dtype: str = "bfloat16"
     device: str = "cuda"

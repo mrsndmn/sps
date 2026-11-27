@@ -20,6 +20,7 @@ class PaperRun:
     save_every: int = 2_000_000_000
     lr_decay_tokens: int = 2_000_000_000
     warmup_tokens: int = 50_000_000
+    ddp_timeout_seconds: int | None = None
     seed: int = 1337
 
     def arguments(self):
