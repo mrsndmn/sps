@@ -271,6 +271,18 @@ python scripts/run_train_jobs.py --experiment paper-sps/xl --dry
 Omit `--dry` to submit the selected job once the corpus is ready.
 Checkpoints are published under `sps-artifacts/paper-sps-scale-reproduction/out/`.
 
+For multinode XL, submit the probe and let it finish before submitting training.
+
+```bash
+python scripts/run_train_jobs.py --experiment paper-sps/xl-4x4-probe --phase probe
+python scripts/run_train_jobs.py --experiment paper-sps/xl-4x4
+```
+
+The probe records the rank layout and all-reduce timings in `interconnect.json`.
+Training requires a published `probe.json` showing a speedup. It starts in a
+separate output directory with freshly initialized weights. A retry can resume
+from a checkpoint written by that same training run.
+
 ## MLSpace pilot artifacts
 
 `python scripts/run_train_jobs.py --dry` and `python scripts/run_eval.py --dry` print plans without
