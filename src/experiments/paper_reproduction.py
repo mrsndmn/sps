@@ -140,7 +140,10 @@ class XLProbe(TrainSPS):
     discard_steps: int = 5
     baseline_step_seconds: float = 23.2
     baseline_validation_seconds: float = 170.0
-    max_loss_increase: float = 0.0
+    # Means over steps 1–5 and 28–32 of the original four-GPU XL run.
+    baseline_initial_loss: float = 10.6663
+    baseline_final_loss: float = 8.0163
+    loss_tolerance: float = 0.5
 
     @property
     def fingerprint(self):
@@ -148,7 +151,8 @@ class XLProbe(TrainSPS):
                       discard_steps=self.discard_steps, timeout=self.ddp_timeout_seconds,
                       baseline_step_seconds=self.baseline_step_seconds,
                       baseline_validation_seconds=self.baseline_validation_seconds,
-                      max_loss_increase=self.max_loss_increase)
+                      baseline_initial_loss=self.baseline_initial_loss,
+                      baseline_final_loss=self.baseline_final_loss, loss_tolerance=self.loss_tolerance)
         return sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
     @property

@@ -177,9 +177,12 @@ def test_probe_speed_gate_includes_validation_and_checks_finite_losses():
     batch = TrainArgs().global_batch_size * probe.recipe.block_size
     rows = [dict(event="validation", tokens=0, nll=10, seconds=180)]
     for i in range(1, probe.stop_after_steps + 1):
-        rows.append(dict(event="train", tokens=i * batch, loss=8, step_seconds=150 if i <= 5 else 10))
+        rows.append(dict(event="train", tokens=i * batch, loss=10.7 if i <= 5 else 8, step_seconds=150 if i <= 5 else 10))
     rows.append(dict(event="final", tokens=probe.stop_after_steps * batch, seconds=50, nll=8))
-    assert summarize_probe(probe, rows)["faster"]
+    report = summarize_probe(probe, rows)
+    assert report["faster"] and report["stable"]
+    flat_loss = [dict(r, loss=11.16) if r["event"] == "train" else r for r in rows]
+    assert not summarize_probe(probe, flat_loss)["stable"]
     rows[-1]["seconds"] = 2000
     assert not summarize_probe(probe, rows)["faster"]
     rows[-1].update(seconds=50, nll=1e15)

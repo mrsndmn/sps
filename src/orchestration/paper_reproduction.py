@@ -76,14 +76,17 @@ def summarize_probe(run, rows):
     step = fmean(durations)
     initial_loss = fmean(r["loss"] for r in steps[:run.discard_steps])
     final_loss = fmean(r["loss"] for r in steps[-run.discard_steps:])
-    stable = (final_loss <= initial_loss + run.max_loss_increase and
-              evaluations[-1]["nll"] <= evaluations[0]["nll"] + run.max_loss_increase)
+    expected_drop = run.baseline_initial_loss - run.baseline_final_loss
+    stable = (initial_loss - final_loss >= expected_drop - run.loss_tolerance
+              and final_loss <= run.baseline_final_loss + run.loss_tolerance
+              and evaluations[-1]["nll"] < evaluations[0]["nll"])
     validation = evaluations[-1]["seconds"]
     steps_per_eval = run.recipe.eval_interval_tokens / batch_tokens
     baseline = run.baseline_step_seconds + run.baseline_validation_seconds / steps_per_eval
     effective = step + validation / steps_per_eval
     return dict(fingerprint=run.fingerprint, steps=len(steps), median_step_seconds=median(durations),
                 mean_step_seconds=step, validation_seconds=validation, stable=stable,
+                initial_mean_loss=initial_loss, final_mean_loss=final_loss,
                 final_nll=evaluations[-1]["nll"], effective_speedup=baseline / effective,
                 faster=step < run.baseline_step_seconds and effective < baseline)
 
