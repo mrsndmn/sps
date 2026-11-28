@@ -88,6 +88,9 @@ def main(cfg: DictConfig):
         device = f'cuda:{ddp_local_rank}'
         print(f"DDP rank: {ddp_rank}, local rank: {ddp_local_rank}, world size: {ddp_world_size}, device: {device}")
         torch.cuda.set_device(device)
+        if "SPS_MPI_NODES" in os.environ:
+            from training.multinode import check_interconnect
+            check_interconnect(out_dir, cfg.training.get("stop_after_steps") is not None)
         master_process = ddp_rank == 0
         seed_offset = ddp_rank
     else:
@@ -458,7 +461,11 @@ def main(cfg: DictConfig):
         out = {}
         model.eval()
         for split in ['val']:
-            eval_batch_size = cfg.training.micro_batch_size * gradient_accumulation_steps
+            eval_batch_size = cfg.training.get("validation_batch_sequences")
+            if eval_batch_size is None:
+                eval_batch_size = cfg.training.micro_batch_size * gradient_accumulation_steps
+            if eval_batch_size <= 0 or eval_batch_size % cfg.training.micro_batch_size:
+                raise ValueError("Validation batch must contain whole microbatches")
             eval_tokens_per_iter = eval_batch_size * block_size
             eval_iters = max(1, math.ceil(cfg.training.eval_total_tokens / eval_tokens_per_iter))
             local = []
@@ -477,7 +484,7 @@ def main(cfg: DictConfig):
                     loss_total = 0.0
                     stats_sums_iter = {}
                     stats_occurrences_iter = {}
-                    for micro_step in range(gradient_accumulation_steps):
+                    for micro_step in range(eval_batch_size // cfg.training.micro_batch_size):
                         start = micro_step * cfg.training.micro_batch_size
                         end = start + cfg.training.micro_batch_size
                         X_slice = X[start:end]
@@ -840,12 +847,13 @@ def main(cfg: DictConfig):
 
         # Termination - check if we've reached max_tokens
         tokens_seen = iter_num * tokens_per_iter
-        if tokens_seen >= cfg.training.max_tokens:
+        step_limit = cfg.training.get("stop_after_steps")
+        if tokens_seen >= cfg.training.max_tokens or (step_limit is not None and iter_num >= step_limit):
             if master_process or parallel_eval:
                 eval_start = time.perf_counter()
                 losses = estimate_loss()
             if master_process:
-                print(f"Reached max_tokens: {tokens_seen:,} >= {cfg.training.max_tokens:,}")
+                print(f"Finished training after {iter_num:,} steps and {tokens_seen:,} tokens")
                 eval_time = time.perf_counter() - eval_start
                 tokens_seen = iter_num * tokens_per_iter
                 val_nll_eval = losses.get('val_token_nll', float("nan"))

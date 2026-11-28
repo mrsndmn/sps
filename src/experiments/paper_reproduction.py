@@ -1,5 +1,5 @@
 """FineWeb preparation and paper-scale zero-window SPS training runs."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from hashlib import sha256
 from typing import ClassVar
@@ -21,13 +21,21 @@ class PaperSPS:
     @classmethod
     def experiment_configs(cls) -> list["PrepareFineWeb | TokenizePart | TrainSPS"]:
         corpus = PrepareFineWeb(name="data", num_gpus=1)
+        xl = TrainSPS(name="xl", corpus=corpus, model=XLRun, warmup_tokens=100_000_000,
+                      micro_batch_size=1, ddp_timeout_seconds=3600)
+        probe = XLProbe(name="xl-4x4-probe", corpus=corpus, model=xl.model,
+                        warmup_tokens=xl.warmup_tokens, micro_batch_size=xl.micro_batch_size,
+                        num_nodes=4, num_gpus=16, chunk_size_units=1024,
+                        validation_batch_sequences=24, ddp_timeout_seconds=300)
         return [
             corpus,
             *corpus.parts,
             TrainSPS(name="s", corpus=corpus, model=PaperRun, warmup_tokens=50_000_000, micro_batch_size=6),
             TrainSPS(name="m", corpus=corpus, model=MRun, warmup_tokens=100_000_000, micro_batch_size=2),
-            TrainSPS(name="xl", corpus=corpus, model=XLRun, warmup_tokens=100_000_000,
-                     micro_batch_size=1, ddp_timeout_seconds=3600),
+            xl, probe,
+            replace(xl, name="xl-4x4", num_nodes=probe.num_nodes, num_gpus=probe.num_gpus,
+                    chunk_size_units=probe.chunk_size_units,
+                    validation_batch_sequences=probe.validation_batch_sequences, probe=probe),
         ]
 
     @classmethod
@@ -86,6 +94,12 @@ class TrainSPS(PaperSPS):
     num_gpus: int = 4
     ddp_timeout_seconds: int | None = None
 
+    num_nodes: int = 1
+    chunk_size_units: int | None = None
+    validation_batch_sequences: int | None = None
+    stop_after_steps: int | None = None
+    probe: "XLProbe | None" = None
+
     @property
     def recipe(self) -> PaperRun:
         window_tags = () if self.model is XLRun else ("sliding_predict_tokens",)
@@ -98,8 +112,20 @@ class TrainSPS(PaperSPS):
             warmup_tokens=self.warmup_tokens,
             micro_batch_size=self.micro_batch_size,
             ddp_timeout_seconds=self.ddp_timeout_seconds,
+            chunk_size_units=self.chunk_size_units,
+            validation_batch_sequences=self.validation_batch_sequences,
+            stop_after_steps=self.stop_after_steps,
         )
 
     @property
     def output(self):
         return self.corpus.data_root / "out" / self.recipe.name
+
+
+@dataclass(frozen=True, kw_only=True)
+class XLProbe(TrainSPS):
+    phase = "probe"
+    stop_after_steps: int = 32
+    discard_steps: int = 5
+    baseline_step_seconds: float = 23.2
+    baseline_validation_seconds: float = 170.0

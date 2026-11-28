@@ -30,6 +30,8 @@ class TrainArgs:
     init_from: str = "resume"
     resume_checkpoint: Optional[str] = None
     distributed_validation: bool = False
+    validation_batch_sequences: Optional[int] = None
+    stop_after_steps: Optional[int] = None
 
 
 @dataclass

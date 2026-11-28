@@ -24,6 +24,10 @@ class PaperRun:
     ddp_timeout_seconds: int | None = None
     seed: int = 1337
 
+    chunk_size_units: int | None = None
+    validation_batch_sequences: int | None = None
+    stop_after_steps: int | None = None
+
     def arguments(self):
         return dict(
             asdict(self), wandb_run_name=self.name, chunk_shuffle_seed=self.seed

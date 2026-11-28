@@ -135,6 +135,9 @@ def published_command(command, output, staged):
 def main():
     output, command = sys.argv[1:]
     directory = RunDirectory(COMMON_ROOT, Path(output))
+    if "SPS_MPI_NODES" in os.environ:
+        from orchestration.named.mpi_publication import run_mpi
+        return run_mpi(directory, command, os.environ)
     with directory.writing(reserved=True) as work:
         env = dict(
             os.environ,

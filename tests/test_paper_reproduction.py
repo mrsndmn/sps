@@ -13,6 +13,7 @@ def test_catalog_matches_training_recipes():
 
     catalog = family_runs(study.PaperSPS.family)
     assert set(catalog) == {("data", "prepare"), ("s", "train"), ("m", "train"), ("xl", "train"),
+                            ("xl-4x4-probe", "probe"), ("xl-4x4", "train"),
                             *((f"part-{i}", "prepare") for i in range(1,5))}
     configs = study.PaperSPS.experiment_configs()
     assert isinstance(configs, list)
@@ -125,3 +126,62 @@ def test_merge_retry_removes_restored_private_prefix(tmp_path, monkeypatch):
     worker.main()
     assert not (work / "prefix").exists()
     assert (shared / "manifest.json").exists()
+
+
+def test_multinode_recipe_and_worker_command():
+    from experiments.worker_args import TrainArgs
+    from orchestration.paper_reproduction import train_command
+
+    runs = {r.name: r for r in study.PaperSPS.experiment_configs()}
+    old, new, probe = (runs[name] for name in ("xl", "xl-4x4", "xl-4x4-probe"))
+    assert new.probe is probe
+    assert len({r.output for r in (old, new, probe)}) == 3
+    for run in (new, probe):
+        assert (run.num_nodes, run.num_gpus, run.recipe.chunk_size_units) == (4, 16, 1024)
+        assert run.recipe.validation_batch_sequences == TrainArgs().global_batch_size // old.num_gpus
+        assert run.recipe.block_size == old.recipe.block_size and run.micro_batch_size == 1
+        assert "torch.distributed.run" not in train_command(run, run.output)
+    assert "torch.distributed.run" in train_command(old, old.output)
+    assert "--init_from" in train_command(probe, probe.output)
+    assert new.stop_after_steps is None
+
+
+def test_mpi_publication_waits_for_all_ranks(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from orchestration.named.mpi_publication import mpi_environment, run_mpi
+    from orchestration.run_directory import RunDirectory
+    import os
+
+    directory = RunDirectory(tmp_path, tmp_path / "combined")
+    assert directory.reserve()
+    env = dict(os.environ, SPS_MPI_NODES="2", SPS_MPI_GPUS_PER_NODE="1", OMPI_COMM_WORLD_SIZE="2",
+               OMPI_COMM_WORLD_LOCAL_RANK="0", PMIX_HOSTNAME="example-mpimaster-0")
+    def rank_env(rank):
+        return dict(env, OMPI_COMM_WORLD_RANK=str(rank))
+    assert mpi_environment(rank_env(0))["MASTER_ADDR"] == "example-mpimaster-0.example"
+    with pytest.raises(RuntimeError):
+        mpi_environment(dict(rank_env(0), OMPI_COMM_WORLD_SIZE="1"))
+    command = 'echo "$RANK" > "$SPS_JOB_WORK/$RANK"'
+    with ThreadPoolExecutor() as pool:
+        primary = pool.submit(run_mpi, directory, command, rank_env(0))
+        run_mpi(directory, command, rank_env(1))
+        primary.result(timeout=10)
+    assert sorted(f.name for f in directory.output.iterdir()) == ["0", "1"]
+
+
+def test_probe_speed_gate_includes_validation_and_checks_finite_losses():
+    from orchestration.paper_reproduction import summarize_probe
+    from experiments.worker_args import TrainArgs
+
+    probe = next(r for r in study.PaperSPS.experiment_configs() if isinstance(r, study.XLProbe))
+    batch = TrainArgs().global_batch_size * probe.recipe.block_size
+    rows = [dict(event="validation", tokens=0, nll=10, seconds=180)]
+    for i in range(1, probe.stop_after_steps + 1):
+        rows.append(dict(event="train", tokens=i * batch, loss=8, step_seconds=150 if i <= 5 else 10))
+    rows.append(dict(event="final", tokens=probe.stop_after_steps * batch, seconds=50, nll=8))
+    assert summarize_probe(probe, rows)["faster"]
+    rows[-1]["seconds"] = 2000
+    assert not summarize_probe(probe, rows)["faster"]
+    rows[1]["loss"] = float("nan")
+    with pytest.raises(RuntimeError, match="training metrics"):
+        summarize_probe(probe, rows)
