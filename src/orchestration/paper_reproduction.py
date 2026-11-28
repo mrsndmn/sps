@@ -76,9 +76,7 @@ def summarize_probe(run, rows):
     step = fmean(durations)
     initial_loss = fmean(r["loss"] for r in steps[:run.discard_steps])
     final_loss = fmean(r["loss"] for r in steps[-run.discard_steps:])
-    expected_drop = run.baseline_initial_loss - run.baseline_final_loss
-    stable = (initial_loss - final_loss >= expected_drop - run.loss_tolerance
-              and final_loss <= run.baseline_final_loss + run.loss_tolerance
+    stable = (run.matches_loss_curve(initial_loss, final_loss)
               and evaluations[-1]["nll"] < evaluations[0]["nll"])
     validation = evaluations[-1]["seconds"]
     steps_per_eval = run.recipe.eval_interval_tokens / batch_tokens
@@ -173,7 +171,8 @@ def main():
         result = json.loads(report.read_text()) if report.is_file() else {}
         if (run.benchmark_workload() != run.probe.benchmark_workload()
                 or result.get("fingerprint") != run.probe.fingerprint
-                or not all(result.get(k) is True for k in ("faster", "stable"))):
+                or not all(result.get(k) is True for k in ("faster", "stable"))
+                or not run.probe.matches_loss_curve(result["initial_mean_loss"], result["final_mean_loss"])):
             raise RuntimeError(f"Requires a completed, stable and faster {run.probe.name} probe: {report}")
     if training or (isinstance(run, PrepareFineWeb) and output.is_dir()):
         check_data(corpus.output, corpus, [run] if training else training_runs)

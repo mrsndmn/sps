@@ -145,6 +145,12 @@ class XLProbe(TrainSPS):
     baseline_final_loss: float = 8.0163
     loss_tolerance: float = 0.5
 
+    def matches_loss_curve(self, initial, final):
+        expected_drop = self.baseline_initial_loss - self.baseline_final_loss
+        return (abs(initial - self.baseline_initial_loss) <= self.loss_tolerance
+                and initial - final >= expected_drop - self.loss_tolerance
+                and final <= self.baseline_final_loss + self.loss_tolerance)
+
     @property
     def fingerprint(self):
         config = dict(workload=self.benchmark_workload(), steps=self.stop_after_steps,

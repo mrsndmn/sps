@@ -181,6 +181,8 @@ def test_probe_speed_gate_includes_validation_and_checks_finite_losses():
     rows.append(dict(event="final", tokens=probe.stop_after_steps * batch, seconds=50, nll=8))
     report = summarize_probe(probe, rows)
     assert report["faster"] and report["stable"]
+    high_start = [dict(r, loss=14) if r["event"] == "train" and r["tokens"] <= 5 * batch else r for r in rows]
+    assert not summarize_probe(probe, high_start)["stable"]
     flat_loss = [dict(r, loss=11.16) if r["event"] == "train" else r for r in rows]
     assert not summarize_probe(probe, flat_loss)["stable"]
     rows[-1]["seconds"] = 2000
