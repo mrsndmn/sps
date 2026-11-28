@@ -24,9 +24,20 @@ def check_interconnect(out_dir, benchmark):
         hosts[host].append(local_rank)
     if len(hosts) != nodes or any(sorted(ranks) != list(range(per_node)) for ranks in hosts.values()):
         raise RuntimeError(f"Unexpected MPI placement: {dict(hosts)}")
-    timings = {}
+    report = dict(rank_placements=placements, all_reduce_seconds_by_mib={})
+
+    def save_report():
+        if rank == 0:
+            path = Path(out_dir) / "interconnect.json"
+            temp = path.with_suffix(".tmp")
+            temp.write_text(json.dumps(report))
+            temp.replace(path)
+
+    save_report()
     if benchmark:
         for mib in (4, 25, 64):
+            report["active_mib"] = mib
+            save_report()
             tensor = torch.empty(mib * 1024**2 // 4, device=f"cuda:{local}")
             samples = []
             for _ in range(3):
@@ -38,8 +49,8 @@ def check_interconnect(out_dir, benchmark):
                 samples.append(time.perf_counter() - start)
                 if not (tensor == world * (world + 1) // 2).all().item():
                     raise RuntimeError(f"Invalid {mib} MiB all-reduce result")
-            timings[mib] = samples
+            report["all_reduce_seconds_by_mib"][mib] = samples
+            del report["active_mib"]
+            save_report()
     if rank == 0:
-        report = dict(rank_placements=placements, all_reduce_seconds_by_mib=timings)
-        (Path(out_dir) / "interconnect.json").write_text(json.dumps(report))
         print(f"MPI layout and NCCL checks: {report}", flush=True)

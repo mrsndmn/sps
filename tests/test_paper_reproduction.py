@@ -185,3 +185,15 @@ def test_probe_speed_gate_includes_validation_and_checks_finite_losses():
     rows[1]["loss"] = float("nan")
     with pytest.raises(RuntimeError, match="training metrics"):
         summarize_probe(probe, rows)
+
+
+def test_probe_identity_tracks_the_workload_and_speed_gate():
+    from dataclasses import replace
+
+    run = next(r for r in study.PaperSPS.experiment_configs() if r.name == "xl-4x4")
+    probe = run.probe
+    assert run.benchmark_workload() == probe.benchmark_workload()
+    assert replace(run, validation_batch_sequences=12).benchmark_workload() != probe.benchmark_workload()
+    for change in (dict(num_nodes=2), dict(validation_batch_sequences=12), dict(baseline_step_seconds=10)):
+        changed = replace(probe, **change)
+        assert changed.output != probe.output and changed.fingerprint != probe.fingerprint

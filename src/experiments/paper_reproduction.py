@@ -1,5 +1,6 @@
 """FineWeb preparation and paper-scale zero-window SPS training runs."""
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
+import json
 from pathlib import Path
 from hashlib import sha256
 from typing import ClassVar
@@ -7,7 +8,8 @@ from typing import ClassVar
 from experiments.environment import COMMON_ROOT
 from experiments.launch import Launch
 from experiments.paper_models import MRun, PaperRun, XLRun
-from experiments.pilot import data_files
+from experiments.pilot import DATASET_REVISION, data_files
+from experiments.worker_args import TrainArgs
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -117,6 +119,15 @@ class TrainSPS(PaperSPS):
             stop_after_steps=self.stop_after_steps,
         )
 
+    def benchmark_workload(self):
+        recipe = self.recipe.arguments()
+        for field in ("name", "tags", "wandb_run_name", "stop_after_steps", "ddp_timeout_seconds"):
+            recipe.pop(field)
+        settings = asdict(TrainArgs())
+        settings.update({key: value for key, value in recipe.items() if value is not None})
+        return dict(settings=settings, num_gpus=self.num_gpus, num_nodes=self.num_nodes,
+                    corpus=str(self.corpus.output), files=self.corpus.files, revision=DATASET_REVISION)
+
     @property
     def output(self):
         return self.corpus.data_root / "out" / self.recipe.name
@@ -129,3 +140,16 @@ class XLProbe(TrainSPS):
     discard_steps: int = 5
     baseline_step_seconds: float = 23.2
     baseline_validation_seconds: float = 170.0
+
+    @property
+    def fingerprint(self):
+        config = dict(workload=self.benchmark_workload(), steps=self.stop_after_steps,
+                      discard_steps=self.discard_steps, timeout=self.ddp_timeout_seconds,
+                      baseline_step_seconds=self.baseline_step_seconds,
+                      baseline_validation_seconds=self.baseline_validation_seconds)
+        return sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+
+    @property
+    def output(self):
+        path = super().output
+        return path.with_name(f"{path.name}-{self.fingerprint[:16]}")

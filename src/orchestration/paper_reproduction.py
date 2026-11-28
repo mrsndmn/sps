@@ -77,7 +77,7 @@ def summarize_probe(run, rows):
     steps_per_eval = run.recipe.eval_interval_tokens / batch_tokens
     baseline = run.baseline_step_seconds + run.baseline_validation_seconds / steps_per_eval
     effective = step + validation / steps_per_eval
-    return dict(steps=len(steps), median_step_seconds=step, validation_seconds=validation,
+    return dict(fingerprint=run.fingerprint, steps=len(steps), median_step_seconds=step, validation_seconds=validation,
                 final_nll=evaluations[-1]["nll"], effective_speedup=baseline / effective,
                 faster=step < run.baseline_step_seconds and effective < baseline)
 
@@ -161,7 +161,9 @@ def main():
         return
     if training and run.probe is not None:
         report = run.probe.output / "probe.json"
-        if not report.is_file() or json.loads(report.read_text())["faster"] is not True:
+        result = json.loads(report.read_text()) if report.is_file() else {}
+        if (run.benchmark_workload() != run.probe.benchmark_workload()
+                or result.get("fingerprint") != run.probe.fingerprint or result.get("faster") is not True):
             raise RuntimeError(f"Requires a completed, faster {run.probe.name} probe: {report}")
     if training or (isinstance(run, PrepareFineWeb) and output.is_dir()):
         check_data(corpus.output, corpus, [run] if training else training_runs)
