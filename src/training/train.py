@@ -80,6 +80,9 @@ def main(cfg: DictConfig):
         seconds = cfg.system.get("ddp_timeout_seconds")
         if seconds is not None and seconds <= 0:
             raise ValueError("ddp_timeout_seconds must be positive")
+        if "SPS_MPI_NODES" in os.environ:
+            from training.multinode import check_interconnect, save_report
+            save_report(out_dir, stage="rendezvous")
         init_process_group(backend=cfg.system.backend,
                            timeout=None if seconds is None else timedelta(seconds=seconds))
         ddp_rank = int(os.environ['RANK'])
@@ -89,7 +92,6 @@ def main(cfg: DictConfig):
         print(f"DDP rank: {ddp_rank}, local rank: {ddp_local_rank}, world size: {ddp_world_size}, device: {device}")
         torch.cuda.set_device(device)
         if "SPS_MPI_NODES" in os.environ:
-            from training.multinode import check_interconnect
             check_interconnect(out_dir, cfg.training.get("stop_after_steps") is not None)
         master_process = ddp_rank == 0
         seed_offset = ddp_rank

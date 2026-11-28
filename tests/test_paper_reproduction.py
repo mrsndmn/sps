@@ -182,6 +182,11 @@ def test_probe_speed_gate_includes_validation_and_checks_finite_losses():
     assert summarize_probe(probe, rows)["faster"]
     rows[-1]["seconds"] = 2000
     assert not summarize_probe(probe, rows)["faster"]
+    rows[-1].update(seconds=50, nll=1e15)
+    assert not summarize_probe(probe, rows)["stable"]
+    for row in rows[6:-1:3]:
+        row["step_seconds"] = 100
+    assert not summarize_probe(probe, rows)["faster"]
     rows[1]["loss"] = float("nan")
     with pytest.raises(RuntimeError, match="training metrics"):
         summarize_probe(probe, rows)

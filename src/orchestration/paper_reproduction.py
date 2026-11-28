@@ -6,7 +6,7 @@ import os
 import shlex
 import shutil
 import subprocess
-from statistics import median
+from statistics import fmean, median
 
 from experiments.paper_reproduction import PaperSPS, PrepareFineWeb, TokenizePart, TrainSPS, XLProbe
 from experiments.environment import COMMON_ROOT, PYTHON
@@ -72,12 +72,18 @@ def summarize_probe(run, rows):
         raise RuntimeError("Invalid training metrics")
     if not all(math.isfinite(r["nll"]) and 0 < r["seconds"] < math.inf for r in evaluations):
         raise RuntimeError("Invalid validation metrics")
-    step = median(r["step_seconds"] for r in steps[run.discard_steps:])
+    durations = [r["step_seconds"] for r in steps[run.discard_steps:]]
+    step = fmean(durations)
+    initial_loss = fmean(r["loss"] for r in steps[:run.discard_steps])
+    final_loss = fmean(r["loss"] for r in steps[-run.discard_steps:])
+    stable = (final_loss <= initial_loss + run.max_loss_increase and
+              evaluations[-1]["nll"] <= evaluations[0]["nll"] + run.max_loss_increase)
     validation = evaluations[-1]["seconds"]
     steps_per_eval = run.recipe.eval_interval_tokens / batch_tokens
     baseline = run.baseline_step_seconds + run.baseline_validation_seconds / steps_per_eval
     effective = step + validation / steps_per_eval
-    return dict(fingerprint=run.fingerprint, steps=len(steps), median_step_seconds=step, validation_seconds=validation,
+    return dict(fingerprint=run.fingerprint, steps=len(steps), median_step_seconds=median(durations),
+                mean_step_seconds=step, validation_seconds=validation, stable=stable,
                 final_nll=evaluations[-1]["nll"], effective_speedup=baseline / effective,
                 faster=step < run.baseline_step_seconds and effective < baseline)
 
@@ -163,8 +169,9 @@ def main():
         report = run.probe.output / "probe.json"
         result = json.loads(report.read_text()) if report.is_file() else {}
         if (run.benchmark_workload() != run.probe.benchmark_workload()
-                or result.get("fingerprint") != run.probe.fingerprint or result.get("faster") is not True):
-            raise RuntimeError(f"Requires a completed, faster {run.probe.name} probe: {report}")
+                or result.get("fingerprint") != run.probe.fingerprint
+                or not all(result.get(k) is True for k in ("faster", "stable"))):
+            raise RuntimeError(f"Requires a completed, stable and faster {run.probe.name} probe: {report}")
     if training or (isinstance(run, PrepareFineWeb) and output.is_dir()):
         check_data(corpus.output, corpus, [run] if training else training_runs)
     if isinstance(run, PrepareFineWeb) and not output.is_dir():
