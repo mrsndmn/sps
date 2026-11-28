@@ -29,6 +29,9 @@ class TrainArgs:
     chunk_size_units: int = 262144
     init_from: str = "resume"
     resume_checkpoint: Optional[str] = None
+    distributed_validation: bool = False
+    validation_batch_sequences: Optional[int] = None
+    stop_after_steps: Optional[int] = None
 
 
 @dataclass
@@ -80,6 +83,7 @@ class DataArgs:
 
 @dataclass
 class SystemArgs:
+    ddp_timeout_seconds: Optional[int] = None
     backend: str = "nccl"
     dtype: str = "bfloat16"
     device: str = "cuda"

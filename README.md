@@ -248,6 +248,41 @@ Preview the soft-KD temperature comparison with
 `python scripts/run_train_jobs.py --experiment dflash-soft-kd/higher-temperature --dry`.
 The registry in `src/orchestration/named/registry.py` holds one entry per family.
 
+### Zero-window SPS reproductions
+
+List the scales and prepare the shared FineWeb-Edu corpus once:
+
+```bash
+python scripts/run_train_jobs.py --list paper-sps
+python scripts/run_train_jobs.py --experiment paper-sps/data --phase prepare
+```
+
+Preparation reuses the verified pilot memmaps when available, tokenizes the
+additional pinned shards, and checks that each distributed sampler has enough
+sequences for the full run. The published corpus lives under
+`sps-artifacts/paper-sps-scale-reproduction/data/fineweb-edu/`.
+
+Preview one training job after selecting a scale (`s`, `m`, or `xl`):
+
+```bash
+python scripts/run_train_jobs.py --experiment paper-sps/xl --dry
+```
+
+Omit `--dry` to submit the selected job once the corpus is ready.
+Checkpoints are published under `sps-artifacts/paper-sps-scale-reproduction/out/`.
+
+For multinode XL, submit the probe and let it finish before submitting training.
+
+```bash
+python scripts/run_train_jobs.py --experiment paper-sps/xl-4x4-probe --phase probe
+python scripts/run_train_jobs.py --experiment paper-sps/xl-4x4
+```
+
+The probe records the rank layout and all-reduce timings in `interconnect.json`.
+Training requires a published `probe.json` showing a speedup. It starts in a
+separate output directory with freshly initialized weights. A retry can resume
+from a checkpoint written by that same training run.
+
 ## MLSpace pilot artifacts
 
 `python scripts/run_train_jobs.py --dry` and `python scripts/run_eval.py --dry` print plans without
@@ -283,4 +318,14 @@ are isolated from the default pilot; the cache and staged code are shared.
   journal = {arXiv preprint arXiv:2607.01218},
   year    = {2026},
 }
+```
+
+For parallel FineWeb preparation, submit the four disjoint parts first.
+After all four publish, submit the data phase to concatenate them in corpus order.
+
+```bash
+for part in part-1 part-2 part-3 part-4; do
+  python scripts/run_train_jobs.py --experiment "paper-sps/$part" --phase prepare
+done
+python scripts/run_train_jobs.py --experiment paper-sps/data --phase prepare
 ```
