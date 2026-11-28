@@ -9,7 +9,8 @@ for the paper's main SPS models across the selected scales.
 
 ## Results
 
-Pending.
+S completed with a final FineWeb-Edu validation NLL of 2.84166. Its final
+checkpoint was published. M and XL are still training.
 
 ## Conclusions
 
@@ -20,3 +21,4 @@ each scale and with the published small-model window ablation.
 
 - 2026-11-26 — Registered the reproduction recipes.
 - 2026-11-26 — Added shared corpus preparation and individual MLSpace training commands.
+- 2026-11-28 — Recorded the final S validation result.
